@@ -1,0 +1,4 @@
+# Windows launchers/scripts must be checked out with CRLF while Git stores normalized LF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
