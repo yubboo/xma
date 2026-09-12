@@ -42,10 +42,5 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.5"
-  },
-  "pnpm": {
-    "overrides": {
-      "yauzl": "^3.3.1"
-    }
   }
 }

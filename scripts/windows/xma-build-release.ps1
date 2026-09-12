@@ -37,16 +37,17 @@ if ($needsPrepare) {
 
 Write-Host '[同步] 构建前正在校验 Workspace 依赖图与当前 package.json/override 是否一致（不会触发 Electron postinstall）...' -ForegroundColor DarkCyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
-Write-Host '[兼容] 已应用 Electron 41.2.0 / Node 24.16+ 所需 yauzl >= 3.3.1 override。' -ForegroundColor DarkGray
+Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override。' -ForegroundColor DarkGray
 
 if ($DesktopRuntime -in @('electron','both')) {
-  $electronExe = Join-Path $Root 'apps\desktop\node_modules\electron\dist\electron.exe'
-  if (-not (Test-Path $electronExe)) {
+  $electronRoot = Join-Path $Root 'apps\desktop\node_modules\electron'
+  $electronExe = Join-Path $electronRoot 'dist\electron.exe'
+  if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) {
     Write-Host "[下载] 正在准备 Electron $ElectronVersion 主桌面 Runtime；首次下载包含 Chromium，可能需要数分钟。" -ForegroundColor Yellow
     Write-Host '[进度] 使用 XMA Electron Runtime 下载器显示实时百分比/MB；Windows 使用系统 PowerShell Expand-Archive 解压已校验 ZIP。' -ForegroundColor DarkYellow
     Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/install-electron-runtime.ts')
   }
-  if (-not (Test-Path $electronExe)) { throw 'Electron Runtime 未准备成功；可重试或使用 -DesktopRuntime tauri 构建备用桌面端。' }
+  if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) { throw 'Electron Runtime 未准备成功；可重试或使用 -DesktopRuntime tauri 构建备用桌面端。' }
   Write-Host "[通过] Electron $ElectronVersion Runtime 已就绪。" -ForegroundColor Green
 }
 

@@ -1,7 +1,7 @@
 /**
  * 文件作用：按需下载并安装 XMA Electron 41.2.0 主桌面 Runtime，并显示真实下载进度。
  * 关联模块：electron-runtime-core.ts、apps/desktop/package.json、scripts/windows/xma-expand-archive.ps1、xma-console.ps1。
- * 当前实现：使用 Electron 官方 @electron/get 下载并校验 ZIP；Windows 使用系统 PowerShell Expand-Archive 解压，避开 Node 24.16+ 与旧 yauzl/extract-zip 的已知不兼容；其余平台使用 Electron package 自带 extract-zip。
+ * 当前实现：使用 Electron 官方 @electron/get 下载并校验 ZIP；Windows 固定使用系统 PowerShell Expand-Archive 解压，避免把安装成功与 Node ZIP 流实现绑定；其余平台使用 Electron package 自带 extract-zip。
  * 职责边界：只负责 Electron Runtime 的下载与落地，不执行 pnpm install/rebuild，不参与 Agent/Core 业务逻辑。
  */
 
@@ -31,8 +31,7 @@ const electronRequire = createRequire(electronPackageJson)
 const electronPackage = JSON.parse(readFileSync(electronPackageJson, 'utf8')) as { version: string }
 const checksums = JSON.parse(readFileSync(path.join(electronDir, 'checksums.json'), 'utf8')) as Record<string, string>
 const electronGet = electronRequire('@electron/get') as { downloadArtifact?: DownloadArtifact }
-const downloadArtifact = electronGet.downloadArtifact
-if (!downloadArtifact) throw new Error('无法加载 Electron 官方下载器 @electron/get。')
+const downloadArtifact: DownloadArtifact = requireDownloadArtifact(electronGet.downloadArtifact)
 
 const version = electronPackage.version
 const platform = process.env.npm_config_platform || process.platform
@@ -44,12 +43,15 @@ const versionFile = path.join(distDir, 'version')
 const pathFile = path.join(electronDir, 'path.txt')
 const extractArchive = createArchiveExtractor()
 
-try {
-  await main()
-} catch (error: unknown) {
+void main().catch((error: unknown) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
   console.error(`\n[失败] Electron Runtime 安装失败：${message}`)
   process.exitCode = 1
+})
+
+function requireDownloadArtifact(candidate: DownloadArtifact | undefined): DownloadArtifact {
+  if (typeof candidate !== 'function') throw new Error('无法加载 Electron 官方下载器 @electron/get。')
+  return candidate
 }
 
 async function main(): Promise<void> {
@@ -57,8 +59,6 @@ async function main(): Promise<void> {
     console.log(`[通过] Electron ${version} Runtime 已存在：${executable}`)
     return
   }
-
-  reportNodeCompatibility()
 
   if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY || process.env.ALL_PROXY) {
     process.env.ELECTRON_GET_USE_PROXY = '1'
@@ -145,14 +145,6 @@ async function runProcess(file: string, args: string[]): Promise<void> {
       else reject(new Error(`${file} 解压进程失败：exit=${String(code)} signal=${String(signal)}`))
     })
   })
-}
-
-function reportNodeCompatibility(): void {
-  const [major = 0, minor = 0] = process.versions.node.split('.').map(part => Number(part))
-  if ((major === 24 && minor >= 16) || major >= 26) {
-    console.log(`[兼容] 当前 Node ${process.versions.node} 命中旧 extract-zip/yauzl 已知问题区间；Windows 安装已强制绕过 Node ZIP 解压链。`)
-    console.log('[兼容] 项目同时固定 pnpm override：yauzl >= 3.3.1，保护 Electron Builder/非 Windows 构建链。')
-  }
 }
 
 async function downloadOnce(sourceName: string, mirror?: string): Promise<string> {

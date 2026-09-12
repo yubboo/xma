@@ -165,8 +165,8 @@ if ($jsReady) {
   Write-Host '[安装] 正在安装全部 Workspace JavaScript 依赖元数据...' -ForegroundColor Yellow
 }
 Write-Host '[安全] 本步骤使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
-Write-Host '[兼容] Electron 41.2.0 在 Node 24.16+/26.1+ 的旧 ZIP 依赖存在已知问题；XMA 固定 yauzl >= 3.3.1 override。' -ForegroundColor DarkYellow
-# 中文说明：即使 node_modules 已存在也执行一次幂等 install，确保源码升级后的 package.json/override/lockfile 不会与旧依赖树漂移。
+Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override；Electron Chromium Runtime 仍不会在这里下载。' -ForegroundColor DarkYellow
+# 中文说明：即使 node_modules 已存在也执行一次幂等 install，确保源码升级后的 package.json / pnpm-workspace.yaml / lockfile 不会与旧依赖树漂移。
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
 
 Write-Host '[安装] 正在准备 esbuild 当前平台 Native Binary...' -ForegroundColor Yellow

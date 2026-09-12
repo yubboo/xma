@@ -6,3 +6,8 @@ packages:
 # 因此 electron 不进入 allowBuilds，防止任何普通 pnpm install 意外下载 Chromium。
 allowBuilds:
   esbuild: true
+
+# pnpm 11 的 workspace 级依赖覆盖必须写在这里，而不是 package.json -> pnpm.overrides。
+# 当前用于保证 Electron Builder / 非 Windows ZIP 链使用新版 yauzl。
+overrides:
+  yauzl: "^3.3.1"

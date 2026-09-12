@@ -20,11 +20,31 @@ Write-Host "目标目录：$Target"
 if ($Source.TrimEnd('\') -ieq $Target.TrimEnd('\')) { throw '源目录和目标目录不能相同。' }
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
 
+# 中文说明：早期版本包可能暂未携带 lockfile，但用户本机 [1] 会生成它们。
+# /MIR 会删除源目录不存在的文件，因此先暂存“源缺失、目标已存在”的 lockfile；
+# 如果未来版本包正式携带 lockfile，则直接以源码包版本为准，不恢复旧文件。
+$lockBackupRoot = Join-Path $env:TEMP ("xma-lock-backup-" + [Guid]::NewGuid().ToString('N'))
+$preservedLocks = @()
+foreach ($lockName in @('pnpm-lock.yaml','Cargo.lock')) {
+  $sourceLock = Join-Path $Source $lockName
+  $targetLock = Join-Path $Target $lockName
+  if (-not (Test-Path $sourceLock) -and (Test-Path $targetLock)) {
+    New-Item -ItemType Directory -Force -Path $lockBackupRoot | Out-Null
+    Copy-Item $targetLock (Join-Path $lockBackupRoot $lockName) -Force
+    $preservedLocks += $lockName
+  }
+}
+
 $excludeDirs = @('.git','node_modules','dist','build','.xma','target','release',(Join-Path $Source 'runtime'))
 $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP','/XD') + $excludeDirs
 & robocopy.exe @robocopyArgs
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
+
+foreach ($lockName in $preservedLocks) {
+  Copy-Item (Join-Path $lockBackupRoot $lockName) (Join-Path $Target $lockName) -Force
+}
+if (Test-Path $lockBackupRoot) { Remove-Item $lockBackupRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 Set-Location $Target
 if (Get-Command git.exe -ErrorAction SilentlyContinue) {
@@ -46,5 +66,5 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
 }
 
 Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / 本地依赖缓存。' -ForegroundColor Green
-Write-Host '[锁文件] 若版本包暂未携带 lockfile，旧 lockfile 会随 /MIR 删除，避免新 package/Cargo 定义继续使用陈旧依赖图；下次 [1] 会重新生成。' -ForegroundColor DarkGray
+Write-Host '[锁文件] 若版本包暂未携带 lockfile，则保留本机已生成的 pnpm-lock.yaml / Cargo.lock；若源码包携带，则以源码包版本为准。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

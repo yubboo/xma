@@ -28,3 +28,24 @@ function Invoke-XmaExternal {
   $exitCode = $LASTEXITCODE
   if ($exitCode -ne 0) { throw "$FilePath failed with exit code $exitCode" }
 }
+
+function Test-XmaElectronRuntime {
+  param(
+    [Parameter(Mandatory = $true)][string]$ElectronPackageRoot,
+    [Parameter(Mandatory = $true)][string]$ExpectedVersion
+  )
+
+  # 中文说明：Electron.exe 是 Windows GUI 子系统程序。直接通过 PowerShell `& electron.exe --version`
+  # 探测时，Windows PowerShell 5.1 可能不会像控制台程序一样同步等待，`$LASTEXITCODE` 也可能保留前一个命令的值。
+  # 因此 Runtime 完整性只检查 Electron npm package 官方安装状态：dist/version + path.txt + 可执行文件。
+  $dist = Join-Path $ElectronPackageRoot 'dist'
+  $versionFile = Join-Path $dist 'version'
+  $pathFile = Join-Path $ElectronPackageRoot 'path.txt'
+  if (-not (Test-Path $versionFile) -or -not (Test-Path $pathFile)) { return $false }
+
+  $installedVersion = (Get-Content $versionFile -Raw -Encoding UTF8).Trim().TrimStart('v')
+  $relativeExe = (Get-Content $pathFile -Raw -Encoding UTF8).Trim()
+  if ([string]::IsNullOrWhiteSpace($relativeExe)) { return $false }
+  $executable = Join-Path $dist $relativeExe
+  return ($installedVersion -eq $ExpectedVersion) -and (Test-Path $executable)
+}

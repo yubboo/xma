@@ -84,3 +84,7 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 - Electron 原子安装核心必须有离线单元测试，至少覆盖成功安装、解压失败无半成品、版本不一致拒绝安装。
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
+
+- Windows PowerShell 5.1 不得直接用 `& electron.exe --version` + `$LASTEXITCODE` 验证 Electron，因为 Electron 是 GUI 子系统程序，PowerShell 可能不同步等待并读取到陈旧退出码。Runtime 完整性必须验证 `dist/version`、`path.txt` 与平台可执行文件；真正启动由 Desktop 启动器验证。
+- `@electron/get.downloadArtifact` 在 TypeScript 中必须先收窄为确定函数类型，再进入异步下载函数；禁止让 `DownloadArtifact | undefined` 跨闭包，避免 strict TypeScript CI 失败。
+- pnpm 11 的 overrides 统一放在 `pnpm-workspace.yaml`；禁止再使用会被 pnpm 11 忽略的 `package.json -> pnpm.overrides`。

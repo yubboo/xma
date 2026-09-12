@@ -36,7 +36,7 @@
 - 主：Electron 41.2.0（精确锁定，运行/构建时惰性下载 Runtime）；
 - 副：Tauri 2（系统 WebView2，作为备用桌面运行时）；
 - 两者共享 apps/web 与 core，不复制 Agent Runtime；
-- Electron 安装链已完整审计：用户 Windows 的 Node 24.16.0 命中上游 `extract-zip -> yauzl 2.x` 已知异步解压故障，因此 Windows 改为 `@electron/get` -> PowerShell `Expand-Archive` -> staging 校验 -> `dist/path.txt` 原子落地；根依赖同时 override `yauzl >= 3.3.1`；
+- Electron 安装链已完整审计：用户 Windows 实测 Node ZIP 解压链出现不稳定行为，因此 Windows 改为 `@electron/get` -> PowerShell `Expand-Archive` -> staging 校验 -> `dist/path.txt` 原子落地；pnpm-workspace.yaml 同时 override `yauzl >= 3.3.1`；
 - Electron 原子安装核心已有离线测试，覆盖成功安装、解压失败、旧半成品替换、版本不一致。
 
-> 当前仍不得宣称 Electron 41.2.0 Windows 真机链已最终验证；必须以用户 Windows 实机或 Windows CI 的真实 `electron.exe --version` + Desktop 启动结果为准。
+> 当前仍不得宣称 Electron 41.2.0 Windows 真机链已最终验证；必须以用户 Windows 实机或 Windows CI 的 Runtime 文件状态校验 + 实际 Desktop 启动结果为准。

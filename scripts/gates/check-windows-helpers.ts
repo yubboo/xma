@@ -49,7 +49,7 @@ for (const marker of [
   "Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime 不会在这里下载',
-  'yauzl >= 3.3.1 override',
+  'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'package/lockfile/node_modules 是否仍一致',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
@@ -72,6 +72,8 @@ for (const marker of [
   'function Invoke-XmaExternal',
   '& $FilePath @ArgumentList',
   'function Get-XmaProjectVersion',
+  'function Test-XmaElectronRuntime',
+  "dist/version + path.txt + 可执行文件",
   '-Encoding UTF8',
 ]) {
   if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
@@ -121,16 +123,14 @@ for (const marker of [
 }
 
 
-const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string>; scripts?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } }
+const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string>; scripts?: Record<string, string>; pnpm?: unknown }
 for (const forbiddenDesktopRuntime of ['electron', 'electron-builder', '@tauri-apps/cli', '@tauri-apps/api']) {
   if (rootPackage.devDependencies?.[forbiddenDesktopRuntime]) {
     throw new Error(`${forbiddenDesktopRuntime} must never be a root/common dependency`)
   }
 }
 if (!rootPackage.scripts?.test?.includes('apps/desktop/tests/*.test.ts')) throw new Error('Root test script must include Electron runtime installer tests')
-if (!rootPackage.pnpm?.overrides?.yauzl || !rootPackage.pnpm.overrides.yauzl.includes('3.3.1')) {
-  throw new Error('Electron/Node 24.16 compatibility regression: root pnpm.overrides.yauzl must be >=3.3.1')
-}
+if (rootPackage.pnpm) throw new Error('pnpm 11 settings must live in pnpm-workspace.yaml; package.json -> pnpm is ignored')
 
 const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
   dependencies?: Record<string, string>
@@ -161,7 +161,7 @@ for (const file of [
 }
 
 const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
-for (const marker of ['allowBuilds:', 'esbuild: true']) {
+for (const marker of ['allowBuilds:', 'esbuild: true', 'overrides:', 'yauzl: "^3.3.1"']) {
   if (!workspaceSource.includes(marker)) throw new Error(`pnpm 11 build-script allowlist regression: missing ${marker}`)
 }
 if (workspaceSource.includes('electron: true')) throw new Error('Electron must not be allowBuilds-approved; Chromium Runtime is installed only by XMA Desktop explicit runtime flow')
@@ -179,7 +179,8 @@ for (const marker of [
   "Electron 官方 GitHub Releases",
   "installElectronRuntimeArchive",
   "const downloadedZip = await downloadArtifact",
-  "await main()",
+  "requireDownloadArtifact",
+  "void main().catch",
   "xma-expand-archive.ps1",
   "PowerShell Expand-Archive",
   "Node 24.16",
@@ -209,7 +210,7 @@ for (const marker of ['Expand-Archive', '-LiteralPath', "$ErrorActionPreference 
 const buildReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
 for (const marker of [
   "@('install','--ignore-scripts')",
-  'yauzl >= 3.3.1 override',
+  'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'apps/desktop/scripts/install-electron-runtime.ts',
 ]) {
   if (!buildReleaseSource.includes(marker)) throw new Error(`Build release dependency/runtime contract missing: ${marker}`)
@@ -245,6 +246,14 @@ for (const forbidden of [
 ]) {
   if (consoleSource.includes(forbidden)) throw new Error(`Web/CLI console must not reinstall common dependencies after [1]: ${forbidden}`)
 }
+
+if (consoleSource.includes("Invoke-XmaExternal -FilePath $electronExe -ArgumentList @('--version')")) {
+  throw new Error('Electron GUI executable must not be validated through PowerShell $LASTEXITCODE')
+}
+if (!consoleSource.includes('Test-XmaElectronRuntime -ElectronPackageRoot')) {
+  throw new Error('Electron runtime must use deterministic file-state validation')
+}
+
 for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', 'ForegroundColor Green']) {
   if (!githubSource.includes(marker)) throw new Error(`XMA GitHub helper marker missing: ${marker}`)
 }
@@ -252,8 +261,8 @@ const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 if (!syncSource.includes('H:\\一键部署\\xma')) throw new Error('XMA sync target contract missing')
 if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync must exclude only root runtime, not native/runtime source')
 if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
-if (syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must not preserve stale lockfiles when the source package omits them')
-if (!syncSource.includes('旧 lockfile 会随 /MIR 删除')) throw new Error('XMA sync must explain stale lockfile regeneration policy')
+if (!syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must preserve locally generated lockfiles when the source package omits them')
+if (!syncSource.includes('若版本包暂未携带 lockfile，则保留本机已生成的')) throw new Error('XMA sync must explain conditional lockfile preservation policy')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

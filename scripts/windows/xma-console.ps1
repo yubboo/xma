@@ -58,26 +58,24 @@ function Assert-DesktopJsDependencies {
 
 function Ensure-ElectronDesktopRuntime {
   Assert-DesktopJsDependencies
-  $electronExe = Join-Path $Root 'apps\desktop\node_modules\electron\dist\electron.exe'
-  if (Test-Path $electronExe) {
-    Write-Host "[通过] Electron $ElectronVersion 主桌面运行时已缓存。" -ForegroundColor Green
-    Invoke-XmaExternal -FilePath $electronExe -ArgumentList @('--version') -QuietCommand
+  $electronRoot = Join-Path $Root 'apps\desktop\node_modules\electron'
+  if (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion) {
+    Write-Host "[通过] Electron $ElectronVersion 主桌面运行时已缓存并通过文件状态校验。" -ForegroundColor Green
     return
   }
 
   Write-Host ''
   Write-Host "[Desktop] 你已明确选择 Electron 主桌面端，现在才允许下载 Electron $ElectronVersion Runtime。" -ForegroundColor Cyan
   Write-Host '[下载] Electron 包含 Chromium，体积较大；首次下载时间取决于网络，之后会使用本地缓存。' -ForegroundColor Yellow
-  Write-Host '[进度] XMA 使用 Electron 官方 @electron/get 显示实时百分比/MB；Windows 解压使用系统 PowerShell Expand-Archive，避开 Node ZIP 兼容问题。' -ForegroundColor DarkYellow
+  Write-Host '[进度] XMA 使用 Electron 官方 @electron/get 显示实时百分比/MB；Windows 解压使用系统 PowerShell Expand-Archive。' -ForegroundColor DarkYellow
   Write-Host '[容错] 官方源 45 秒没有任何新数据会主动中止并切换备用镜像；ZIP 继续使用 Electron 官方 checksums.json 校验。' -ForegroundColor DarkYellow
   Write-Host '[代理] 如果系统设置了 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，下载器会使用现有代理。' -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/install-electron-runtime.ts')
 
-  if (-not (Test-Path $electronExe)) {
+  if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) {
     throw 'Electron Runtime 下载/安装未完成。可重试 Electron，或返回 Desktop 菜单选择 Tauri 2 备用运行时。'
   }
-  Write-Host '[验证] 正在验证 Electron Runtime...' -ForegroundColor DarkCyan
-  Invoke-XmaExternal -FilePath $electronExe -ArgumentList @('--version')
+  Write-Host '[验证] Electron dist/version、path.txt 与 electron.exe 状态一致。' -ForegroundColor DarkCyan
   Write-Host "[通过] Electron $ElectronVersion 主桌面运行时已准备完成。" -ForegroundColor Green
 }
 

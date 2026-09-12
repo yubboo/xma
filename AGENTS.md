@@ -188,10 +188,14 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
 - Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
 - `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime；`electron` 不进入 pnpm `allowBuilds`，并禁止用 `pnpm rebuild electron` 触发隐式下载。
-- Electron Runtime 安装采用确定性链路：`@electron/get` 返回已校验 ZIP 路径后，Windows 必须使用系统 PowerShell `Expand-Archive` 解压到 staging，经版本/可执行文件校验后再原子替换 `dist` 并写 `path.txt`。这是为了绕开 Node 24.16+/26.1+ 与 Electron 41.2.0 所依赖旧 `extract-zip -> yauzl` 链的已知异步解压问题；项目同时固定 `pnpm.overrides.yauzl >= 3.3.1` 保护 Electron Builder 与非 Windows 构建链。
+- Electron Runtime 安装采用确定性链路：`@electron/get` 返回已校验 ZIP 路径后，Windows 必须使用系统 PowerShell `Expand-Archive` 解压到 staging，经版本/可执行文件校验后再原子替换 `dist` 并写 `path.txt`。Windows 固定使用系统解压链，避免把 Runtime 安装成功与 Node ZIP 流实现绑定；项目同时固定 `pnpm-workspace.yaml -> overrides.yauzl >= 3.3.1` 保护 Electron Builder 与非 Windows 构建链。
 - Tauri 2 只作为备用桌面运行时，Windows 使用系统 WebView2。
 - 两种 Desktop Runtime 必须复用 `apps/web/` UI 与 `core/` Agent Runtime，不得复制业务内核。
 - Electron/Tauri Shell 只负责窗口、系统桥接和桌面打包，不承担 Agent 推理。
 - 详细策略见 `docs/architecture/DESKTOP-RUNTIME.md`.
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
+
+- Windows Electron Runtime 验证禁止直接执行 GUI `electron.exe --version` 并依赖 `$LASTEXITCODE`；使用 `dist/version + path.txt + executable` 三项状态校验，实际桌面进程由 Desktop 启动器负责。
+- pnpm 11 的 dependency overrides 写入根 `pnpm-workspace.yaml -> overrides`；不要再使用会被 pnpm 11 忽略的 `package.json -> pnpm.overrides`。
+- Electron 下载器中 `@electron/get.downloadArtifact` 必须先收窄成确定函数类型，strict TypeScript 下不得把可选函数跨异步闭包调用。
