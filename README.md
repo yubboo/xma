@@ -56,7 +56,7 @@ XMA-GitHub.bat
 XMA.bat
 ```
 
-菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
 
 ## 仓库
 

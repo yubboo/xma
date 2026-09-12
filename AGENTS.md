@@ -176,7 +176,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `XMA.bat -> [1] 一键准备开发环境` 是首次运行的唯一推荐入口：一次准备系统工具、全部 Workspace JavaScript 依赖元数据、esbuild Native Binary 与 XMA Native Rust crates。
 - `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
 - Web / CLI 在 `[1]` 成功后只负责直接启动；不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。
-- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后单独 rebuild 下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
+- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/install-electron-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
 - `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
@@ -187,7 +187,8 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - XMA Desktop 固定采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**。
 - Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
 - Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
-- `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime。
+- `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime；`electron` 不进入 pnpm `allowBuilds`，并禁止用 `pnpm rebuild electron` 触发隐式下载。
+- Electron Runtime 安装采用确定性链路：`@electron/get` 返回已校验 ZIP 路径后，Windows 必须使用系统 PowerShell `Expand-Archive` 解压到 staging，经版本/可执行文件校验后再原子替换 `dist` 并写 `path.txt`。这是为了绕开 Node 24.16+/26.1+ 与 Electron 41.2.0 所依赖旧 `extract-zip -> yauzl` 链的已知异步解压问题；项目同时固定 `pnpm.overrides.yauzl >= 3.3.1` 保护 Electron Builder 与非 Windows 构建链。
 - Tauri 2 只作为备用桌面运行时，Windows 使用系统 WebView2。
 - 两种 Desktop Runtime 必须复用 `apps/web/` UI 与 `core/` Agent Runtime，不得复制业务内核。
 - Electron/Tauri Shell 只负责窗口、系统桥接和桌面打包，不承担 Agent 推理。

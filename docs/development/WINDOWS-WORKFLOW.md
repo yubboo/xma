@@ -56,10 +56,11 @@ Electron 版本固定为 `41.2.0`，只存在于 `apps/desktop/package.json`，�
 为了避免“一键准备环境”卡在 Electron postinstall：
 
 1. Desktop JavaScript package 先使用 `--ignore-scripts` 安装；
-2. 只有用户明确选择 Electron Desktop 时，才单独 `pnpm --dir apps/desktop rebuild electron`；
-3. 开启 `@electron/get` 下载诊断；官方下载超过约 30 秒会显示进度；
-4. Electron 二进制使用官方缓存，后续运行不重复下载；
-5. 如果 Electron 下载失败，用户可以直接返回菜单选择 Tauri 2。
+2. 只有用户明确选择 Electron Desktop 时，才调用 `apps/desktop/scripts/install-electron-runtime.ts`；禁止把下载藏进 `pnpm rebuild electron` lifecycle；
+3. XMA 直接通过 `@electron/get` API 输出实时百分比与 MB；下载连接连续 45 秒没有新数据就主动中止，避免界面无限停在 postinstall；
+4. `@electron/get` 返回已校验 ZIP 后，Windows 安装器调用系统 PowerShell `Expand-Archive` 解压到 staging，先验证版本和 `electron.exe`，再原子替换正式 `dist` 并写 `path.txt`；禁止再把 Windows 安装依赖于旧 `extract-zip/yauzl` 异步流；
+5. 默认使用官方 GitHub Releases；连接停滞时切换 Electron 官方文档示例镜像 `npmmirror`，并继续使用包内 `checksums.json` 校验；Electron 二进制使用官方缓存，后续运行不重复下载；
+6. 如果 Electron 下载失败，用户可以直接返回菜单选择 Tauri 2。
 
 ## Tauri 2 备用桌面端
 
@@ -73,9 +74,9 @@ Windows PowerShell 外部命令统一复用 `scripts/windows/xma-common.ps1` 的
 
 ## pnpm 11 Build Script 安全白名单
 
-XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install/postinstall 的包。当前允许 `esbuild` 与 `electron`。
+XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install/postinstall 的包。当前只允许 `esbuild`。
 
-- `electron` 虽在白名单中，但固定脚本仍先 `--ignore-scripts`，只在用户明确选择 Electron 时单独执行 rebuild；
+- `electron` **不得**进入 `allowBuilds`；Electron Chromium Runtime 只由 XMA Desktop 显式安装器按需处理；
 - 禁止 `dangerouslyAllowAllBuilds`；
 - 禁止把 `pnpm approve-builds` 变成人工固定步骤。
 

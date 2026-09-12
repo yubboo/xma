@@ -15,7 +15,7 @@
     "dev:server": "tsx apps/server/src/main.ts",
     "dev:desktop": "pnpm --dir apps/desktop run dev:electron",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test core/tests/*.test.ts",
+    "test": "tsx --test core/tests/*.test.ts apps/desktop/tests/*.test.ts",
     "gate:architecture": "tsx scripts/gates/check-architecture.ts",
     "gate:comments": "tsx scripts/gates/check-comments.ts",
     "gate:docs": "tsx scripts/gates/check-documentation.ts",
@@ -42,5 +42,10 @@
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vite": "^7.1.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "yauzl": "^3.3.1"
+    }
   }
 }

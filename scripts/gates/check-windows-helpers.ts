@@ -49,6 +49,8 @@ for (const marker of [
   "Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime 不会在这里下载',
+  'yauzl >= 3.3.1 override',
+  'package/lockfile/node_modules 是否仍一致',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -119,11 +121,15 @@ for (const marker of [
 }
 
 
-const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string> }
+const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string>; scripts?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } }
 for (const forbiddenDesktopRuntime of ['electron', 'electron-builder', '@tauri-apps/cli', '@tauri-apps/api']) {
   if (rootPackage.devDependencies?.[forbiddenDesktopRuntime]) {
     throw new Error(`${forbiddenDesktopRuntime} must never be a root/common dependency`)
   }
+}
+if (!rootPackage.scripts?.test?.includes('apps/desktop/tests/*.test.ts')) throw new Error('Root test script must include Electron runtime installer tests')
+if (!rootPackage.pnpm?.overrides?.yauzl || !rootPackage.pnpm.overrides.yauzl.includes('3.3.1')) {
+  throw new Error('Electron/Node 24.16 compatibility regression: root pnpm.overrides.yauzl must be >=3.3.1')
 }
 
 const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
@@ -141,20 +147,73 @@ for (const script of ['dev:electron', 'build:electron', 'dev:tauri', 'build:taur
 for (const file of [
   'apps/desktop/src/main.ts',
   'apps/desktop/scripts/dev-electron.ts',
+  'apps/desktop/scripts/install-electron-runtime.ts',
+  'apps/desktop/scripts/electron-runtime-core.ts',
+  'apps/desktop/tests/electron-runtime-core.test.ts',
   'apps/desktop/electron-builder.yml',
   'apps/desktop/src-tauri/Cargo.toml',
   'apps/desktop/src-tauri/build.rs',
   'apps/desktop/src-tauri/src/main.rs',
   'apps/desktop/src-tauri/tauri.conf.json',
+  'scripts/windows/xma-expand-archive.ps1',
 ]) {
   if (!existsSync(file)) throw new Error(`Desktop runtime file missing: ${file}`)
 }
 
 const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
-for (const marker of ['allowBuilds:', 'electron: true', 'esbuild: true']) {
+for (const marker of ['allowBuilds:', 'esbuild: true']) {
   if (!workspaceSource.includes(marker)) throw new Error(`pnpm 11 build-script allowlist regression: missing ${marker}`)
 }
+if (workspaceSource.includes('electron: true')) throw new Error('Electron must not be allowBuilds-approved; Chromium Runtime is installed only by XMA Desktop explicit runtime flow')
 if (workspaceSource.includes('dangerouslyAllowAllBuilds')) throw new Error('pnpm workspace must never enable dangerouslyAllowAllBuilds')
+
+
+const electronInstallerSource = readFileSync('apps/desktop/scripts/install-electron-runtime.ts', 'utf8')
+const electronRuntimeCoreSource = readFileSync('apps/desktop/scripts/electron-runtime-core.ts', 'utf8')
+for (const marker of [
+  "downloadArtifact",
+  "getProgressCallback",
+  "checksums.json",
+  "45_000",
+  "https://npmmirror.com/mirrors/electron/",
+  "Electron 官方 GitHub Releases",
+  "installElectronRuntimeArchive",
+  "const downloadedZip = await downloadArtifact",
+  "await main()",
+  "xma-expand-archive.ps1",
+  "PowerShell Expand-Archive",
+  "Node 24.16",
+]) {
+  if (!electronInstallerSource.includes(marker)) throw new Error(`Electron runtime downloader contract missing: ${marker}`)
+}
+for (const marker of [
+  '.xma-electron-dist-',
+  'await options.extractArchive',
+  'Electron ZIP 版本不一致',
+  'await renameWithRetry(stagingDir, distDir)',
+  'await rename(pathTemp, pathFile)',
+]) {
+  if (!electronRuntimeCoreSource.includes(marker)) throw new Error(`Electron runtime atomic-install contract missing: ${marker}`)
+}
+if (!electronInstallerSource.includes("controller.abort()")) throw new Error('Electron runtime downloader must abort stalled downloads')
+for (const forbidden of ['officialInstallScript', 'spawnSync(process.execPath', "path.join(electronDir, 'install.js')", "pnpm rebuild electron"]) {
+  if (electronInstallerSource.includes(forbidden)) throw new Error(`Electron runtime downloader must not use split/black-box install path: ${forbidden}`)
+}
+if (!existsSync('apps/desktop/tests/electron-runtime-core.test.ts')) throw new Error('Electron runtime atomic installer tests missing')
+
+
+const expandArchiveSource = readFileSync('scripts/windows/xma-expand-archive.ps1', 'utf8')
+for (const marker of ['Expand-Archive', '-LiteralPath', "$ErrorActionPreference = 'Stop'"]) {
+  if (!expandArchiveSource.includes(marker)) throw new Error(`Windows Electron extraction helper regression: missing ${marker}`)
+}
+const buildReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
+for (const marker of [
+  "@('install','--ignore-scripts')",
+  'yauzl >= 3.3.1 override',
+  'apps/desktop/scripts/install-electron-runtime.ts',
+]) {
+  if (!buildReleaseSource.includes(marker)) throw new Error(`Build release dependency/runtime contract missing: ${marker}`)
+}
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
@@ -168,10 +227,11 @@ for (const marker of [
   '主 / 推荐',
   '副 / 备用',
   'Assert-CoreDependencies',
-  "@('--dir','apps/desktop','rebuild','electron')",
+  "@('exec','tsx','apps/desktop/scripts/install-electron-runtime.ts')",
   "@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')",
-  '@electron/get',
-  'ELECTRON_GET_USE_PROXY',
+  'install-electron-runtime.ts',
+  'checksums.json',
+  '官方源 45 秒没有任何新数据',
   "@('check','--workspace','--offline')",
   "@('test','--workspace','--offline')",
 ]) {
@@ -181,6 +241,7 @@ for (const forbidden of [
   "@('install','--ignore-scripts')",
   "@('rebuild','esbuild')",
   "@('exec','esbuild','--version')",
+  "@('--dir','apps/desktop','rebuild','electron')",
 ]) {
   if (consoleSource.includes(forbidden)) throw new Error(`Web/CLI console must not reinstall common dependencies after [1]: ${forbidden}`)
 }
@@ -191,6 +252,8 @@ const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 if (!syncSource.includes('H:\\一键部署\\xma')) throw new Error('XMA sync target contract missing')
 if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync must exclude only root runtime, not native/runtime source')
 if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
+if (syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must not preserve stale lockfiles when the source package omits them')
+if (!syncSource.includes('旧 lockfile 会随 /MIR 删除')) throw new Error('XMA sync must explain stale lockfile regeneration policy')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

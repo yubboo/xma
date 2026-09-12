@@ -46,4 +46,5 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
 }
 
 Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / 本地依赖缓存。' -ForegroundColor Green
+Write-Host '[锁文件] 若版本包暂未携带 lockfile，旧 lockfile 会随 /MIR 删除，避免新 package/Cargo 定义继续使用陈旧依赖图；下次 [1] 会重新生成。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

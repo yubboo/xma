@@ -74,10 +74,13 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 - `XMA.bat -> [1] 一键准备开发环境` 必须一次完成系统工具 + Workspace JavaScript 依赖元数据 + esbuild Native Binary + XMA Native Rust crates。
 - `[1]` 必须使用 `pnpm install --ignore-scripts`，禁止在准备阶段触发 Electron Chromium Runtime postinstall。
 - Web / XiaoYu CLI 启动时只能检查依赖并直接启动；缺依赖时提示先运行 `[1]`，不得自行安装。
-- Electron 41.2.0 package 元数据可以在 `[1]` 中准备；Chromium Runtime 只有用户明确进入 Desktop -> Electron 或构建 Electron 时才允许 `rebuild electron` 下载。
+- Electron 41.2.0 package 元数据可以在 `[1]` 中准备；Chromium Runtime 只有用户明确进入 Desktop -> Electron 或构建 Electron 时才允许按需下载。用户可见流程禁止使用 `pnpm rebuild electron` 承担下载，因为 pnpm lifecycle 可能只显示 `Running postinstall script...` 而没有真实进度。
 - Tauri 2 JavaScript package 可以在 `[1]` 中准备；Tauri Rust crates 只有用户明确选择 Tauri 2 或对应构建时才预取。
 - `esbuild` 为 Vite/tsx/tsup 的内部依赖，禁止要求根 `node_modules/.bin/esbuild` 或使用 `pnpm exec esbuild` 作为验证；使用 `tsx` 最小执行、Vite/tsup 版本等真实链路验证。
 - `[7] 全量检查` 不偷偷下载依赖；缺依赖时提示先运行 `[1]`，Rust 使用 `--offline` 检查。
-- Electron/Tauri 下载不得默认切换第三方镜像。Electron 使用官方 `@electron/get` 缓存与进度；检测到用户已有 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许使用官方代理支持。
+- Electron Runtime 下载必须优先官方 GitHub Releases，并使用 Electron 包内 `checksums.json` 校验。官方源连续 45 秒无新数据时允许自动切换 Electron 官方安装文档给出的 `npmmirror` 示例镜像；切换必须在终端明确提示，且仍执行官方校验。检测到用户已有 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时使用 `@electron/get` 代理支持。
+- Electron Runtime 必须使用可等待、可验证的安装状态机：`@electron/get` 下载并 checksum 校验 ZIP；Windows 通过系统 PowerShell `Expand-Archive` 完成 staging 解压，校验版本与可执行文件后原子替换 `dist` 并写 `path.txt`。不得再把 Windows Electron 解压绑定在旧 `extract-zip/yauzl` 的 Node 流实现上。
+- 禁止再次调用 Electron `install.js` 作为第二阶段黑盒子进程，也禁止 `pnpm rebuild electron`。Electron 官方 `install.js` 是 npm lifecycle 入口，不是 XMA 下载器的稳定第二阶段 API；此前真实 Windows 日志已出现返回 0 但 `dist/path.txt` 均未落地的假成功。
+- Electron 原子安装核心必须有离线单元测试，至少覆盖成功安装、解压失败无半成品、版本不一致拒绝安装。
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。

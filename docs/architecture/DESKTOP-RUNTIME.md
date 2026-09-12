@@ -19,11 +19,15 @@ Electron 是 XMA 默认 Desktop Runtime。项目将版本**精确锁定为 `41.2
 
 代价是 Electron Runtime 较大。因此 XMA 必须遵守**惰性下载**：
 
-- `XMA.bat -> [1] 一键准备基础环境` 不下载 Electron；
+- `XMA.bat -> [1] 一键准备开发环境` 不下载 Electron Chromium Runtime；
 - Web / CLI 不下载 Electron；
 - 只有用户明确进入 `Desktop -> Electron` 或构建 Electron 发布包时，才执行 Electron postinstall 下载 Chromium Runtime；
-- 下载器使用 Electron 官方 `@electron/get` 缓存；超过约 30 秒时保留官方进度输出，并开启诊断日志，避免用户误以为程序卡死；
-- 检测到 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许 `@electron/get` 使用用户已有代理；不得默认切换第三方镜像。
+- XMA 使用 Electron 官方 `@electron/get` 下载并显示实时进度，直接使用其返回的、已经 checksum 校验的 ZIP 路径；
+- 下载与安装必须完整等待并验证：`@electron/get` 负责下载和 checksum；Windows 使用系统 PowerShell `Expand-Archive` 解压到 staging，先校验 `dist/version` 与平台可执行文件，再原子替换正式 `dist` 并写 `path.txt`；非 Windows 可使用 Electron package 的 `extract-zip`，但必须受 `yauzl >= 3.3.1` override 保护；
+- 禁止再采用“先 `@electron/get` 下载、再另起 `electron/install.js` 子进程”的双阶段安装。该方式曾出现子进程返回 0 但 `dist/path.txt` 未落地的假成功，且难以证明安装真正完成；
+- `electron` 不进入 pnpm `allowBuilds`，避免任何普通 `pnpm install` 意外触发 Chromium 下载；
+- 官方源连续 45 秒无新数据时可切换到 Electron 官方安装文档示例镜像，并继续使用 package 内 `checksums.json` 校验；
+- 检测到 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许 `@electron/get` 使用用户已有代理。
 
 ## 备用运行时：Tauri 2
 

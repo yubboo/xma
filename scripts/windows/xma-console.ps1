@@ -68,22 +68,10 @@ function Ensure-ElectronDesktopRuntime {
   Write-Host ''
   Write-Host "[Desktop] 你已明确选择 Electron 主桌面端，现在才允许下载 Electron $ElectronVersion Runtime。" -ForegroundColor Cyan
   Write-Host '[下载] Electron 包含 Chromium，体积较大；首次下载时间取决于网络，之后会使用本地缓存。' -ForegroundColor Yellow
-  Write-Host '[进度] 开启 @electron/get 下载诊断，长时间下载会显示进度，避免看起来像“卡死”。' -ForegroundColor DarkYellow
-  Write-Host '[代理] 如果系统设置了 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，XMA 会让 Electron 官方下载器使用现有代理。' -ForegroundColor DarkGray
-
-  $oldDebug = $env:DEBUG
-  $oldProgress = $env:ELECTRON_GET_NO_PROGRESS
-  $oldProxy = $env:ELECTRON_GET_USE_PROXY
-  try {
-    $env:DEBUG = '@electron/get*'
-    Remove-Item Env:ELECTRON_GET_NO_PROGRESS -ErrorAction SilentlyContinue
-    if ($env:HTTP_PROXY -or $env:HTTPS_PROXY -or $env:ALL_PROXY) { $env:ELECTRON_GET_USE_PROXY = '1' }
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','rebuild','electron')
-  } finally {
-    if ($null -eq $oldDebug) { Remove-Item Env:DEBUG -ErrorAction SilentlyContinue } else { $env:DEBUG = $oldDebug }
-    if ($null -eq $oldProgress) { Remove-Item Env:ELECTRON_GET_NO_PROGRESS -ErrorAction SilentlyContinue } else { $env:ELECTRON_GET_NO_PROGRESS = $oldProgress }
-    if ($null -eq $oldProxy) { Remove-Item Env:ELECTRON_GET_USE_PROXY -ErrorAction SilentlyContinue } else { $env:ELECTRON_GET_USE_PROXY = $oldProxy }
-  }
+  Write-Host '[进度] XMA 使用 Electron 官方 @electron/get 显示实时百分比/MB；Windows 解压使用系统 PowerShell Expand-Archive，避开 Node ZIP 兼容问题。' -ForegroundColor DarkYellow
+  Write-Host '[容错] 官方源 45 秒没有任何新数据会主动中止并切换备用镜像；ZIP 继续使用 Electron 官方 checksums.json 校验。' -ForegroundColor DarkYellow
+  Write-Host '[代理] 如果系统设置了 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，下载器会使用现有代理。' -ForegroundColor DarkGray
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/install-electron-runtime.ts')
 
   if (-not (Test-Path $electronExe)) {
     throw 'Electron Runtime 下载/安装未完成。可重试 Electron，或返回 Desktop 菜单选择 Tauri 2 备用运行时。'
@@ -144,7 +132,8 @@ function Start-Desktop {
     Write-Host '      使用系统 WebView2；仅明确选择时准备 Tauri Rust crates。' -ForegroundColor DarkGray
     Write-Host '  [0] 返回'
     Write-Host ''
-    $desktopChoice = (Read-Host '请选择 Desktop Runtime').Trim()
+    $desktopChoice = (Read-Host '请选择 Desktop Runtime（直接 Enter = Electron）').Trim()
+    if ([string]::IsNullOrWhiteSpace($desktopChoice)) { $desktopChoice = '1' }
     switch ($desktopChoice) {
       '1' { Start-ElectronDesktop; return }
       '2' { Start-TauriDesktop; return }
