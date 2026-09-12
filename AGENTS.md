@@ -145,7 +145,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ### GitHub 推送职责边界（锁死）
 
 - `XMA-GitHub.bat` / `xma-github.ps1` 是**纯 Git 工具**，只允许执行 Git 仓库初始化/状态、安全扫描、远端同步、暂存、提交、Push。
-- GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron 下载、winget 安装或任何环境准备。
+- GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron/Tauri 依赖准备、winget 安装或任何环境准备。
 - 依赖下载和环境安装只允许由 `XMA.bat` 的“一键准备环境”、开发运行或构建发布流程触发。
 - GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备环境`，不得擅自安装。
 - Git 提交必须同时受 `.gitignore` 与 GitHub Safety 二次校验保护；即使文件被误暂存，禁止路径也必须拒绝提交。
@@ -170,3 +170,27 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 
 
 - Windows PowerShell 所有外部命令必须统一复用 `scripts/windows/xma-common.ps1` 的 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`；禁止私自实现 `Run(..., $Args)`、`Invoke-External(..., $Args)` 等包装器。
+
+## Windows 依赖下载硬规则
+
+- `XMA.bat -> [1] 一键准备基础环境` 只准备系统工具，绝不能执行 `pnpm install`、`cargo fetch` 或任何项目依赖下载。
+- Web / CLI 运行时按需安装 Core 依赖；不得因为启动 Web/CLI 顺带准备 Desktop 依赖。
+- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**；两者都只能在用户明确选择 Desktop 或构建发布时准备。
+- Electron package 可以先用 `--ignore-scripts` 安装类型/元数据；Chromium Runtime 只允许在明确选择 Electron 后单独 rebuild 下载。
+- Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
+- 构建发布属于用户明确动作，可以按需安装构建依赖和预取 Rust crates。
+- `[7] 全量检查` 不自动下载依赖；缺失时提示，Rust 使用 offline 检查。
+
+
+## Desktop 技术栈硬规则
+
+- XMA Desktop 固定采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**。
+- Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
+- Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
+- `XMA.bat -> [1] 一键准备基础环境` 严禁下载 Electron；只有 Desktop -> Electron 或 Electron 构建才执行 postinstall/rebuild。
+- Tauri 2 只作为备用桌面运行时，Windows 使用系统 WebView2。
+- 两种 Desktop Runtime 必须复用 `apps/web/` UI 与 `core/` Agent Runtime，不得复制业务内核。
+- Electron/Tauri Shell 只负责窗口、系统桥接和桌面打包，不承担 Agent 推理。
+- 详细策略见 `docs/architecture/DESKTOP-RUNTIME.md`.
+
+> **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。

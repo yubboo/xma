@@ -53,11 +53,13 @@ function Test-ForbiddenGitPath([string]$Path) {
   $normalized = $Path.Replace('\','/').TrimStart('./')
   $directoryRules = @(
     'node_modules/', '.pnpm-store/', '.cache/', '.turbo/',
-    'dist/', 'build/', 'coverage/', 'runtime/', '.xma/',
+    'dist/', 'build/', 'coverage/', '.xma/',
     'native/target/', 'target/', 'apps/desktop/release/',
     'apps/desktop/web/', 'apps/desktop/native/',
     'tmp/', 'temp/', '.idea/'
   )
+  # 中文说明：只禁止仓库根目录的用户运行数据 runtime/；native/runtime/ 是 Rust 源码，必须允许提交。
+  if ($normalized.StartsWith('runtime/', [StringComparison]::OrdinalIgnoreCase)) { return $true }
   foreach ($rule in $directoryRules) {
     if ($normalized.StartsWith($rule, [StringComparison]::OrdinalIgnoreCase) -or $normalized.ToLowerInvariant().Contains('/' + $rule.ToLowerInvariant())) { return $true }
   }

@@ -36,26 +36,26 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 
 
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
-// 否则 Invoke-XmaExternal 可能吞掉 rustup/winget/npm/pnpm/cargo 的参数，退化成裸命令。
+// xma-prepare.ps1 现在只准备系统工具；项目依赖必须在运行/构建时惰性安装。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')",
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('default','stable')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','electron','electron-winstaller','esbuild')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','electron','--version')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','esbuild','--version')",
-  "Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')",
   '[检查] 正在检查 Git 是否可用...',
-  '[安装] 正在安装/校验 TypeScript、Electron、Vite、构建工具及所有 Workspace 依赖...',
-  '[验证] 正在验证 Electron Runtime...',
-  '[完成] XMA 开发环境准备完成。',
+  '[完成] XMA 基础开发环境准备完成。',
+  '不会执行 pnpm install、cargo fetch，也不会下载任何项目依赖',
 ]) {
-  if (!prepareSource.includes(marker)) throw new Error(`XMA external command forwarding regression: missing ${marker}`)
+  if (!prepareSource.includes(marker)) throw new Error(`XMA base-environment contract regression: missing ${marker}`)
 }
-
-
+for (const forbidden of [
+  "-ArgumentList @('install')",
+  "-ArgumentList @('fetch')",
+  "--filter','@xma/desktop'",
+  "-ArgumentList @('fetch')",
+]) {
+  if (prepareSource.includes(forbidden)) throw new Error(`Base environment preparation must not download project dependencies: ${forbidden}`)
+}
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
 // 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
@@ -90,7 +90,7 @@ for (const file of [
 }
 
 const githubSource = readFileSync('scripts/windows/xma-github.ps1', 'utf8')
-for (const forbidden of ['xma-prepare.ps1', "pnpm.cmd", "cargo.exe", "rustup.exe", "winget.exe", "npm.cmd", 'electron']) {
+for (const forbidden of ['xma-prepare.ps1', "pnpm.cmd", "cargo.exe", "rustup.exe", "winget.exe", "npm.cmd", 'electron', 'tauri']) {
   if (githubSource.includes(forbidden)) throw new Error(`GitHub helper must be pure Git and must not prepare/download dependencies: ${forbidden}`)
 }
 for (const marker of [
@@ -107,32 +107,80 @@ for (const marker of [
 
 const gitignoreSource = readFileSync('.gitignore', 'utf8')
 for (const marker of [
-  'node_modules/', '.pnpm-store/', 'dist/', 'build/', 'runtime/', '.xma/', 'workspaces/',
+  'node_modules/', '.pnpm-store/', 'dist/', 'build/', '/runtime/', '.xma/', 'workspaces/',
   'native/target/', '**/target/', 'apps/desktop/release/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
 ]) {
   if (!gitignoreSource.includes(marker)) throw new Error(`.gitignore repository hygiene regression: missing ${marker}`)
 }
 
-const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
-for (const marker of [
-  'allowBuilds:',
-  'electron: true',
-  'electron-winstaller: true',
-  'esbuild: true',
+
+const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string> }
+for (const forbiddenDesktopRuntime of ['electron', 'electron-builder', '@tauri-apps/cli', '@tauri-apps/api']) {
+  if (rootPackage.devDependencies?.[forbiddenDesktopRuntime]) {
+    throw new Error(`${forbiddenDesktopRuntime} must never be a root/common dependency`)
+  }
+}
+
+const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+  scripts?: Record<string, string>
+}
+if (desktopPackage.devDependencies?.electron !== '41.2.0') throw new Error('Electron primary runtime must be pinned exactly to 41.2.0')
+if (!desktopPackage.devDependencies?.['electron-builder']) throw new Error('electron-builder missing from Desktop primary runtime')
+if (!desktopPackage.devDependencies?.['@tauri-apps/cli']) throw new Error('Tauri 2 CLI dependency missing from Desktop fallback')
+if (!desktopPackage.dependencies?.['@tauri-apps/api']) throw new Error('Tauri 2 API dependency missing from Desktop fallback')
+for (const script of ['dev:electron', 'build:electron', 'dev:tauri', 'build:tauri']) {
+  if (!desktopPackage.scripts?.[script]) throw new Error(`Desktop runtime script missing: ${script}`)
+}
+for (const file of [
+  'apps/desktop/src/main.ts',
+  'apps/desktop/scripts/dev-electron.ts',
+  'apps/desktop/electron-builder.yml',
+  'apps/desktop/src-tauri/Cargo.toml',
+  'apps/desktop/src-tauri/build.rs',
+  'apps/desktop/src-tauri/src/main.rs',
+  'apps/desktop/src-tauri/tauri.conf.json',
 ]) {
+  if (!existsSync(file)) throw new Error(`Desktop runtime file missing: ${file}`)
+}
+
+const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
+for (const marker of ['allowBuilds:', 'electron: true', 'esbuild: true']) {
   if (!workspaceSource.includes(marker)) throw new Error(`pnpm 11 build-script allowlist regression: missing ${marker}`)
 }
-if (workspaceSource.includes('dangerouslyAllowAllBuilds')) throw new Error('XMA must never globally allow all dependency build scripts')
+if (workspaceSource.includes('dangerouslyAllowAllBuilds')) throw new Error('pnpm workspace must never enable dangerouslyAllowAllBuilds')
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
-for (const marker of ['[1] 一键准备环境', '← 推荐首次运行', '[6] 一键构建发布 · Windows Setup + Portable']) {
-  if (!consoleSource.includes(marker)) throw new Error(`XMA console UX marker missing: ${marker}`)
+for (const marker of [
+  '[1] 一键准备基础环境',
+  '← 推荐首次运行',
+  '[3] 开发运行 · Desktop',
+  'Electron 41.2.0',
+  'Tauri 2',
+  '主 / 推荐',
+  '副 / 备用',
+  "@('--filter','xma','install','--ignore-scripts')",
+  "@('--filter','@xma/desktop','install','--ignore-scripts')",
+  "@('--dir','apps/desktop','rebuild','electron')",
+  "@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')",
+  '@electron/get',
+  'ELECTRON_GET_USE_PROXY',
+  "@('check','--workspace','--offline')",
+  "@('test','--workspace','--offline')",
+]) {
+  if (!consoleSource.includes(marker)) throw new Error(`XMA console lazy-dependency/runtime contract missing: ${marker}`)
+}
+if (consoleSource.includes("pnpm.cmd' -ArgumentList @('install')")) {
+  throw new Error('XMA console must not perform an unscoped pnpm install')
 }
 for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', 'ForegroundColor Green']) {
   if (!githubSource.includes(marker)) throw new Error(`XMA GitHub helper marker missing: ${marker}`)
 }
 const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 if (!syncSource.includes('H:\\一键部署\\xma')) throw new Error('XMA sync target contract missing')
+if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync must exclude only root runtime, not native/runtime source')
+if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

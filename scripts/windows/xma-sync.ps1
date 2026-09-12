@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：把解压后的版本源码安全同步到固定 Git 工作目录 H:\一键部署\xma。
 关联模块：XMA-Sync.bat、XMA-GitHub.bat、GitHub yubboo/xma。
-当前实现：robocopy 镜像源码但保留目标 .git、runtime、node_modules、构建缓存；首次自动初始化 Git remote。
+当前实现：robocopy 镜像源码但只保留根运行数据目录 runtime、.git、node_modules、构建缓存；native/runtime 属于源码，必须正常同步。
 职责边界：不得删除目标仓库 .git，不得把用户运行时数据从版本包覆盖进去。
 #>
 
@@ -20,7 +20,7 @@ Write-Host "目标目录：$Target"
 if ($Source.TrimEnd('\') -ieq $Target.TrimEnd('\')) { throw '源目录和目标目录不能相同。' }
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
 
-$excludeDirs = @('.git','node_modules','dist','build','runtime','.xma','target','release')
+$excludeDirs = @('.git','node_modules','dist','build','.xma','target','release',(Join-Path $Source 'runtime'))
 $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP','/XD') + $excludeDirs
 & robocopy.exe @robocopyArgs
 $rc = $LASTEXITCODE

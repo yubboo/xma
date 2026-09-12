@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 
 const ignore = readFileSync('.gitignore', 'utf8')
 const requiredIgnoreRules = [
-  'node_modules/', '.pnpm-store/', 'dist/', 'build/', 'coverage/', 'runtime/', '.xma/', 'workspaces/',
+  'node_modules/', '.pnpm-store/', 'dist/', 'build/', 'coverage/', '/runtime/', '.xma/', 'workspaces/',
   'native/target/', '**/target/', 'apps/desktop/release/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
 ]
 for (const rule of requiredIgnoreRules) {
@@ -19,13 +19,16 @@ for (const rule of requiredIgnoreRules) {
 
 const forbidden = (path: string): boolean => {
   const value = path.replaceAll('\\', '/').toLowerCase()
-  const dirs = ['node_modules/', '.pnpm-store/', '.cache/', '.turbo/', 'dist/', 'build/', 'coverage/', 'runtime/', '.xma/', 'workspaces/', '/target/', 'native/target/', 'apps/desktop/release/']
+  if (value.startsWith('runtime/')) return true
+  const dirs = ['node_modules/', '.pnpm-store/', '.cache/', '.turbo/', 'dist/', 'build/', 'coverage/', '.xma/', 'workspaces/', '/target/', 'native/target/', 'apps/desktop/release/']
   if (dirs.some(dir => value.startsWith(dir) || value.includes(`/${dir}`))) return true
   const name = value.split('/').at(-1) ?? value
   if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) return true
   if (['secrets.json', 'credentials.json'].includes(name)) return true
   return ['.log', '.exe', '.msi', '.msix', '.dmg', '.pkg', '.appimage', '.deb', '.rpm', '.zip', '.7z', '.rar', '.pem', '.key', '.pfx', '.p12', '.keystore'].some(ext => name.endsWith(ext))
 }
+
+if (forbidden('native/runtime/src/main.rs')) throw new Error('native/runtime is Rust source and must never be treated as user runtime data')
 
 try {
   const tracked = execFileSync('git', ['ls-files'], { encoding: 'utf8' }).split(/\r?\n/).filter(Boolean)

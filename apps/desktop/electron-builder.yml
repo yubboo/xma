@@ -1,21 +1,26 @@
-appId: com.xiaoyu.xma
+# 文件作用：Electron 主桌面端的 Windows/跨平台打包配置。
+# 关联模块：apps/desktop/package.json、apps/desktop/src/main.ts、scripts/windows/xma-build-release.ps1。
+# 当前实现：Windows 生成可选择安装目录的 NSIS Setup 与 Portable；产物不进入 Git。
+# 职责边界：只定义桌面壳打包，不包含 Agent/Provider 业务逻辑。
+appId: app.xma.desktop
 productName: Xiaoyu Management Agent
+asar: true
 directories:
-  output: release
+  output: release/electron
 files:
   - dist/**
   - web/**
-  - native/**
+  - package.json
 win:
   target:
-    - nsis
-    - portable
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-mac:
-  target:
-    - dmg
-linux:
-  target:
-    - AppImage
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

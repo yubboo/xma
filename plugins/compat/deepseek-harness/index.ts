@@ -25,11 +25,14 @@ export function adaptDeepSeekHarnessPlugin<Config>(id: string, plugin: DeepSeekH
     adapted.id = `dsh:${id}`
     return adapted
   }
-  return {
+
+  // exactOptionalPropertyTypes 开启后，可选字段不能显式赋值 undefined；只有插件真的声明 inject 时才写入。
+  const adapted: XmaPluginObject<Config> = {
     id: `dsh:${id}`,
-    inject: plugin.inject,
-    apply(context, config) {
+    apply(context: XmaPluginContext, config?: Config) {
       return plugin.apply(context, config)
     },
   }
+  if (plugin.inject) adapted.inject = plugin.inject
+  return adapted
 }

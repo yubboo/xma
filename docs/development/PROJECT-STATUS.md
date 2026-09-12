@@ -30,3 +30,9 @@
 - Desktop 安装包跨平台实装验证。
 
 0.1.0 的定位是**可测试的平台骨架**，不是可对外宣称全部能力完成的正式产品版。
+
+## Desktop Runtime
+
+- 主：Electron 41.2.0（精确锁定，运行/构建时惰性下载 Runtime）；
+- 副：Tauri 2（系统 WebView2，作为备用桌面运行时）；
+- 两者共享 apps/web 与 core，不复制 Agent Runtime。

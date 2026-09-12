@@ -19,7 +19,7 @@ temp/
 *.swo
 
 # XMA 用户运行数据与本地工作区
-runtime/
+/runtime/
 .xma/
 workspaces/
 
@@ -64,3 +64,7 @@ apps/desktop/native/
 .vscode/*.local.json
 .DS_Store
 Thumbs.db
+
+# Tauri desktop build cache
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/

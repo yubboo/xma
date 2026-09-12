@@ -53,7 +53,7 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 
 ### 7.1 推送助手是纯 Git 工具
 
-`XMA-GitHub.bat` 只负责 Git 安全检查、远端同步、提交和 Push。它不得安装或更新 Node.js、pnpm、Rust、Electron、项目依赖，也不得执行 `pnpm install`、`cargo fetch` 等会下载依赖的命令。
+`XMA-GitHub.bat` 只负责 Git 安全检查、远端同步、提交和 Push。它不得安装或更新 Node.js、pnpm、Rust、Electron/Tauri、项目依赖，也不得执行 `pnpm install`、`cargo fetch` 等会下载依赖的命令。
 
 只有以下流程允许下载/安装依赖：
 
@@ -68,3 +68,14 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 禁止提交：`node_modules/`、Rust `target/`、`dist/`、`build/`、`runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret/私钥、Desktop 安装包以及 ZIP/7z 等发布归档。
 
 `.gitignore` 是第一层保护；`XMA-GitHub` 的 Safety Check 是第二层保护。第二层必须检查 Git 实际可提交文件和暂存区，不能仅相信 `.gitignore`。
+
+### Windows 项目依赖惰性安装规则
+
+- `XMA.bat -> [1] 一键准备基础环境` 只允许准备 Git / Node.js / pnpm / Rust / MSVC，禁止 `pnpm install`、`cargo fetch`、Electron/Tauri Desktop 项目依赖下载。
+- Web / XiaoYu CLI 启动时只安装 Root/Core 所需依赖，禁止顺带安装 Desktop、Electron Runtime 或 Tauri crates。
+- 只有用户明确进入 Desktop 二级菜单后，才允许准备对应运行时：Electron 41.2.0 主运行时单独执行 Electron postinstall/rebuild；Tauri 2 备用运行时按需预取 crates。
+- 只有用户明确构建/发布，才允许预取 Rust crates 和安装构建依赖。
+- 全量检查不得偷偷下载依赖；Rust 使用 `--offline` 检查，缺依赖就明确提示。
+- Electron/Tauri 下载不得默认切换第三方镜像。Electron 使用官方 `@electron/get` 缓存与进度；检测到用户已有 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许使用官方代理支持。
+
+> **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。

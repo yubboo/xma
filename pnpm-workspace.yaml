@@ -2,8 +2,8 @@ packages:
   - "apps/*"
 
 # pnpm 11 默认会阻止依赖包执行 install/postinstall 脚本。
-# XMA 只允许经过项目确认、确实用于开发/构建的依赖执行安装脚本，避免使用危险的全局放行。
+# Electron 41.2.0 是 XMA 主桌面运行时；只有用户明确启动/构建 Desktop 时才执行其 postinstall 下载二进制。
+# esbuild 是 TypeScript/Web 构建工具，需要安装当前平台 Native Binary。
 allowBuilds:
   electron: true
-  electron-winstaller: true
   esbuild: true

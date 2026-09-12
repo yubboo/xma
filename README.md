@@ -17,6 +17,7 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 - DeepSeek Harness / Cordis 插件兼容适配骨架；
 - Minecraft / Code / Writer 三个 Agent 定义，其中 Minecraft 是第一条优先实现线；
 - CLI、Desktop、Web、Server 四种 Shell；
+- Desktop：Electron 41.2.0 主运行时 + Tauri 2 备用运行时；
 - Windows 一键环境、同步、GitHub 推送、构建发布入口；
 - Architecture / Comment / Documentation Gates；
 - 版本规则与开发文档。

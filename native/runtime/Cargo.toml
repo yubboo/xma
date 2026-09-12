@@ -1,0 +1,9 @@
+[package]
+name = "xma-native-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+serde_json = "1"
+xma-native-protocol = { path = "../protocol" }
