@@ -28,19 +28,26 @@ GitHub：`https://github.com/yubboo/xma.git`
 - `XMA-GitHub.bat`：只负责 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。
 - `XMA.bat`：负责本地基础环境、项目运行、检查和构建。
 
-## XMA.bat 的依赖下载规则
+## XMA.bat 的依赖准备规则
 
-`[1] 一键准备基础环境` **只检查/安装系统工具**：Git、Node.js、pnpm、Rust/Cargo、MSVC。它不得执行 `pnpm install`、`cargo fetch`，也不得下载 Electron/Tauri 等任何项目依赖。
+`[1] 一键准备开发环境` 是首次运行的推荐入口，必须一次完成：
 
-项目依赖必须按用户动作惰性安装：
+- Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；
+- `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；
+- `pnpm rebuild esbuild`：只准备 TypeScript/Web 工具链必须的 esbuild Native Binary；
+- `cargo fetch`：预取 XMA 根 Rust Workspace（`native/protocol`、`native/runtime`）依赖。
 
-- `[2] Web`：只安装 Root/Core/Web 所需依赖。
-- `[4] XiaoYu CLI`：只安装 Root/Core/CLI 所需依赖。
-- `[3] Desktop`：进入二级菜单后再选择运行时。
-  - `[1] Electron 41.2.0`：主/推荐；首次运行才下载 Electron Chromium Runtime。
-  - `[2] Tauri 2`：副/备用；只在明确选择时预取 Tauri Rust crates。
-- `[5]/[6] 构建发布`：默认构建 Electron 主桌面端；备用 Tauri 2 可通过 `xma-build-release.ps1 -DesktopRuntime tauri` 构建。
-- `[7] 全量检查`：不自动下载依赖；缺依赖时给出明确提示，Rust check/test 使用 `--offline`。
+完成 `[1]` 后：
+
+- `[2] Web`：直接启动，不再次安装依赖；
+- `[4] XiaoYu CLI`：直接启动，不再次安装依赖；
+- `[7] 全量检查`：直接使用已经准备好的依赖，Rust check/test 使用 `--offline`；
+- `[3] Desktop`：只补齐用户明确选择的桌面运行时。
+  - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
+  - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
+- `[5]/[6] 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行构建。
+
+`esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
 
 ## Electron 41.2.0 主桌面端
 

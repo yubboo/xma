@@ -36,25 +36,30 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 
 
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
-// xma-prepare.ps1 现在只准备系统工具；项目依赖必须在运行/构建时惰性安装。
+// xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')",
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('default','stable')",
   '[检查] 正在检查 Git 是否可用...',
-  '[完成] XMA 基础开发环境准备完成。',
-  '不会执行 pnpm install、cargo fetch，也不会下载任何项目依赖',
+  '[完成] XMA 开发环境与通用项目依赖已准备完成。',
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
+  "Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')",
+  "@('exec','tsx','-e'",
+  'Electron Chromium Runtime 不会在这里下载',
 ]) {
-  if (!prepareSource.includes(marker)) throw new Error(`XMA base-environment contract regression: missing ${marker}`)
+  if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
-for (const forbidden of [
-  "-ArgumentList @('install')",
-  "-ArgumentList @('fetch')",
-  "--filter','@xma/desktop'",
-  "-ArgumentList @('fetch')",
-]) {
-  if (prepareSource.includes(forbidden)) throw new Error(`Base environment preparation must not download project dependencies: ${forbidden}`)
+if (prepareSource.includes("@('exec','esbuild','--version')")) {
+  throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
+}
+if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) {
+  throw new Error('XMA preparation must never download Electron Chromium Runtime')
+}
+if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')")) {
+  throw new Error('XMA preparation must not prefetch Tauri Rust crates')
 }
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
@@ -153,15 +158,16 @@ if (workspaceSource.includes('dangerouslyAllowAllBuilds')) throw new Error('pnpm
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
-  '[1] 一键准备基础环境',
+  '[1] 一键准备开发环境',
   '← 推荐首次运行',
+  '[2] 开发运行 · Web                    已准备后直接启动',
+  '[4] 运行 · XiaoYu CLI                 已准备后直接启动',
   '[3] 开发运行 · Desktop',
   'Electron 41.2.0',
   'Tauri 2',
   '主 / 推荐',
   '副 / 备用',
-  "@('--filter','xma','install','--ignore-scripts')",
-  "@('--filter','@xma/desktop','install','--ignore-scripts')",
+  'Assert-CoreDependencies',
   "@('--dir','apps/desktop','rebuild','electron')",
   "@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')",
   '@electron/get',
@@ -169,10 +175,14 @@ for (const marker of [
   "@('check','--workspace','--offline')",
   "@('test','--workspace','--offline')",
 ]) {
-  if (!consoleSource.includes(marker)) throw new Error(`XMA console lazy-dependency/runtime contract missing: ${marker}`)
+  if (!consoleSource.includes(marker)) throw new Error(`XMA console prepared-dependency/runtime contract missing: ${marker}`)
 }
-if (consoleSource.includes("pnpm.cmd' -ArgumentList @('install')")) {
-  throw new Error('XMA console must not perform an unscoped pnpm install')
+for (const forbidden of [
+  "@('install','--ignore-scripts')",
+  "@('rebuild','esbuild')",
+  "@('exec','esbuild','--version')",
+]) {
+  if (consoleSource.includes(forbidden)) throw new Error(`Web/CLI console must not reinstall common dependencies after [1]: ${forbidden}`)
 }
 for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', 'ForegroundColor Green']) {
   if (!githubSource.includes(marker)) throw new Error(`XMA GitHub helper marker missing: ${marker}`)

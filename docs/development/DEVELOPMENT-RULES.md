@@ -57,9 +57,9 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 
 只有以下流程允许下载/安装依赖：
 
-- `XMA.bat → [1] 一键准备环境`；
-- 用户明确启动 Web / Desktop / CLI，且运行前检测到依赖缺失；
-- 用户明确执行构建/发布。
+- `XMA.bat → [1] 一键准备开发环境`：准备通用 Workspace JavaScript 依赖、esbuild 与 XMA Native Rust crates；
+- 用户明确选择 Electron/Tauri Desktop：只补齐对应 Desktop Runtime；
+- 用户明确执行构建/发布：允许补齐所选 Desktop Runtime 与构建依赖。
 
 ### 7.2 GitHub 允许提交的内容
 
@@ -69,13 +69,15 @@ CLI、Desktop、Web 只是同一个 Core 的不同 Shell。禁止复制 Agent Lo
 
 `.gitignore` 是第一层保护；`XMA-GitHub` 的 Safety Check 是第二层保护。第二层必须检查 Git 实际可提交文件和暂存区，不能仅相信 `.gitignore`。
 
-### Windows 项目依赖惰性安装规则
+### Windows 项目依赖准备规则
 
-- `XMA.bat -> [1] 一键准备基础环境` 只允许准备 Git / Node.js / pnpm / Rust / MSVC，禁止 `pnpm install`、`cargo fetch`、Electron/Tauri Desktop 项目依赖下载。
-- Web / XiaoYu CLI 启动时只安装 Root/Core 所需依赖，禁止顺带安装 Desktop、Electron Runtime 或 Tauri crates。
-- 只有用户明确进入 Desktop 二级菜单后，才允许准备对应运行时：Electron 41.2.0 主运行时单独执行 Electron postinstall/rebuild；Tauri 2 备用运行时按需预取 crates。
-- 只有用户明确构建/发布，才允许预取 Rust crates 和安装构建依赖。
-- 全量检查不得偷偷下载依赖；Rust 使用 `--offline` 检查，缺依赖就明确提示。
+- `XMA.bat -> [1] 一键准备开发环境` 必须一次完成系统工具 + Workspace JavaScript 依赖元数据 + esbuild Native Binary + XMA Native Rust crates。
+- `[1]` 必须使用 `pnpm install --ignore-scripts`，禁止在准备阶段触发 Electron Chromium Runtime postinstall。
+- Web / XiaoYu CLI 启动时只能检查依赖并直接启动；缺依赖时提示先运行 `[1]`，不得自行安装。
+- Electron 41.2.0 package 元数据可以在 `[1]` 中准备；Chromium Runtime 只有用户明确进入 Desktop -> Electron 或构建 Electron 时才允许 `rebuild electron` 下载。
+- Tauri 2 JavaScript package 可以在 `[1]` 中准备；Tauri Rust crates 只有用户明确选择 Tauri 2 或对应构建时才预取。
+- `esbuild` 为 Vite/tsx/tsup 的内部依赖，禁止要求根 `node_modules/.bin/esbuild` 或使用 `pnpm exec esbuild` 作为验证；使用 `tsx` 最小执行、Vite/tsup 版本等真实链路验证。
+- `[7] 全量检查` 不偷偷下载依赖；缺依赖时提示先运行 `[1]`，Rust 使用 `--offline` 检查。
 - Electron/Tauri 下载不得默认切换第三方镜像。Electron 使用官方 `@electron/get` 缓存与进度；检测到用户已有 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许使用官方代理支持。
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。

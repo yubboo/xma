@@ -147,7 +147,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `XMA-GitHub.bat` / `xma-github.ps1` 是**纯 Git 工具**，只允许执行 Git 仓库初始化/状态、安全扫描、远端同步、暂存、提交、Push。
 - GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron/Tauri 依赖准备、winget 安装或任何环境准备。
 - 依赖下载和环境安装只允许由 `XMA.bat` 的“一键准备环境”、开发运行或构建发布流程触发。
-- GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备环境`，不得擅自安装。
+- GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备开发环境`，不得擅自安装。
 - Git 提交必须同时受 `.gitignore` 与 GitHub Safety 二次校验保护；即使文件被误暂存，禁止路径也必须拒绝提交。
 - 必须提交用于可复现构建的源码锁文件，例如 `pnpm-lock.yaml`、`Cargo.lock`；不得提交依赖目录、构建产物、运行数据、用户工作区、Secret、安装包和本地缓存。
 
@@ -171,15 +171,15 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 
 - Windows PowerShell 所有外部命令必须统一复用 `scripts/windows/xma-common.ps1` 的 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`；禁止私自实现 `Run(..., $Args)`、`Invoke-External(..., $Args)` 等包装器。
 
-## Windows 依赖下载硬规则
+## Windows 依赖准备硬规则
 
-- `XMA.bat -> [1] 一键准备基础环境` 只准备系统工具，绝不能执行 `pnpm install`、`cargo fetch` 或任何项目依赖下载。
-- Web / CLI 运行时按需安装 Core 依赖；不得因为启动 Web/CLI 顺带准备 Desktop 依赖。
-- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**；两者都只能在用户明确选择 Desktop 或构建发布时准备。
-- Electron package 可以先用 `--ignore-scripts` 安装类型/元数据；Chromium Runtime 只允许在明确选择 Electron 后单独 rebuild 下载。
-- Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
-- 构建发布属于用户明确动作，可以按需安装构建依赖和预取 Rust crates。
-- `[7] 全量检查` 不自动下载依赖；缺失时提示，Rust 使用 offline 检查。
+- `XMA.bat -> [1] 一键准备开发环境` 是首次运行的唯一推荐入口：一次准备系统工具、全部 Workspace JavaScript 依赖元数据、esbuild Native Binary 与 XMA Native Rust crates。
+- `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
+- Web / CLI 在 `[1]` 成功后只负责直接启动；不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。
+- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后单独 rebuild 下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
+- `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
+- 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
+- `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
 
 
 ## Desktop 技术栈硬规则
@@ -187,7 +187,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - XMA Desktop 固定采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**。
 - Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
 - Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
-- `XMA.bat -> [1] 一键准备基础环境` 严禁下载 Electron；只有 Desktop -> Electron 或 Electron 构建才执行 postinstall/rebuild。
+- `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime。
 - Tauri 2 只作为备用桌面运行时，Windows 使用系统 WebView2。
 - 两种 Desktop Runtime 必须复用 `apps/web/` UI 与 `core/` Agent Runtime，不得复制业务内核。
 - Electron/Tauri Shell 只负责窗口、系统桥接和桌面打包，不承担 Agent 推理。

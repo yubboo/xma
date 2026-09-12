@@ -1,5 +1,5 @@
 ﻿<#
-文件作用：构建 XMA 可交付产物；只有用户明确选择构建时才安装项目构建依赖和桌面运行时依赖。
+文件作用：构建 XMA 可交付产物；复用 [1] 已准备的通用依赖，只为明确选择的 Desktop Runtime 补齐运行时并执行构建。
 关联模块：package.json、apps/desktop、Rust workspace、xma-prepare.ps1。
 当前实现：TypeScript/Web/CLI/Server、Rust Native release、Electron 41.2.0 主桌面端；可选构建 Tauri 2 备用桌面端。
 职责边界：macOS 安装包必须在 macOS Runner/机器构建；Linux 包必须在 Linux Runner/机器构建，不伪造跨平台完成。
@@ -16,30 +16,30 @@ Set-Location $Root
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
 
-foreach ($command in @('node.exe','pnpm.cmd','cargo.exe')) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
-    Write-Host '[准备] 构建所需系统环境不完整，先进入 XMA 基础环境准备。' -ForegroundColor Yellow
-    & (Join-Path $PSScriptRoot 'xma-prepare.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'XMA 基础环境准备失败。' }
-    break
-  }
+$requiredCommands = @('node.exe','pnpm.cmd','cargo.exe')
+$requiredFiles = @(
+  (Join-Path $Root 'node_modules\.bin\tsx.cmd'),
+  (Join-Path $Root 'node_modules\.bin\vite.cmd'),
+  (Join-Path $Root 'apps\desktop\node_modules\electron\package.json')
+)
+$needsPrepare = $false
+foreach ($command in $requiredCommands) {
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { $needsPrepare = $true }
 }
-
-Write-Host '[构建依赖] 你已明确选择构建，现在允许安装项目构建依赖。' -ForegroundColor Cyan
-Write-Host '[安装] 正在安装 Root/Core 构建依赖（忽略依赖脚本）...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--filter','xma','install','--ignore-scripts')
-Write-Host '[安装] 正在安装 Desktop JavaScript 依赖元数据（忽略 postinstall）...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--filter','@xma/desktop','install','--ignore-scripts')
-Write-Host '[安装] 正在准备 esbuild Native Binary...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
-Write-Host '[同步] 正在预取 XMA Native Rust crates...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')
+foreach ($file in $requiredFiles) {
+  if (-not (Test-Path $file)) { $needsPrepare = $true }
+}
+if ($needsPrepare) {
+  Write-Host '[准备] 构建所需开发环境或通用依赖不完整，先执行 XMA 一键准备开发环境。' -ForegroundColor Yellow
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1')
+  if ($LASTEXITCODE -ne 0) { throw 'XMA 开发环境准备失败。' }
+}
 
 if ($DesktopRuntime -in @('electron','both')) {
   $electronExe = Join-Path $Root 'apps\desktop\node_modules\electron\dist\electron.exe'
   if (-not (Test-Path $electronExe)) {
     Write-Host "[下载] 正在准备 Electron $ElectronVersion 主桌面 Runtime；首次下载包含 Chromium，可能需要数分钟。" -ForegroundColor Yellow
-    Write-Host '[进度] @electron/get 超过约 30 秒会显示下载进度，并使用本地缓存加速以后构建。' -ForegroundColor DarkYellow
+    Write-Host '[进度] 开启 @electron/get 下载诊断，并使用官方缓存加速以后构建。' -ForegroundColor DarkYellow
     $oldDebug = $env:DEBUG
     $oldProgress = $env:ELECTRON_GET_NO_PROGRESS
     $oldProxy = $env:ELECTRON_GET_USE_PROXY

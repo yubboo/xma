@@ -56,7 +56,7 @@ XMA-GitHub.bat
 XMA.bat
 ```
 
-菜单提供：一键准备环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
 
 ## 仓库
 
