@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+
+# pnpm 11 默认会阻止依赖包执行 install/postinstall 脚本。
+# XMA 只允许经过项目确认、确实用于开发/构建的依赖执行安装脚本，避免使用危险的全局放行。
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true

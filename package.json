@@ -1,0 +1,43 @@
+{
+  "name": "xma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Xiaoyu Management Agent - 小鱼管理智能体",
+  "packageManager": "pnpm@11.17.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm dev:web",
+    "dev:web": "vite apps/web",
+    "dev:cli": "tsx apps/cli/src/main.ts",
+    "dev:server": "tsx apps/server/src/main.ts",
+    "dev:desktop": "pnpm --dir apps/desktop dev",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test core/tests/*.test.ts",
+    "gate:architecture": "tsx scripts/gates/check-architecture.ts",
+    "gate:comments": "tsx scripts/gates/check-comments.ts",
+    "gate:docs": "tsx scripts/gates/check-documentation.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm gate:architecture && pnpm gate:comments && pnpm gate:docs && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
+    "build:web": "vite build apps/web --outDir ../../dist/web",
+    "build:cli": "tsup apps/cli/src/main.ts --format esm --platform node --out-dir dist/cli --banner.js '#!/usr/bin/env node'",
+    "build:server": "tsup apps/server/src/main.ts --format esm --platform node --out-dir dist/server",
+    "build:desktop": "pnpm --dir apps/desktop build",
+    "build": "pnpm build:web && pnpm build:cli && pnpm build:server && pnpm build:desktop",
+    "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/xma-build-release.ps1 -WindowsPackages",
+    "release:current": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows/xma-build-release.ps1",
+    "gate:version": "tsx scripts/gates/check-version.ts",
+    "gate:windows": "tsx scripts/gates/check-windows-helpers.ts",
+    "gate:repo": "tsx scripts/gates/check-repository-hygiene.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}

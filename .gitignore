@@ -1,0 +1,66 @@
+# 依赖与包管理缓存
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# 构建产物 / 覆盖率 / 临时缓存
+dist/
+build/
+coverage/
+.cache/
+.turbo/
+tmp/
+temp/
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# XMA 用户运行数据与本地工作区
+runtime/
+.xma/
+workspaces/
+
+# Rust 编译缓存
+native/target/
+**/target/
+
+# Desktop 构建输出
+apps/desktop/release/
+apps/desktop/web/
+apps/desktop/native/
+
+# 本地 Secret / 环境变量
+.env
+.env.*
+!.env.example
+**/secrets.json
+**/credentials.json
+*.pem
+*.key
+*.pfx
+*.p12
+*.keystore
+
+# 用户安装包与归档产物（发布走 GitHub Release，不进源码提交）
+*.exe
+*.msi
+*.msix
+*.dmg
+*.pkg
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+
+# IDE / OS 本地文件
+.idea/
+.vscode/*.local.json
+.DS_Store
+Thumbs.db

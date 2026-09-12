@@ -1,0 +1,35 @@
+/**
+ * 文件作用：把 DeepSeek Harness / Cordis 风格插件适配到 XMA Plugin Host。
+ * 关联模块：core/src/plugin.ts、docs/architecture/PLUGIN-SYSTEM.md。
+ * 当前实现：对象/函数插件、inject、apply(ctx)、ctx.<service>、effect 和基础事件 API 的兼容入口。
+ * 职责边界：这不是对所有 DSH 专属 Service 的“已完成兼容”声明；每个 Service 仍需要 Bridge 与 Conformance Test。
+ */
+
+import type { Disposer } from '../../../core/src/types.ts'
+import type { XmaPlugin, XmaPluginContext, XmaPluginObject } from '../../../core/src/plugin.ts'
+
+export interface DeepSeekHarnessPluginObject<Config = unknown> {
+  inject?: readonly string[]
+  apply(context: XmaPluginContext, config?: Config): void | Disposer | Promise<void | Disposer>
+}
+
+export type DeepSeekHarnessPluginFunction<Config = unknown> = ((context: XmaPluginContext, config?: Config) => void | Disposer | Promise<void | Disposer>) & {
+  inject?: readonly string[]
+}
+
+export type DeepSeekHarnessPluginLike<Config = unknown> = DeepSeekHarnessPluginObject<Config> | DeepSeekHarnessPluginFunction<Config>
+
+export function adaptDeepSeekHarnessPlugin<Config>(id: string, plugin: DeepSeekHarnessPluginLike<Config>): XmaPlugin<Config> {
+  if (typeof plugin === 'function') {
+    const adapted = plugin as XmaPlugin<Config> & { id?: string; inject?: readonly string[] }
+    adapted.id = `dsh:${id}`
+    return adapted
+  }
+  return {
+    id: `dsh:${id}`,
+    inject: plugin.inject,
+    apply(context, config) {
+      return plugin.apply(context, config)
+    },
+  }
+}

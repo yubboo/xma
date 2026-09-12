@@ -1,0 +1,16 @@
+{
+  "name": "@xma/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "dev": "tsup src/main.ts --format cjs --platform node --out-dir dist && electron .",
+    "build": "tsup src/main.ts --format cjs --platform node --out-dir dist"
+  },
+  "devDependencies": {
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "tsup": "^8.5.0"
+  }
+}

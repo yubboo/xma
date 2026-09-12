@@ -1,0 +1,21 @@
+appId: com.xiaoyu.xma
+productName: Xiaoyu Management Agent
+directories:
+  output: release
+files:
+  - dist/**
+  - web/**
+  - native/**
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target:
+    - dmg
+linux:
+  target:
+    - AppImage

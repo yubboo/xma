@@ -1,0 +1,9 @@
+{
+  "name": "@xma/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "xma": "../../dist/cli/main.js"
+  }
+}
