@@ -1,7 +1,7 @@
 /**
  * 文件作用：验证第一条 OpenAI-compatible Adapter 的统一 Provider Contract 与真实 HTTP/SSE 行为。
  * 关联模块：core/src/provider.ts、model.ts、plugins/providers/openai-compatible.ts。
- * 当前实现：Profile/Secret 边界、Model Catalog、文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化和 Brain Ready Probe 测试。
+ * 当前实现：Profile/Secret 边界、Model Catalog、Provider-safe Tool wire name 双向映射、文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化和 Brain Ready Probe 测试。
  * 职责边界：这里使用本机 mock HTTP server 证明协议实现，不代表任何外部厂商已通过真实账号 E2E 或可被标记为产品 Ready。
  */
 
@@ -72,7 +72,7 @@ test('ProviderRegistry stores references instead of Secret values and rejects pe
   }), /cannot persist secret-bearing header/)
 })
 
-test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls and usage', async () => {
+test('OpenAI-compatible Adapter normalizes catalog, provider-safe tool wire names, streaming text, tool calls and usage', async () => {
   const requests: Array<{ url: string; authorization: string | undefined; body?: Record<string, unknown> }> = []
   await withServer(async (request, response) => {
     if (request.url === '/v1/models' && request.method === 'GET') {
@@ -87,7 +87,12 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
       response.writeHead(200, { 'content-type': 'text/event-stream' })
       response.write('data: {"choices":[{"delta":{"reasoning_content":"先分析"}}]}\n\n')
       response.write('data: {"choices":[{"delta":{"content":"你好"}}]}\n\n')
-      response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"demo.inspect","arguments":"{\\"path\\":"}}]}}]}\n\n')
+      const tools = body.tools as Array<{ function?: { name?: string } }>
+      const wireToolName = tools[0]?.function?.name
+      assert.equal(typeof wireToolName, 'string')
+      assert.match(String(wireToolName), /^[A-Za-z0-9_-]{1,64}$/)
+      assert.notEqual(wireToolName, 'native.fs.read_text')
+      response.write(`data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":${JSON.stringify(wireToolName)},\"arguments\":\"{\\\"path\\\":\"}}]}}]}\n\n`)
       response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"README.md\\"}"}}]}}]}\n\n')
       response.write('data: {"choices":[],"usage":{"prompt_tokens":21,"completion_tokens":7,"prompt_tokens_details":{"cached_tokens":5},"completion_tokens_details":{"reasoning_tokens":2}}}\n\n')
       response.end('data: [DONE]\n\n')
@@ -117,7 +122,7 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
     const events: ModelEvent[] = []
     for await (const event of provider.stream({
       messages: [{ role: 'system', content: 'system' }, { role: 'user', content: 'hello' }],
-      tools: [{ name: 'demo.inspect', description: 'inspect', inputSchema: { type: 'object' } }],
+      tools: [{ name: 'native.fs.read_text', description: 'inspect', inputSchema: { type: 'object' } }],
       signal: new AbortController().signal,
     })) events.push(event)
 
@@ -126,7 +131,7 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
       { type: 'text', text: '你好' },
       { type: 'usage', inputTokens: 21, outputTokens: 7, cachedInputTokens: 5, reasoningTokens: 2 },
       { type: 'provider-continuation', data: { adapterId: OPENAI_COMPATIBLE_ADAPTER_ID, reasoningContent: '先分析' } },
-      { type: 'tool-call', callId: 'call-1', name: 'demo.inspect', arguments: { path: 'README.md' } },
+      { type: 'tool-call', callId: 'call-1', name: 'native.fs.read_text', arguments: { path: 'README.md' } },
     ])
     const continuation = events.find(event => event.type === 'provider-continuation')
     assert.equal(continuation?.type, 'provider-continuation')
@@ -137,12 +142,12 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
         {
           role: 'assistant',
           content: '你好',
-          toolCalls: [{ callId: 'call-1', name: 'demo.inspect', arguments: { path: 'README.md' } }],
+          toolCalls: [{ callId: 'call-1', name: 'native.fs.read_text', arguments: { path: 'README.md' } }],
           ...(continuation?.type === 'provider-continuation' ? { providerContinuation: continuation.data } : {}),
         },
-        { role: 'tool', content: 'ok', toolCallId: 'call-1', toolName: 'demo.inspect' },
+        { role: 'tool', content: 'ok', toolCallId: 'call-1', toolName: 'native.fs.read_text' },
       ],
-      tools: [{ name: 'demo.inspect', description: 'inspect', inputSchema: { type: 'object' } }],
+      tools: [{ name: 'native.fs.read_text', description: 'inspect', inputSchema: { type: 'object' } }],
       signal: new AbortController().signal,
     })) secondEvents.push(event)
     assert.ok(secondEvents.length > 0)
@@ -159,6 +164,11 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
     const secondMessages = secondChat?.body?.messages as Array<Record<string, unknown>>
     const assistantMessage = secondMessages.find(message => message.role === 'assistant')
     assert.equal(assistantMessage?.reasoning_content, '先分析')
+    const firstWireToolName = (((chat?.body?.tools as Array<{ function?: { name?: string } }>)[0]?.function?.name))
+    const assistantToolCall = (assistantMessage?.tool_calls as Array<{ function?: { name?: string } }> | undefined)?.[0]
+    const toolMessage = secondMessages.find(message => message.role === 'tool')
+    assert.equal(assistantToolCall?.function?.name, firstWireToolName)
+    assert.equal(toolMessage?.name, firstWireToolName)
   })
 })
 

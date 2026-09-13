@@ -17,10 +17,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use xma_native_protocol::{
-    CapabilityGrant, CapabilityKind, CapabilityLease, JsonRpcRequest, JsonRpcResponse,
-    CredentialDeleteRequest, CredentialReadRequest, CredentialWriteRequest, NativeHostPolicy,
-    ProcessRunRequest, ProcessRunResult, ReadTextRequest, ReadTextResult, RuntimeStatus,
-    WriteTextRequest, WriteTextResult, PROTOCOL_VERSION,
+    CapabilityGrant, CapabilityKind, CapabilityLease, CredentialDeleteRequest,
+    CredentialReadRequest, CredentialWriteRequest, JsonRpcRequest, JsonRpcResponse,
+    NativeHostPolicy, ProcessRunRequest, ProcessRunResult, ReadTextRequest, ReadTextResult,
+    RuntimeStatus, WriteTextRequest, WriteTextResult, PROTOCOL_VERSION,
 };
 
 const DEFAULT_READ_MAX_BYTES: usize = 1024 * 1024;
@@ -664,8 +664,9 @@ fn handle(request: JsonRpcRequest, state: &mut RuntimeState) -> JsonRpcResponse 
         "process/run" => decode::<ProcessRunRequest>(request.params)
             .and_then(|params| run_process(state, params))
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
-        "credential/status" => ensure_initialized(state)
-            .and_then(|_| serde_json::to_value(credentials::status()).map_err(|error| error.to_string())),
+        "credential/status" => ensure_initialized(state).and_then(|_| {
+            serde_json::to_value(credentials::status()).map_err(|error| error.to_string())
+        }),
         "credential/read" => ensure_initialized(state)
             .and_then(|_| decode::<CredentialReadRequest>(request.params))
             .and_then(|params| credentials::read(&params.key))

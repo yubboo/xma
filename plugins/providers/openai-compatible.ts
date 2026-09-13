@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA 第一条真实 OpenAI-compatible Transport Adapter。
  * 关联模块：core/src/provider.ts、core/src/model.ts、未来 Provider Settings/Conformance Tests。
- * 当前实现：Bearer 认证、/models Catalog、Chat Completions SSE 文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化与完整 Brain Ready Probe。
+ * 当前实现：Bearer 认证、/models Catalog、Chat Completions SSE 文本/Reasoning/Tool Call/Usage、canonical Tool 名与 Provider wire function 名映射、thinking continuation、取消、错误归一化与完整 Brain Ready Probe。
  * 职责边界：本文件只代表 OpenAI-compatible 协议族，不因厂商品牌名称推断兼容；OpenAI Responses、Claude/Gemini native 必须使用独立 Adapter。
  */
 
@@ -112,7 +112,77 @@ async function providerFetch(url: string, init: RequestInit, signal: AbortSignal
   }
 }
 
-function toOpenAiMessage(message: ModelMessage, profile: ProviderProfile): JsonObject {
+const TOOL_WIRE_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+function fnv1a32(value: string, seed = 0x811c9dc5): string {
+  let hash = seed >>> 0
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash.toString(16).padStart(8, '0')
+}
+
+function generatedToolWireName(canonicalName: string, attempt = 0): string {
+  const readable = canonicalName.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'tool'
+  const digestInput = attempt === 0 ? canonicalName : `${canonicalName}#${attempt}`
+  const digest = `${fnv1a32(digestInput)}${fnv1a32(`${digestInput}\0xma`, 0x9e3779b9)}`
+  const prefix = 'xma_'
+  const maxReadable = 64 - prefix.length - 1 - digest.length
+  return `${prefix}${readable.slice(0, maxReadable)}_${digest}`
+}
+
+interface ToolWireCodec {
+  encode(canonicalName: string): string
+  decode(wireName: string): string
+}
+
+/**
+ * XMA canonical Tool 名允许 `.` / `:` / `/` 表达领域；OpenAI-compatible function.name 线协议不允许。
+ * 这里只在 Adapter 边界做稳定、可逆映射，Core ToolPlan/Session/Approval 永远继续使用 canonical 名。
+ */
+function createToolWireCodec(request: ModelRequest): ToolWireCodec {
+  const canonicalNames = new Set<string>()
+  for (const tool of request.tools) canonicalNames.add(tool.name)
+  for (const message of request.messages) {
+    for (const call of message.toolCalls ?? []) canonicalNames.add(call.name)
+    if (message.toolName) canonicalNames.add(message.toolName)
+  }
+
+  const canonicalToWire = new Map<string, string>()
+  const wireToCanonical = new Map<string, string>()
+  const ordered = [...canonicalNames].sort()
+
+  // 先保留所有本身已经合法的线协议名，避免生成别名抢占真实 canonical 名。
+  for (const canonicalName of ordered) {
+    if (!TOOL_WIRE_NAME_PATTERN.test(canonicalName)) continue
+    canonicalToWire.set(canonicalName, canonicalName)
+    wireToCanonical.set(canonicalName, canonicalName)
+  }
+
+  for (const canonicalName of ordered) {
+    if (canonicalToWire.has(canonicalName)) continue
+    let attempt = 0
+    let wireName = generatedToolWireName(canonicalName, attempt)
+    while (wireToCanonical.has(wireName) && wireToCanonical.get(wireName) !== canonicalName) {
+      attempt += 1
+      wireName = generatedToolWireName(canonicalName, attempt)
+    }
+    canonicalToWire.set(canonicalName, wireName)
+    wireToCanonical.set(wireName, canonicalName)
+  }
+
+  return {
+    encode(canonicalName) {
+      return canonicalToWire.get(canonicalName) ?? (TOOL_WIRE_NAME_PATTERN.test(canonicalName) ? canonicalName : generatedToolWireName(canonicalName))
+    },
+    decode(wireName) {
+      return wireToCanonical.get(wireName) ?? wireName
+    },
+  }
+}
+
+function toOpenAiMessage(message: ModelMessage, profile: ProviderProfile, toolNames: ToolWireCodec): JsonObject {
   let result: JsonObject
   if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
     result = {
@@ -121,13 +191,13 @@ function toOpenAiMessage(message: ModelMessage, profile: ProviderProfile): JsonO
       tool_calls: message.toolCalls.map(call => ({
         id: call.callId,
         type: 'function',
-        function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+        function: { name: toolNames.encode(call.name), arguments: JSON.stringify(call.arguments) },
       })),
     }
   } else if (message.role === 'tool') {
     if (!message.toolCallId) throw new ProviderRequestError('malformed_response', 'XMA tool message is missing toolCallId.', false)
     result = { role: 'tool', content: message.content, tool_call_id: message.toolCallId }
-    if (message.toolName) result.name = message.toolName
+    if (message.toolName) result.name = toolNames.encode(message.toolName)
   } else {
     result = { role: message.role, content: message.content }
   }
@@ -143,11 +213,11 @@ function toOpenAiMessage(message: ModelMessage, profile: ProviderProfile): JsonO
   return result
 }
 
-function toOpenAiTool(spec: ModelToolSpec): JsonObject {
+function toOpenAiTool(spec: ModelToolSpec, toolNames: ToolWireCodec): JsonObject {
   return {
     type: 'function',
     function: {
-      name: spec.name,
+      name: toolNames.encode(spec.name),
       description: spec.description,
       parameters: structuredClone(spec.inputSchema),
     },
@@ -250,13 +320,14 @@ class OpenAiCompatibleModel implements ModelProvider {
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const headers = await resolveHeaders(this.profile, this.credentials)
+    const toolNames = createToolWireCodec(request)
     const body: JsonObject = {
       model: this.model,
-      messages: request.messages.map(message => toOpenAiMessage(message, this.profile)),
+      messages: request.messages.map(message => toOpenAiMessage(message, this.profile, toolNames)),
       stream: true,
     }
     applyRequestOptions(this.profile, body)
-    if (request.tools.length > 0) body.tools = request.tools.map(toOpenAiTool)
+    if (request.tools.length > 0) body.tools = request.tools.map(spec => toOpenAiTool(spec, toolNames))
     if (booleanOption(this.profile, 'includeUsage', true)) body.stream_options = { include_usage: true }
 
     const response = await providerFetch(
@@ -326,7 +397,7 @@ class OpenAiCompatibleModel implements ModelProvider {
       if (!call.id || !call.name) {
         throw new ProviderRequestError('malformed_response', `Provider returned incomplete tool call at index ${index}.`, false)
       }
-      yield { type: 'tool-call', callId: call.id, name: call.name, arguments: parseToolArguments(call) }
+      yield { type: 'tool-call', callId: call.id, name: toolNames.decode(call.name), arguments: parseToolArguments(call) }
     }
   }
 }

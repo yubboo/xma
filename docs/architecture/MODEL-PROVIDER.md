@@ -56,6 +56,7 @@ Provider 产品层必须保证“用户配置什么真实模型，Xiaoyu 就由�
 - Provider 有真实 catalog API 时，可用 model ID 以实时 catalog 为准；preset 的默认模型仅用于首次创建 Profile 的 bootstrap。
 - Provider Catalog 只展示已经有真实 endpoint/auth/protocol 产品路径的品牌；计划中的品牌不得用可点击假卡片冒充支持完成。
 - Provider-specific thinking/reasoning/tool/usage 能力必须按实际 API Contract 验证与透传；XMA 不伪造，也不主动裁成最低公分母。
+- XMA canonical Tool identity 与 Provider wire function name 分层：Core 可以保留 `native.fs.read_text` 这类领域名；OpenAI-compatible 等协议如果只接受 `[A-Za-z0-9_-]`，Adapter 必须把 canonical 名稳定映射为合法 wire alias，并在 Tool Call 返回时解码回原名。Session、ToolPlan、Approval、审计始终记录 canonical Tool 名，不被外部协议限制污染。
 
 ### DeepSeek Official 第一批产品路径
 

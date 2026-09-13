@@ -44,10 +44,9 @@ pub fn read(key: &str) -> Result<CredentialReadResult, String> {
     validate_key(key)?;
     let result = platform::read(key)?;
     if result.found {
-        let value = result
-            .value
-            .as_deref()
-            .ok_or_else(|| "native credential backend returned found=true without a value".to_string())?;
+        let value = result.value.as_deref().ok_or_else(|| {
+            "native credential backend returned found=true without a value".to_string()
+        })?;
         validate_secret(value)?;
     }
     Ok(result)
@@ -409,7 +408,10 @@ mod platform {
             return Ok(CredentialDeleteResult { deleted: false });
         }
         if find_status != ERR_SEC_SUCCESS {
-            return Err(os_error("cannot find macOS keychain credential", find_status));
+            return Err(os_error(
+                "cannot find macOS keychain credential",
+                find_status,
+            ));
         }
         let delete_status = unsafe { SecKeychainItemDelete(item_ref) };
         unsafe {
@@ -418,7 +420,10 @@ mod platform {
             }
         }
         if delete_status != ERR_SEC_SUCCESS {
-            return Err(os_error("cannot delete macOS keychain credential", delete_status));
+            return Err(os_error(
+                "cannot delete macOS keychain credential",
+                delete_status,
+            ));
         }
         Ok(CredentialDeleteResult { deleted: true })
     }
@@ -484,11 +489,17 @@ mod platform {
             }
             return Err(format!(
                 "Linux secret-tool lookup failed with exit code {}",
-                output.status.code().map_or_else(|| "signal".to_string(), |code| code.to_string())
+                output
+                    .status
+                    .code()
+                    .map_or_else(|| "signal".to_string(), |code| code.to_string())
             ));
         }
         let mut bytes = output.stdout;
-        while bytes.last().is_some_and(|byte| matches!(*byte, b'\n' | b'\r')) {
+        while bytes
+            .last()
+            .is_some_and(|byte| matches!(*byte, b'\n' | b'\r'))
+        {
             bytes.pop();
         }
         let value = String::from_utf8(bytes)
@@ -508,9 +519,9 @@ mod platform {
             .spawn()
             .map_err(|error| format!("cannot run Linux secret-tool store: {error}"))?;
         if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(value.as_bytes())
-                .map_err(|error| format!("cannot send credential to Linux Secret Service: {error}"))?;
+            stdin.write_all(value.as_bytes()).map_err(|error| {
+                format!("cannot send credential to Linux Secret Service: {error}")
+            })?;
         }
         let output = child
             .wait_with_output()
@@ -518,7 +529,10 @@ mod platform {
         if !output.status.success() {
             return Err(format!(
                 "Linux secret-tool store failed with exit code {}",
-                output.status.code().map_or_else(|| "signal".to_string(), |code| code.to_string())
+                output
+                    .status
+                    .code()
+                    .map_or_else(|| "signal".to_string(), |code| code.to_string())
             ));
         }
         Ok(CredentialWriteResult { stored: true })

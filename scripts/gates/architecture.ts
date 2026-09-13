@@ -127,7 +127,7 @@ for (const marker of ['ProviderRegistry', 'ProviderCapabilities', 'CredentialRef
   if (!providerSource.includes(marker)) throw new Error(`XMA Provider architecture marker missing: ${marker}`)
 }
 const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', 'utf8')
-for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(', 'provider-continuation', 'reasoning_content', 'reasoningContentToolContinuation']) {
+for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(', 'provider-continuation', 'reasoning_content', 'reasoningContentToolContinuation', 'createToolWireCodec', 'TOOL_WIRE_NAME_PATTERN']) {
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
 }
 const providerCatalog = readFileSync('plugins/providers/catalog.ts', 'utf8')
