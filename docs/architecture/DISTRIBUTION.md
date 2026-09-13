@@ -91,7 +91,7 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
 - Terminal 对真实 Provider 的 text/reasoning SSE 必须按 Runtime live event 实时绘制，Tool Call/Result 同步可见；禁止“用户提交后静默等待，最终整段一次性出现”。Pi TUI 0.74.0 的差分漏刷由 Host 使用节流强制 repaint 兜底。
-- Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/硬件光标基础层；主 Prompt 使用 XMA `SafePromptInput`，只发 `CURSOR_MARKER` 定位真实硬件光标，不使用上游 Editor/Input 的 reverse-video 假光标，避免 Windows Terminal 白块/反色泄漏；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
+- Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/IME 光标定位基础层；主 Prompt 使用 XMA `SafePromptInput`，通过 `CURSOR_MARKER` 定位**隐藏**的硬件光标供 IME 跟随，可见插入点由 XMA 软光标绘制，不使用上游 Editor/Input 的 reverse-video，也不显示 Windows 文本光标指示器；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
 - Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
 - Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区，对话区、输入 Dock、快捷键与提示区之间至少保留稳定空行；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。Prompt Dock 持续显示 Mode + Provider/Model + Reasoning，模式和推理强度使用稳定颜色；Tab/Shift+Tab 循环 Build/Plan/Compose(legacy)，Build 暴露完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；

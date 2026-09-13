@@ -122,3 +122,15 @@
 - Gate / 测试：Distribution Gate 新增 mouse capture、Ctrl+K 搜索与统一菜单栅格静态合同；CLI TUI 测试补搜索、列宽与 mouse sequence 回归。本批已完成 `tui-menu.ts` strict TypeScript 检查 PASS、`tui.ts/tui.test.ts/distribution.ts/tui-menu.ts` Node strip-types 语法检查 PASS、纯菜单 search/layout/selection smoke PASS，以及 Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9/9 Gate PASS。当前源码包不携带 `node_modules`，沙箱也无法联网准备 workspace 依赖，因此未冒充执行完整 `pnpm test/typecheck`；Windows Terminal 鼠标视觉效果仍以用户实机验收为最终证据。
 - Source Manifest：正式源码包重新生成 `.xma-package/source-manifest.json`，仍按未冻结 `0.1.0` 同名交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止临时 fixed/hotfix 包名。
 - 下一步：用户 Windows 实机重点验收普通左键拖动不再产生白色选择块、命令搜索与菜单列对齐；确认后继续 Stage P1 的 Pi Agent Engine 行为研究与迁移，不把后续开发重心长期停留在 TUI 外观。
+
+##11 · Terminal 居中、命令三列、软光标与动态提示
+
+- 日期：2026-09-14
+- 目的：继续收口 Windows Terminal 实机验收：Home/Prompt 可见内容偏左；命令面板列顺序不符合“命令 / 菜单 / 说明”；Windows Text Cursor Indicator 在硬件光标位置显示蓝色双标记；低价值通知会长期覆盖底部自动提示。
+- 横向布局：Home/Prompt Dock 从 76 cell 收窄到最多 64 cell，并继续按终端宽度居中；Provider 主面板改用固定居中宽度，避免 78% 宽 Overlay 中实际内容长期贴左。
+- 命令面板：统一菜单栅格改为左侧真实 Slash 命令、中间产品菜单、右侧简短说明；Provider/Model 等没有快捷命令的列表自动退化为菜单/说明两列，搜索、选择和 CJK cell width 逻辑不变。
+- 光标：Pi TUI 改为隐藏硬件光标；`CURSOR_MARKER` 继续定位隐藏光标以保留 IME 跟随，可见插入点由 XMA 橙色下划线软光标绘制，搜索框使用同类软光标，不再触发 Windows Text Cursor Indicator 的蓝色上下标记；继续禁止 reverse-video 假光标。
+- 鼠标：mouse reporting 扩展为 1000/1002/1003 + SGR 1006，并在 `tui.start()` 后重申接管，降低 Pi TUI 初始化覆盖终端模式导致宿主重新进入文本选择的风险；退出按逆序完整恢复。
+- 动态提示：Home 恢复自动轮换 Ctrl+P / Ctrl+K / Slash / Mode / History 提示；模型未配置或未就绪时显示对应引导；普通操作通知仅短暂展示，Esc 清空输入不再留下“已清空输入”长期占位。
+- 验收边界：本批仍需要 Windows Terminal 实机确认隐藏硬件光标后的 Microsoft IME 候选窗跟随、普通拖动不出现宿主选择白块，以及 64-cell Home Dock 与命令三列的最终视觉。
+- 下一步：实机通过后停止继续扩张 TUI 外观改动，回到 Stage P1 Agent Engine 行为研究与迁移。

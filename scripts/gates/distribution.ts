@@ -44,7 +44,7 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu 模型', '模型 / 提供方', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", "matchesKey(data, 'ctrl+k')", 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'isTerminalMouseInput', 'searchable: true', 'showListOverlay', 'showInputOverlay', '模型就绪测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
+for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu 模型', '模型 / 提供方', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', 'new toolkit.TUI(terminal, false)', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", "matchesKey(data, 'ctrl+k')", 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'isTerminalMouseInput', 'searchable: true', 'showListOverlay', 'showInputOverlay', '模型就绪测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
 }
 const tuiMenu = text('apps/cli/src/tui-menu.ts')
@@ -59,7 +59,7 @@ if (!tui.includes('showIdentity: false') || !tui.includes('layout.showIdentity')
   throw new Error('XMA modal overlays must hide Home identity decorations and keep only the compact status dock.')
 }
 if (tui.includes('new toolkit.Editor') || tui.includes('new toolkit.Input') || tui.includes("\u001b[7m") || tui.includes("\x1b[7m")) {
-  throw new Error('XMA TUI must not use reverse-video Pi Editor/Input cursors on the Windows Terminal main prompt; use the hardware CURSOR_MARKER SafePrompt instead.')
+  throw new Error('XMA TUI must not use reverse-video Pi Editor/Input cursors on the Windows Terminal main prompt; use hidden CURSOR_MARKER positioning plus the XMA soft cursor instead.')
 }
 
 const brain = text('apps/cli/src/brain.ts')

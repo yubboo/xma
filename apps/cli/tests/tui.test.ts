@@ -16,6 +16,7 @@ import {
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
+  terminalHomeTip,
   terminalMouseCaptureSequence,
   terminalMouseReleaseSequence,
   workspaceRisk,
@@ -152,7 +153,7 @@ test('TUI command palette search matches labels, descriptions and provider alias
   assert.deepEqual(filterTuiMenuItems(options, '工作区').map(item => item.value), ['workspace'])
 })
 
-test('TUI menu projection keeps labels, descriptions and shortcuts in stable columns', () => {
+test('TUI menu projection keeps command, menu and description columns stable', () => {
   const projected = projectTuiMenu(commandPaletteOptions(), '', 0, 72, 10)
   assert.equal(projected.rows.length, 9)
   assert.equal(projected.rows[0]?.selected, true)
@@ -161,14 +162,27 @@ test('TUI menu projection keeps labels, descriptions and shortcuts in stable col
     assert.equal(tuiMenuCellWidth(row.description), projected.descriptionWidth)
     assert.equal(tuiMenuCellWidth(row.shortcut), projected.shortcutWidth)
   }
+  assert.equal(projected.rows[0]?.shortcut.startsWith('/settings'), true)
+  assert.equal(projected.rows[0]?.shortcut.startsWith(' '), false)
   assert.equal(moveTuiMenuSelection(0, projected.filtered.length, -1), projected.filtered.length - 1)
 })
 
+test('TUI home tips rotate when ready and become provider-aware when setup is incomplete', () => {
+  assert.equal(terminalHomeTip(0, true, true), 'Ctrl+P 打开命令面板')
+  assert.equal(terminalHomeTip(1, true, true), 'Ctrl+K 直接搜索命令')
+  assert.match(terminalHomeTip(0, false, false), /配置模型与 API Key/)
+  assert.match(terminalHomeTip(0, true, false), /模型未就绪/)
+})
+
 test('TUI captures ordinary mouse drag while active and releases terminal state on exit', () => {
+  assert.match(terminalMouseCaptureSequence, /\?1000h/)
   assert.match(terminalMouseCaptureSequence, /\?1002h/)
+  assert.match(terminalMouseCaptureSequence, /\?1003h/)
   assert.match(terminalMouseCaptureSequence, /\?1006h/)
   assert.match(terminalMouseReleaseSequence, /\?1006l/)
+  assert.match(terminalMouseReleaseSequence, /\?1003l/)
   assert.match(terminalMouseReleaseSequence, /\?1002l/)
+  assert.match(terminalMouseReleaseSequence, /\?1000l/)
   assert.equal(isTerminalMouseInput('\u001b[<0;10;5M'), true)
   assert.equal(isTerminalMouseInput('\u001b[<0;10;5m'), true)
   assert.equal(isTerminalMouseInput('\u001b[A'), false)
@@ -244,7 +258,7 @@ test('TUI Workspace Trust keeps high-risk default deny while still allowing expl
 })
 
 
-test('Safe Prompt uses only the hardware cursor marker and never reverse-video ANSI', () => {
+test('Safe Prompt positions hidden hardware cursor for IME and renders a non-reverse soft cursor', () => {
   const toolkit = {
     CURSOR_MARKER: '<CURSOR>',
     matchesKey(data: string, key: string) {
@@ -259,6 +273,7 @@ test('Safe Prompt uses only the hardware cursor marker and never reverse-video A
   const line = input.render(20).join('\n')
   assert.match(line, /<CURSOR>/)
   assert.match(line, /你好/)
+  assert.match(line, /\u001b\[4m/)
   assert.doesNotMatch(line, /\u001b\[7m|\u001b\[27m/)
 })
 

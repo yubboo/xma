@@ -129,7 +129,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Provider 的 SSE text/reasoning delta 必须保持增量语义穿过 `Provider → RuntimeLiveEvent → Host Renderer`；Tool Call/Result 通过同一 Runtime 事件面投影。不得在 TUI 层等完整 Turn 结束后再一次性显示。
 - `reasoning` 只能展示 Provider 实际公开返回的增量/摘要；不得本地伪造“思考过程”。
 - TUI 渲染器如果因为差分缓存导致流式区域漏刷，必须在 Host 层做有节流的强制 repaint 或等价修复，并补回归测试；不能把“内存里已收到 chunk”冒充“用户已经实时看到”。
-- Terminal 菜单必须使用统一列栅格，菜单名称、简短说明与真实快捷命令不得靠页面手调空格；`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。TUI/Workspace Trust 活跃期间必须启用 mouse reporting 接管普通左键拖动并忽略鼠标事件，退出或异常收口时恢复终端状态，避免宿主终端产生大面积文本选择白块；不得借此封死用户通过 Shift+拖动进行主动复制。
+- Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。TUI/Workspace Trust 活跃期间必须启用完整 mouse reporting 接管普通左键拖动并忽略鼠标事件，Pi TUI 启动后必须重申接管模式，退出或异常收口时恢复终端状态，避免宿主终端产生大面积文本选择白块；不得借此封死用户通过 Shift+拖动进行主动复制。Windows Terminal 可见插入点禁止依赖可见硬件光标：`CURSOR_MARKER` 仅定位隐藏光标供 IME 跟随，可见光标由 XMA 软光标绘制，避免系统 Text Cursor Indicator 蓝色双标记。Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
 
 
 ## 5. Provider 开发规则

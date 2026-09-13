@@ -17,6 +17,7 @@ import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-me
 const ESC = '\u001b['
 const reset = `${ESC}0m`
 const bold = `${ESC}1m`
+const underline = `${ESC}4m`
 const orange = `${ESC}38;2;255;126;63m`
 const text = `${ESC}38;2;226;226;226m`
 const textSoft = `${ESC}38;2;164;164;164m`
@@ -28,11 +29,25 @@ const red = `${ESC}38;2;238;94;94m`
 const clearScreen = `${ESC}2J${ESC}H`
 const enterAltScreen = `${ESC}?1049h`
 const leaveAltScreen = `${ESC}?1049l`
-export const terminalMouseCaptureSequence = `${ESC}?1002h${ESC}?1006h`
-export const terminalMouseReleaseSequence = `${ESC}?1006l${ESC}?1002l`
+export const terminalMouseCaptureSequence = `${ESC}?1000h${ESC}?1002h${ESC}?1003h${ESC}?1006h`
+export const terminalMouseReleaseSequence = `${ESC}?1006l${ESC}?1003l${ESC}?1002l${ESC}?1000l`
 const setTitle = (title: string) => `\u001b]0;${title}\u0007`
 const TUI_PACKAGE = '@earendil-works/pi-tui'
 const SPINNER = ['✦', '✧', '·', '✧'] as const
+const HOME_TIPS = [
+  'Ctrl+P 打开命令面板',
+  'Ctrl+K 直接搜索命令',
+  '输入 / 查看快捷命令',
+  'Tab / Shift+Tab 切换工作模式',
+  '↑↓ 浏览输入历史',
+] as const
+
+export function terminalHomeTip(index: number, providerConfigured: boolean, providerReady: boolean): string {
+  if (!providerConfigured) return 'Ctrl+P → 模型 / 提供方 配置模型与 API Key'
+  if (!providerReady) return '模型未就绪 · Ctrl+P → 模型 / 提供方 检查配置'
+  const normalized = ((index % HOME_TIPS.length) + HOME_TIPS.length) % HOME_TIPS.length
+  return HOME_TIPS[normalized]!
+}
 
 const LOGO_XIAO = [
   '█   █  █████   ███    ███ ',
@@ -401,7 +416,7 @@ function viewport(): Viewport {
 }
 
 function contentWidth(columns: number): number {
-  return Math.max(54, Math.min(76, columns - 8))
+  return Math.max(48, Math.min(64, columns - 12))
 }
 
 export interface TerminalHomeLayout {
@@ -716,8 +731,8 @@ function cursorCell(value: string, index: number): number {
 }
 
 /**
- * Windows Terminal 安全 Prompt：只使用 CURSOR_MARKER 定位真实硬件光标，不输出 ESC[7m 反色假光标。
- * 这样既保留 CJK IME 光标位置，也避免 Pi Editor/Input 0.74.0 在 Windows 上出现整块反色背景泄漏。
+ * Windows Terminal 安全 Prompt：CURSOR_MARKER 只负责定位隐藏的硬件光标供 IME 跟随，
+ * 可见光标由 XMA 使用橙色下划线软光标绘制；不输出 ESC[7m 反色，也不显示 Windows 文本光标指示器。
  */
 export class SafePromptInput {
   focused = false
@@ -958,13 +973,22 @@ export class SafePromptInput {
       const cursorVisual = cursorCell(line, cursorCol)
       const startCell = Math.max(0, cursorVisual - safeWidth + 2)
       const before = sliceCells(line, startCell, Math.max(0, cursorVisual - startCell))
-      const afterWidth = Math.max(0, safeWidth - cellWidth(before))
-      const after = sliceCells(line.slice(cursorCol), 0, afterWidth)
-      const marker = this.focused ? this.toolkit.CURSOR_MARKER : ''
-      rendered.push(`${before}${marker}${after}`)
+      if (!this.focused) {
+        const afterWidth = Math.max(0, safeWidth - cellWidth(before))
+        rendered.push(`${before}${sliceCells(line.slice(cursorCol), 0, afterWidth)}`)
+        return
+      }
+
+      const cursorEnd = nextGraphemeIndex(line, cursorCol)
+      const atCursor = line.slice(cursorCol, cursorEnd) || ' '
+      const atCursorWidth = Math.max(1, cellWidth(atCursor))
+      const afterWidth = Math.max(0, safeWidth - cellWidth(before) - atCursorWidth)
+      const after = sliceCells(line.slice(cursorEnd), 0, afterWidth)
+      const softCursor = `${orange}${underline}${atCursor}${reset}`
+      rendered.push(`${before}${this.toolkit.CURSOR_MARKER}${softCursor}${after}`)
     })
 
-    if (rendered.length === 0) rendered.push(this.focused ? this.toolkit.CURSOR_MARKER : '')
+    if (rendered.length === 0) rendered.push(this.focused ? `${this.toolkit.CURSOR_MARKER}${orange}${underline} ${reset}` : '')
     return rendered
   }
 
@@ -998,13 +1022,16 @@ class XiaoyuSurface {
   private _focused = false
   readonly editor: SafePromptInput
   private readonly transcript: TerminalTranscriptItem[] = []
-  private notice = ''
+  private _notice = ''
+  private noticeExpiresAt = 0
   private busy = false
   private activeController: AbortController | undefined
   private approval: ApprovalWaiter | undefined
   private exitResolve: (() => void) | undefined
   private animationTimer: ReturnType<typeof setInterval> | undefined
+  private tipTimer: ReturnType<typeof setInterval> | undefined
   private starPhase = 0
+  private tipIndex = 0
   private settings: TerminalUiSettings = { ...DEFAULT_TERMINAL_UI_SETTINGS }
   private overlayOpen = false
   private initialBrainSetupActive = false
@@ -1029,6 +1056,24 @@ class XiaoyuSurface {
       this.starPhase = (this.starPhase + 1) % 10_000
       this.tui.requestRender()
     }, 420)
+    this.tipTimer = setInterval(() => {
+      if (!this.settings.tips || this.overlayOpen || this.transcript.length > 0 || this.busy) return
+      this.tipIndex = (this.tipIndex + 1) % HOME_TIPS.length
+      this.tui.requestRender()
+    }, 5_500)
+  }
+
+  private get notice(): string {
+    return this._notice
+  }
+
+  private set notice(value: string) {
+    this._notice = value
+    this.noticeExpiresAt = value ? Date.now() + 5_500 : 0
+  }
+
+  private activeNotice(): string {
+    return this.notice && Date.now() < this.noticeExpiresAt ? this.notice : ''
   }
 
   setExitResolver(resolve: () => void): void {
@@ -1105,7 +1150,7 @@ class XiaoyuSurface {
     }
     if (this.editor.getText?.()) {
       this.editor.setText('')
-      this.notice = '已清空输入'
+      this.notice = ''
       this.tui.requestRender()
       return true
     }
@@ -1115,7 +1160,7 @@ class XiaoyuSurface {
   render(width: number): string[] {
     const columns = Math.max(40, width)
     const rows = Math.max(20, this.terminal.rows ?? 24)
-    const cardWidth = Math.max(48, Math.min(76, columns - 8))
+    const cardWidth = contentWidth(columns)
     const indent = spaces(Math.max(0, Math.floor((columns - cardWidth) / 2)))
     const screen = Array.from({ length: rows }, () => '')
 
@@ -1148,7 +1193,9 @@ class XiaoyuSurface {
       if (layout.hintRow !== undefined) screen[layout.hintRow] = hintLine
       if (layout.tipRow !== undefined) {
         const spinner = SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!
-        const tip = this.notice || (this.busy ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止` : 'Ctrl+P 打开命令面板；输入 / 查看快捷命令')
+        const tip = this.busy
+          ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止`
+          : this.activeNotice() || terminalHomeTip(this.tipIndex, this.backend.providerConfigured, this.backend.providerReady)
         const clippedTip = truncateCells(tip, Math.max(12, cardWidth - 12))
         screen[layout.tipRow] = `${indent}${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
       }
@@ -1283,7 +1330,7 @@ class XiaoyuSurface {
     if (this.overlayOpen || this.approval) return
     this.showListOverlay('命令', commandPaletteOptions(), value => {
       void this.runPaletteAction(value)
-    }, { centered: true, width: 76, maxHeight: 18, searchable: true })
+    }, { centered: true, width: 82, maxHeight: 18, searchable: true })
   }
 
   private openSettings(): void {
@@ -1356,7 +1403,7 @@ class XiaoyuSurface {
     }
     this.showListOverlay(title, items, value => {
       void this.runProviderAction(value)
-    }, { centered: true, width: '78%', maxHeight: '64%' })
+    }, { centered: true, width: 68, maxHeight: '64%' })
   }
 
   private async runProviderAction(value: string): Promise<void> {
@@ -1421,7 +1468,7 @@ class XiaoyuSurface {
           this.tui.requestRender()
         }
       })
-    }, { centered: true, width: '72%', maxHeight: '56%' })
+    }, { centered: true, width: 68, maxHeight: '56%' })
   }
 
   private async openModelSelector(afterSelect?: (profile: TerminalBrainProfileView) => void): Promise<void> {
@@ -1472,7 +1519,7 @@ class XiaoyuSurface {
             this.tui.requestRender()
           }
         })
-      }, { centered: true, width: '72%', maxHeight: '64%' })
+      }, { centered: true, width: 72, maxHeight: '64%' })
     } catch (error) {
       const message = `模型列表读取失败 · ${error instanceof Error ? error.message : String(error)}`
       if (this.initialBrainSetupActive) {
@@ -1520,7 +1567,7 @@ class XiaoyuSurface {
           this.tui.requestRender()
         }
       })
-    }, { centered: true, width: '64%', maxHeight: '46%' })
+    }, { centered: true, width: 60, maxHeight: '46%' })
   }
 
   private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
@@ -1710,8 +1757,8 @@ class XiaoyuSurface {
 
         if (searchable) {
           const searchValue = query
-            ? `${text}${query}${this.toolkit.CURSOR_MARKER}${reset}`
-            : `${this.toolkit.CURSOR_MARKER}${textFaint}输入关键词…${reset}`
+            ? `${text}${query}${reset}${this.toolkit.CURSOR_MARKER}${orange}│${reset}`
+            : `${this.toolkit.CURSOR_MARKER}${orange}│${reset}${textFaint} 输入关键词…${reset}`
           lines.push(`${textFaint}搜索${reset}  ${searchValue}`, '')
         } else {
           lines.push('')
@@ -1722,10 +1769,10 @@ class XiaoyuSurface {
         } else {
           for (const row of projected.rows) {
             const prefix = row.selected ? `${orange}${bold}→${reset}` : `${textFaint} ${reset}`
+            const shortcut = row.shortcut ? `${textFaint}${row.shortcut}${reset}  ` : ''
             const label = row.selected ? `${orange}${bold}${row.label}${reset}` : `${text}${row.label}${reset}`
             const description = `${textSoft}${row.description}${reset}`
-            const shortcut = row.shortcut ? `  ${textFaint}${row.shortcut}${reset}` : ''
-            lines.push(`${prefix} ${label}  ${description}${shortcut}`)
+            lines.push(`${prefix} ${shortcut}${label}  ${description}`)
           }
         }
 
@@ -1957,6 +2004,10 @@ class XiaoyuSurface {
       clearInterval(this.animationTimer)
       this.animationTimer = undefined
     }
+    if (this.tipTimer) {
+      clearInterval(this.tipTimer)
+      this.tipTimer = undefined
+    }
     if (this.forcedStreamRenderTimer) {
       clearTimeout(this.forcedStreamRenderTimer)
       this.forcedStreamRenderTimer = undefined
@@ -1973,12 +2024,12 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
 
   const toolkit = await loadPiTui()
   const terminal = new toolkit.ProcessTerminal()
-  const tui = new toolkit.TUI(terminal, true)
+  const tui = new toolkit.TUI(terminal, false)
   const surface = new XiaoyuSurface(toolkit, tui, terminal, backend, loadTerminalUiSettings())
   let stopped = false
 
   try {
-    output.write(`${enterAltScreen}${terminalMouseCaptureSequence}${setTitle('Xiaoyu')}${clearScreen}`)
+    output.write(`${enterAltScreen}${setTitle('Xiaoyu')}${clearScreen}`)
     tui.addChild(surface)
     tui.setFocus(surface)
     tui.addInputListener((data: string) => {
@@ -2000,6 +2051,8 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
       return undefined
     })
     tui.start()
+    output.write(terminalMouseCaptureSequence)
+    tui.requestRender(true)
     surface.startInitialBrainSetup()
     await new Promise<void>(resolve => surface.setExitResolver(resolve))
   } finally {

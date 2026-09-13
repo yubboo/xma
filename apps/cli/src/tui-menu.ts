@@ -78,11 +78,6 @@ function padTuiMenuText(value: string, width: number): string {
 }
 
 
-function alignRightTuiMenuText(value: string, width: number): string {
-  const clipped = truncateTuiMenuText(value, width)
-  return `${' '.repeat(Math.max(0, width - tuiMenuCellWidth(clipped)))}${clipped}`
-}
-
 function normalizedHaystack(item: TuiMenuItem): string {
   return [item.label, item.value, item.description ?? '', ...(item.keywords ?? [])]
     .join(' ')
@@ -122,7 +117,7 @@ function menuColumnWidths(width: number, items: readonly TuiMenuItem[]): { label
 }
 
 /**
- * 中文说明：所有 Overlay 列表统一通过这里生成“标签列 / 描述列 / 快捷键列”。
+ * 中文说明：所有 Overlay 列表统一通过这里生成“快捷命令列 / 菜单列 / 说明列”。
  * 选中项始终保持在可见窗口中；窗口宽度变化时只截断描述，不允许菜单名称互相挤位。
  */
 export function projectTuiMenu(
@@ -148,7 +143,7 @@ export function projectTuiMenu(
       selected: absoluteIndex === clamped,
       label: padTuiMenuText(item.label, labelWidth),
       description: padTuiMenuText(item.description ?? '', descriptionWidth),
-      shortcut: shortcutWidth > 0 ? alignRightTuiMenuText(item.shortcut ?? '', shortcutWidth) : '',
+      shortcut: shortcutWidth > 0 ? padTuiMenuText(item.shortcut ?? '', shortcutWidth) : '',
     }
   })
 
