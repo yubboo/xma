@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到固定 Git 工作目录 H:\一键部署\xma。
 关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、XMA-GitHub.bat、GitHub yubboo/xma。
-当前实现：优先按包内 Source Manifest 精确复制新增/变更源码并自动清理上一版已删除/重命名的受管文件；仅保留 .git、runtime、node_modules、.cache、dist 等本地状态。旧版本包没有 Manifest 时才回退 robocopy 兼容流程。
+当前实现：优先按包内 Source Manifest 比较文件内容，只复制真实新增/更新源码，自动清理上一版已删除/重命名的受管文件，并输出新增/更新/删除/未变化摘要与完整报告；仅保留 .git、runtime、node_modules、.cache、dist 等本地状态。旧版本包没有 Manifest 时才回退 robocopy 兼容流程。
 职责边界：不得删除目标仓库 .git、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
@@ -12,6 +12,9 @@ $RepoUrl = 'https://github.com/yubboo/xma.git'
 $ProjectVersion = (Get-Content (Join-Path $Source 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $PackageManifest = Join-Path $Source '.xma-package\source-manifest.json'
 $SyncState = Join-Path $Target '.xma\source-sync.json'
+$SyncReport = Join-Path $Target '.xma\source-sync-last.txt'
+$ChangePreviewLimit = 20
+$SyncSummaryText = $null
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host "  XMA $ProjectVersion Source Sync" -ForegroundColor Cyan
@@ -95,6 +98,76 @@ function Save-XmaSyncState {
   $state | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $SyncState -Encoding UTF8
 }
 
+function Test-XmaFileContentEqual {
+  param(
+    [Parameter(Mandatory = $true)][string]$SourceFile,
+    [Parameter(Mandatory = $true)][string]$TargetFile
+  )
+
+  if (-not (Test-Path -LiteralPath $TargetFile -PathType Leaf)) { return $false }
+  $sourceInfo = Get-Item -LiteralPath $SourceFile -ErrorAction Stop
+  $targetInfo = Get-Item -LiteralPath $TargetFile -ErrorAction Stop
+  if ($sourceInfo.Length -ne $targetInfo.Length) { return $false }
+
+  # 中文说明：长度相同仍必须比较内容，避免“文件数相同/时间戳相近”造成假同步成功。
+  $sourceHash = (Get-FileHash -LiteralPath $SourceFile -Algorithm SHA256 -ErrorAction Stop).Hash
+  $targetHash = (Get-FileHash -LiteralPath $TargetFile -Algorithm SHA256 -ErrorAction Stop).Hash
+  return $sourceHash -eq $targetHash
+}
+
+function Save-XmaSyncReport {
+  param(
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Added,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Updated,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Removed,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Unchanged
+  )
+
+  $reportDir = Split-Path -Parent $SyncReport
+  New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
+  $lines = New-Object 'System.Collections.Generic.List[string]'
+  $lines.Add("XMA $ProjectVersion Source Sync")
+  $lines.Add("源目录：$Source")
+  $lines.Add("目标目录：$Target")
+  $lines.Add("时间：$([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))")
+  $lines.Add('')
+  $lines.Add("新增：$($Added.Count)")
+  $lines.Add("更新：$($Updated.Count)")
+  $lines.Add("删除：$($Removed.Count)")
+  $lines.Add("未变化：$($Unchanged.Count)")
+  $lines.Add('')
+
+  foreach ($section in @(
+    @{ Title = '新增'; Prefix = '+'; Files = $Added },
+    @{ Title = '更新'; Prefix = '~'; Files = $Updated },
+    @{ Title = '删除'; Prefix = '-'; Files = $Removed },
+    @{ Title = '未变化'; Prefix = '='; Files = $Unchanged }
+  )) {
+    $lines.Add("[$($section.Title)]")
+    foreach ($relative in @($section.Files)) { $lines.Add("$($section.Prefix) $relative") }
+    $lines.Add('')
+  }
+
+  $lines | Set-Content -LiteralPath $SyncReport -Encoding UTF8
+}
+
+function Write-XmaChangePreview {
+  param(
+    [Parameter(Mandatory = $true)][string]$Title,
+    [Parameter(Mandatory = $true)][string]$Prefix,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Files,
+    [Parameter(Mandatory = $true)][System.ConsoleColor]$Color
+  )
+
+  if ($Files.Count -eq 0) { return }
+  Write-Host "  $Title ($($Files.Count))" -ForegroundColor $Color
+  $preview = @($Files | Select-Object -First $ChangePreviewLimit)
+  foreach ($relative in $preview) { Write-Host "    $Prefix $relative" -ForegroundColor $Color }
+  if ($Files.Count -gt $preview.Count) {
+    Write-Host "    ... 其余 $($Files.Count - $preview.Count) 项请查看完整同步报告。" -ForegroundColor DarkGray
+  }
+}
+
 if (Test-Path $PackageManifest) {
   $manifest = Get-Content $PackageManifest -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($manifest.formatVersion -ne 1 -or $manifest.project -ne 'xma') { throw 'Source Manifest 格式或项目标识不受支持。' }
@@ -116,7 +189,11 @@ if (Test-Path $PackageManifest) {
   $newSet = @{}
   foreach ($relative in $newFiles) { $newSet[$relative] = $true }
 
-  $removed = 0
+  $addedFiles = @()
+  $updatedFiles = @()
+  $removedFiles = @()
+  $unchangedFiles = @()
+
   foreach ($relative in $previousFiles) {
     if (Test-XmaProtectedRelativePath $relative) { continue }
     if (-not $newSet.ContainsKey($relative)) {
@@ -125,23 +202,49 @@ if (Test-Path $PackageManifest) {
         Write-Host "[同步] 删除上一版已移除/重命名源码：$relative" -ForegroundColor DarkYellow
         Remove-Item -LiteralPath $targetFile -Force -ErrorAction Stop
         Remove-XmaEmptyParents $targetFile
-        $removed++
+        $removedFiles += $relative
       }
     }
   }
 
-  $copied = 0
   foreach ($relative in $newFiles) {
     $sourceFile = Join-Path $Source (Convert-XmaRelativeToNative $relative)
     $targetFile = Join-Path $Target (Convert-XmaRelativeToNative $relative)
-    $parent = Split-Path -Parent $targetFile
-    if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+
+    if (-not (Test-Path -LiteralPath $targetFile -PathType Leaf)) {
+      $parent = Split-Path -Parent $targetFile
+      if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+      Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
+      $addedFiles += $relative
+      continue
+    }
+
+    if (Test-XmaFileContentEqual -SourceFile $sourceFile -TargetFile $targetFile) {
+      $unchangedFiles += $relative
+      continue
+    }
+
     Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
-    $copied++
+    $updatedFiles += $relative
   }
 
   Save-XmaSyncState -Files $newFiles
-  Write-Host "[同步] Source Manifest 模式：$copied 个源码文件已同步，$removed 个上一版受管文件已自动清理。" -ForegroundColor Green
+  Save-XmaSyncReport -Added $addedFiles -Updated $updatedFiles -Removed $removedFiles -Unchanged $unchangedFiles
+
+  $changedCount = $addedFiles.Count + $updatedFiles.Count + $removedFiles.Count
+  $SyncSummaryText = "新增 $($addedFiles.Count) | 更新 $($updatedFiles.Count) | 删除 $($removedFiles.Count) | 未变化 $($unchangedFiles.Count)"
+  Write-Host ''
+  Write-Host '-------------------- 本次源码变更 --------------------' -ForegroundColor DarkCyan
+  Write-Host ("[变更摘要] 新增 {0} | 更新 {1} | 删除 {2} | 未变化 {3} | Manifest {4}" -f $addedFiles.Count, $updatedFiles.Count, $removedFiles.Count, $unchangedFiles.Count, $newFiles.Count) -ForegroundColor Cyan
+  if ($changedCount -eq 0) {
+    Write-Host '[同步] Source Manifest 模式：目标目录已经是本包源码，无需复制或删除文件。' -ForegroundColor Green
+  } else {
+    Write-XmaChangePreview -Title '新增文件' -Prefix '+' -Files $addedFiles -Color Green
+    Write-XmaChangePreview -Title '更新文件' -Prefix '~' -Files $updatedFiles -Color Yellow
+    Write-XmaChangePreview -Title '删除文件' -Prefix '-' -Files $removedFiles -Color DarkYellow
+    Write-Host "[同步] Source Manifest 模式：本次实际变更 $changedCount 个源码文件。" -ForegroundColor Green
+  }
+  Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray
 } else {
   Write-Host '[兼容] 当前源码包没有 Source Manifest，使用旧版 robocopy 同步；建议使用新的正式源码包。' -ForegroundColor Yellow
 
@@ -204,5 +307,9 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
 }
 
 Write-Host '[完成] XMA 新源码已同步；.git / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
+if ($SyncSummaryText) {
+  Write-Host "[本次同步] $SyncSummaryText" -ForegroundColor Cyan
+  Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray
+}
 Write-Host '[自动同步] 新增目录无需配置；删除/重命名源码由 Source Manifest + 上一版同步状态自动识别。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

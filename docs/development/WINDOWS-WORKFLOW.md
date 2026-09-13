@@ -24,7 +24,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 
 ## 三个 Windows 入口的职责边界
 
-- `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。
+- `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 `.xma/source-sync-last.txt`，避免只显示 Manifest 总文件数造成“是否真的同步成功”不明确。
 - `XMA-GitHub.bat`：只负责 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。
 - `XMA.bat`：负责本地基础环境、项目运行、检查和构建。
 

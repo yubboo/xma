@@ -129,10 +129,20 @@ for (const marker of [
   if (!githubSource.includes(marker)) throw new Error(`GitHub helper pure-Git contract regression: missing ${marker}`)
 }
 
+const agentRulesSource = readFileSync('AGENTS.md', 'utf8')
+for (const marker of ['新增 / 更新 / 删除 / 未变化', 'Manifest 总文件数不得冒充本次实际变更数', '.xma/source-sync-last.txt']) {
+  if (!agentRulesSource.includes(marker)) throw new Error(`AGENTS Source Sync UX contract regression: missing ${marker}`)
+}
+
 const syncMigrationSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 for (const marker of [
   '.xma-package\\source-manifest.json',
   '.xma\\source-sync.json',
+  '.xma\\source-sync-last.txt',
+  'Test-XmaFileContentEqual',
+  '[变更摘要]',
+  '[本次同步]',
+  '[完整清单]',
   'Get-XmaPreviousManagedFiles',
   'Save-XmaSyncState',
   'Source Manifest 模式',
@@ -336,6 +346,11 @@ for (const marker of [
   'H:\\一键部署\\xma',
   ".xma-package\\source-manifest.json",
   ".xma\\source-sync.json",
+  ".xma\\source-sync-last.txt",
+  'Test-XmaFileContentEqual',
+  '[变更摘要]',
+  '[本次同步]',
+  '[完整清单]',
   'Get-XmaPreviousManagedFiles',
   'Save-XmaSyncState',
   'Source Manifest 模式',
