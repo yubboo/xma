@@ -297,6 +297,34 @@ function contentWidth(columns: number): number {
   return Math.max(54, Math.min(76, columns - 8))
 }
 
+export interface TerminalHomeLayout {
+  logoTop: number
+  promptEnd: number
+  hintRow?: number
+  tipRow?: number
+}
+
+/**
+ * 中文说明：Home 的纵向节奏由一个纯函数统一计算，避免 Overlay、Prompt、提示区各自抢行。
+ * Overlay 打开时进入 modal focus：底部只保留紧凑状态 Dock，把主要空间让给操作面板。
+ */
+export function terminalHomeLayout(rows: number, overlayOpen = false, tips = true): TerminalHomeLayout {
+  const safeRows = Math.max(20, rows)
+  const logoTop = Math.max(2, Math.min(5, Math.floor(safeRows * 0.10)))
+  if (overlayOpen) {
+    return { logoTop, promptEnd: safeRows - 3 }
+  }
+
+  const tipRow = tips && safeRows >= 26 ? safeRows - 4 : undefined
+  const hintRow = tipRow === undefined ? safeRows - 3 : tipRow - 2
+  return {
+    logoTop,
+    promptEnd: hintRow - 1,
+    hintRow,
+    ...(tipRow === undefined ? {} : { tipRow }),
+  }
+}
+
 function renderLogo(columns: number, mode: TerminalUiSettings['logo'] = 'auto'): string[] {
   if (mode === 'compact' || columns < 82) {
     return [
@@ -919,36 +947,37 @@ class XiaoyuSurface {
       }
     }
 
-    const promptLines = this.renderPromptCard(cardWidth).map(line => `${indent}${line}`)
+    const fullPromptLines = this.renderPromptCard(cardWidth).map(line => `${indent}${line}`)
+    const compactOverlayDock = [`${indent}${orange}▌${reset} ${this.renderPromptStatus(Math.max(24, cardWidth - 3))}`]
+    const promptLines = this.overlayOpen ? compactOverlayDock : fullPromptLines
     const hintLine = `${indent}${renderHintLine(cardWidth)}`
 
     if (this.transcript.length === 0) {
       const logo = renderLogo(columns, this.settings.logo)
-      const logoTop = Math.max(2, Math.min(6, Math.floor(rows * 0.12)))
+      const layout = terminalHomeLayout(rows, this.overlayOpen, this.settings.tips)
+      const logoTop = layout.logoTop
       if (this.settings.visual === 'vivid') screen[Math.max(1, logoTop - 2)] = renderStars(columns, this.starPhase)
       place(logoTop, logo)
       const sloganRow = Math.min(rows - 10, logoTop + logo.length + 1)
       screen[sloganRow] = centerPlain('Model is replaceable. Agent is ours.', columns)
         .replace('Model is replaceable. Agent is ours.', `${textFaint}Model is replaceable. Agent is ours.${reset}`)
 
-      // Home 的 Prompt 使用固定底锚点；自动补全只向上展开，Logo/底栏不会随内容高度移动。
-      const hintRow = Math.min(rows - 5, Math.max(sloganRow + 7, Math.floor(rows * 0.70)))
-      const promptEnd = hintRow - 1
-      place(promptEnd - promptLines.length + 1, promptLines)
-      screen[hintRow] = hintLine
-      if (this.settings.tips && hintRow + 2 < rows - 1) {
+      // Home 使用固定底锚点；Overlay 打开时进入 modal focus，只保留一行状态 Dock，避免面板与 Prompt 视觉拥挤。
+      place(layout.promptEnd - promptLines.length + 1, promptLines)
+      if (layout.hintRow !== undefined) screen[layout.hintRow] = hintLine
+      if (layout.tipRow !== undefined) {
         const spinner = SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!
         const tip = this.notice || (this.busy ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止` : 'Ctrl+P 打开命令面板；输入 / 查看快捷命令')
         const clippedTip = truncateCells(tip, Math.max(12, cardWidth - 12))
-        screen[hintRow + 2] = `${indent}${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
+        screen[layout.tipRow] = `${indent}${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
       }
     } else {
-      // 对话态使用固定底部 Prompt Dock；上方内容变化不会推动输入区。
-      const hintRow = rows - 2
-      const promptEnd = hintRow - 1
+      // 对话态继续固定底部 Dock；Overlay 打开时同样进入 modal focus，不显示全局快捷键提示。
+      const hintRow = this.overlayOpen ? undefined : rows - 2
+      const promptEnd = hintRow === undefined ? rows - 3 : hintRow - 1
       const promptStart = Math.max(2, promptEnd - promptLines.length + 1)
       place(promptStart, promptLines)
-      screen[hintRow] = hintLine
+      if (hintRow !== undefined) screen[hintRow] = hintLine
 
       const transcriptLines: string[] = []
       for (const item of this.transcript.slice(-10)) {
@@ -1284,11 +1313,11 @@ class XiaoyuSurface {
         },
       }
       handle = this.tui.showOverlay(frame, {
-        width: 66,
-        maxHeight: 10,
-        row: '28%',
+        width: 68,
+        maxHeight: 12,
+        row: '16%',
         col: '50%',
-        margin: 2,
+        margin: 3,
       })
     })
   }
@@ -1337,11 +1366,11 @@ class XiaoyuSurface {
       invalidate: () => list.invalidate?.(),
     }
     handle = this.tui.showOverlay(frame, {
-      width: 62,
-      maxHeight: Math.min(18, Math.max(8, items.length + 4)),
-      row: '22%',
+      width: 68,
+      maxHeight: Math.min(20, Math.max(10, items.length + 6)),
+      row: '14%',
       col: '50%',
-      margin: 2,
+      margin: 3,
     })
   }
 

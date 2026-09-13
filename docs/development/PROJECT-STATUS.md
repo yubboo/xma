@@ -50,7 +50,7 @@
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
 - `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；Brain 已升级为多 Profile 的真实 Provider Catalog：首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留；`brain.json` v3 保存品牌/Profile/Adapter/Base URL/Model/Credential Reference，OS Credentials 为默认 Secret 路径，v1/v2 legacy 配置继续显式迁移；
 - Terminal 已增加 `/model` 与真实模型目录选择；DeepSeek Profile 不要求用户手填官方 Base URL/初始 model，保存后从官方 model catalog 读取当前可用 model ID 并按选择结果 Probe；DeepSeek preset 使用 thinking/high reasoning，并保留 thinking+tools 的协议续传状态；
-- Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/硬件光标基础能力，但主 Prompt 已改成 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标，专门规避 Windows Terminal 白块/反色泄漏；支持 CJK 硬件光标、输入历史、多行、斜杠补全；Home/Prompt 使用固定锚点，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板、Terminal Settings 与 Brain / Provider 管理已接线；
+- Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/硬件光标基础能力，但主 Prompt 已改成 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标，专门规避 Windows Terminal 白块/反色泄漏；支持 CJK 硬件光标、输入历史、多行、斜杠补全；Home/Prompt 使用固定锚点并按终端高度保留纵向留白，Overlay 打开时进入 modal focus、背景只保留紧凑状态 Dock，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板、Terminal Settings 与 Brain / Provider 管理已接线；
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
 - 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；

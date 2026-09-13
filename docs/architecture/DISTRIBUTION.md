@@ -91,7 +91,7 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/硬件光标基础层；主 Prompt 使用 XMA `SafePromptInput`，只发 `CURSOR_MARKER` 定位真实硬件光标，不使用上游 Editor/Input 的 reverse-video 假光标，避免 Windows Terminal 白块/反色泄漏；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
 - Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
-- Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
+- Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
 - Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - `xiaoyu --help / --version / doctor`；

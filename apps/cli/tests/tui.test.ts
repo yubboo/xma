@@ -11,6 +11,7 @@ import {
   SafePromptInput,
   slashCommandSuggestions,
   toggleTerminalVisual,
+  terminalHomeLayout,
   workspaceRisk,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs } from '../src/main.ts'
@@ -115,6 +116,25 @@ test('TUI slash command suggestions expose only implemented terminal commands', 
 test('TUI command palette exposes only functional terminal actions', () => {
   const values = commandPaletteOptions().map(item => item.value)
   assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
+})
+
+
+test('TUI home reserves breathing room and enters modal focus while an overlay is open', () => {
+  const normal = terminalHomeLayout(34, false, true)
+  assert.equal(normal.logoTop, 3)
+  assert.equal(normal.promptEnd, 27)
+  assert.equal(normal.hintRow, 28)
+  assert.equal(normal.tipRow, 30)
+
+  const overlay = terminalHomeLayout(34, true, true)
+  assert.equal(overlay.promptEnd, 31)
+  assert.equal(overlay.hintRow, undefined)
+  assert.equal(overlay.tipRow, undefined)
+
+  const compact = terminalHomeLayout(24, false, true)
+  assert.equal(compact.tipRow, undefined)
+  assert.equal(compact.hintRow, 21)
+  assert.equal(compact.promptEnd, 20)
 })
 
 test('TUI visual setting toggles vivid/minimal without changing other terminal settings', () => {
