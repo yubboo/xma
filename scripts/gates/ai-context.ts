@@ -21,6 +21,7 @@ const required = [
   '.claude/skills/xma-development/SKILL.md',
   '.claude/skills/xma-upstream-study/SKILL.md',
   'docs/development/UPSTREAM-REFERENCE.md',
+  'docs/architecture/AGENT-ENGINE-STRATEGY.md',
 ]
 for (const file of required) {
   if (!existsSync(file)) throw new Error(`XMA AI Context Gate: missing ${file}`)
@@ -50,10 +51,14 @@ for (const forbidden of ['pnpm install', 'cargo fetch', 'winget ', 'pnpm rebuild
 
 const upstream = readFileSync('docs/development/UPSTREAM-REFERENCE.md', 'utf8')
 for (const marker of [
-  'openai/codex',
-  '7efa9d96fb34c3cafe108a3c870bfc33e5635772',
+  'earendil-works/pi',
+  '71dca871bc80b6bc97be37f0ca3189399d651fff',
   'deepseek-ai/deepseek-harness',
   'c291e7961a515f6d7af9304e7fd1d257929aef26',
+  'openai/codex',
+  '7efa9d96fb34c3cafe108a3c870bfc33e5635772',
+  'XiaomiMiMo/MiMo-Code',
+  '6fbb1732232c9d0ecefee209798a8586d78cb70d',
   'AndrewNog0724/minecraft-host-agent',
   '82cb581ef433c0c6da5e9587950c7dfb528b7c27',
   'Apache-2.0',
@@ -63,7 +68,7 @@ for (const marker of [
 }
 
 const agents = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['AGENT-RUNTIME.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.agents/skills/', '.codex/', '.claude/', 'Model-visible']) {
+for (const marker of ['AGENT-ENGINE-STRATEGY.md', 'AGENT-RUNTIME.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.agents/skills/', '.codex/', '.claude/', 'Model-visible', 'Upstream-first', 'xma-agent-loop', 'Everything is a Plugin']) {
   if (!agents.includes(marker)) throw new Error(`XMA AI Context Gate: AGENTS.md new architecture rule missing: ${marker}`)
 }
 

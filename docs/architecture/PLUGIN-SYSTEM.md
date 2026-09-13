@@ -1,15 +1,14 @@
 # XMA 插件系统与 DeepSeek Harness 兼容层
 
-## 1. 目标
+## 1. 目标：Everything is a Plugin
 
-XMA 坚持“能力可注册、卸载、替换”，但不要求所有源码都拆成 npm package。插件化强调 Service、生命周期、依赖、作用域和可逆副作用。
+XMA 正式采用 **Everything is a Plugin**：Provider、Tool、Context Source、Memory、Session Projection、Approval Policy、Sandbox Provider、Subagent、Workflow、Browser、Computer、Artifact、Search/MCP/Git、UI Extension、Telemetry 等能力默认经 Plugin / Capability seam 挂载。Agent Loop 只拥有最小稳定生命周期，不承载产品特例。
 
-XMA Plugin Host 支持两条路径：
+长期插件 Runtime 归属 `packages/xma-plugin/`，其语义第一参考 DeepSeek Harness / Cordis：稳定 `ctx.<service>`、`inject`、`apply(ctx)`、effect/disposer、typed events、scope、mount/unmount/reload。当前 `core/src/plugin.ts` 与 `plugins/compat/deepseek-harness/` 是迁移期实现。
 
-1. **XMA Native Plugin**：XMA 自己的稳定 Contract；
-2. **DeepSeek Harness / Cordis Compatibility**：在兼容层中适配 DSH 当前公开约定。
+兼容目标分四级：Contract Compatible、Service Compatible、Package Compatible、Behavior Compatible。只有通过相应 Conformance Tests 才能宣称对应兼容等级。
 
-兼容层不得让 XMA Core/Kernel 依赖 DeepSeek Harness 内部源码。
+**插件化不能绕过安全内核。** 真实副作用必须走 `xma-tools/capability → Policy/Approval → xma-native → Rust Security Kernel`；Plugin 不得直接用 Node `child_process`、裸 `fs` 或等价机制绕过 XMA policy。
 
 ## 2. Context / Service
 
@@ -116,7 +115,7 @@ XMA 以 DeepSeek Harness 当前 Cordis 插件约定为重要兼容目标，包�
 - plugin mount/unmount/reload；
 - Service registration 的可逆性。
 
-兼容适配固定放 `plugins/compat/deepseek-harness/`。XMA 自身 Service 可以提供 DSH bridge，但 XMA Core 不 import DSH 私有包实现。
+迁移期兼容适配固定放 `plugins/compat/deepseek-harness/`；通过 Contract/Service conformance 后，稳定兼容包目标为 `packages/xma-plugin-dsh/`。XMA 自身 Service 可以提供 DSH bridge，但 XMA Core 不 import DSH 私有包实现。
 
 ## 9. 兼容性等级
 

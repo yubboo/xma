@@ -7,7 +7,7 @@
 ## 开工前
 
 1. 阅读 `AGENTS.md`。
-2. 阅读 `docs/architecture/PROJECT-ARCHITECTURE.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PLUGIN-SYSTEM.md`。
+2. 阅读 `docs/architecture/PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PLUGIN-SYSTEM.md`。
 3. 阅读 `docs/development/DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`UPSTREAM-REFERENCE.md`。
 4. 若涉及 Terminal/安装/发布，额外阅读 `docs/architecture/DISTRIBUTION.md`、`WINDOWS-WORKFLOW.md` 与 `VERSIONING-AND-RELEASES.md`。
 5. 先判断修改属于 TypeScript Agent/业务层还是 Rust Native/Security 层；不允许语言职责漂移。
@@ -15,6 +15,10 @@
 ## 实施纪律
 
 - Provider Model 是推理核心，不写关键词路由/固定 Planner 替代模型。
+- Agent 基础能力遵循 Upstream-first / No Blind Reinvention：先读 `UPSTREAM-REFERENCE.md` 固定 commit 下对应源码、测试、协议和失败处理，再设计 XMA 实现；“我们自己能写”不是跳过上游研究的理由。
+- 稳定平台能力使用 `xma-*` package family；`xma-*` 表示 XMA 接口/源码/测试/发布所有权，不表示必须从零发明实现。
+- Everything is a Plugin，但插件真实副作用必须走 Tool/Capability → Approval/Policy → Native → Rust Kernel，不能用 Node `child_process` / 无约束 `fs` 绕过安全边界。
+- Model Intelligence Preservation：强模型负责判断下一步、选工具和根据 Observation 修正；Skill 增强知识/规程，不用固定流程或缩水 Tool Surface 代替模型思考。
 - Model-visible 动态内容必须可从 Session/Context source 重建。
 - 新行为优先通过 Provider/Tool/Context/Session/Plugin extension point；不要给 Agent Loop 加业务特例。
 - Tool 必须有 Schema、权限/Capability、structured result、取消语义和测试；模型 Schema 与 Runtime 必须来自同一个 frozen ToolPlan。

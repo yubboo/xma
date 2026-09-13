@@ -1,7 +1,7 @@
 /**
  * 文件作用：阻止 XMA 核心架构在后续开发中回退或被业务污染。
  * 关联模块：AGENTS.md、core/、agents/、native/。
- * 当前实现：检查关键目录、TypeScript/Rust 边界、Runtime/Context/Provider 分层、Desktop 工程约束和 DeepSeek Harness 兼容层。
+ * 当前实现：检查关键目录、TypeScript/Rust 边界、Runtime/Context/Provider 分层、上游优先/xma-* 换轨、Desktop 工程约束和 DeepSeek Harness 兼容层。
  * 职责边界：Gate 只做静态契约检查，不能替代真实测试。
  */
 
@@ -39,6 +39,7 @@ const required = [
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
   'docs/architecture/PROJECT-ARCHITECTURE.md',
+  'docs/architecture/AGENT-ENGINE-STRATEGY.md',
   'docs/architecture/DIRECTORY-STRUCTURE.md',
   'docs/architecture/AGENT-RUNTIME.md',
   'docs/architecture/AGENT-PLATFORM.md',
@@ -62,18 +63,36 @@ const required = [
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
 
+const engineStrategy = readFileSync('docs/architecture/AGENT-ENGINE-STRATEGY.md', 'utf8')
+for (const marker of [
+  'Upstream-first',
+  'No Blind Reinvention',
+  'xma-agent-loop',
+  'xma-ai',
+  'xma-plugin',
+  'Everything is a Plugin',
+  'Model Intelligence Preservation Contract',
+  'Pi',
+  'DeepSeek Harness',
+  'OpenAI Codex',
+  'MiMo Code',
+  'Minecraft 专业 Agent',
+]) {
+  if (!engineStrategy.includes(marker)) throw new Error(`XMA Agent Engine Strategy marker missing: ${marker}`)
+}
+
 
 const directoryDoc = readFileSync('docs/architecture/DIRECTORY-STRUCTURE.md', 'utf8')
 for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/agent/contract.ts', 'core/src/skill/loader.ts', 'core/src/session/contract.ts', 'apps/desktop/scripts/electron/install-runtime.ts']) {
   if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
 }
 const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
-for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpers', '父目录已经表达领域时去掉重复前缀', 'Provider Truth Contract', '隐藏降级']) {
+for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpers', '父目录已经表达领域时去掉重复前缀', 'Provider Truth Contract', '隐藏降级', 'Upstream-first', 'No Blind Reinvention', 'xma-agent-loop']) {
   if (!developmentRules.includes(marker)) throw new Error(`XMA development naming rule missing: ${marker}`)
 }
 
 const runtimeDoc = readFileSync('docs/architecture/AGENT-RUNTIME.md', 'utf8')
-for (const marker of ['AgentDefinition', 'Skill Context', 'Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline']) {
+for (const marker of ['AgentDefinition', 'Skill Context', 'Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline', 'xma-agent-loop', 'Model Intelligence Preservation']) {
   if (!runtimeDoc.includes(marker)) throw new Error(`XMA Agent Runtime architecture marker missing: ${marker}`)
 }
 const agentPlatformDoc = readFileSync('docs/architecture/AGENT-PLATFORM.md', 'utf8')
@@ -101,7 +120,7 @@ for (const marker of ['WorkspaceBinding', 'descriptorDigest', 'workspace/access-
   if (!workspaceDoc.includes(marker)) throw new Error(`XMA Workspace architecture marker missing: ${marker}`)
 }
 const providerDoc = readFileSync('docs/architecture/MODEL-PROVIDER.md', 'utf8')
-for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests', 'Provider / Model Truth Contract', 'providerId', 'adapterId', 'DeepSeek Official']) {
+for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests', 'Provider / Model Truth Contract', 'providerId', 'adapterId', 'DeepSeek Official', 'xma-ai', 'Pi AI']) {
   if (!providerDoc.includes(marker)) throw new Error(`XMA Model Provider architecture marker missing: ${marker}`)
 }
 
@@ -189,6 +208,11 @@ if (!runtimeSource.includes('toolPlanId: toolPlan.id') || !runtimeSource.include
 for (const marker of ['new WorkspaceToolSecurityGuard', 'grantWorkspaceAccess', 'revokeWorkspaceAccess', "type: 'workspace/access-used'", 'verifyBinding(handle.header.workspace)', 'Workspace header identity is inconsistent']) {
   if (!runtimeSource.includes(marker)) throw new Error(`XMA Runtime Workspace boundary marker missing: ${marker}`)
 }
+const pluginDoc = readFileSync('docs/architecture/PLUGIN-SYSTEM.md', 'utf8')
+for (const marker of ['Everything is a Plugin', 'xma-plugin', 'xma-plugin-dsh', 'Contract Compatible', 'Behavior Compatible', 'Rust Security Kernel']) {
+  if (!pluginDoc.includes(marker)) throw new Error(`XMA Plugin architecture marker missing: ${marker}`)
+}
+
 const compat = readFileSync('plugins/compat/deepseek-harness/index.ts', 'utf8')
 for (const marker of ['inject', 'apply(context']) if (!compat.includes(marker)) throw new Error(`DeepSeek Harness compatibility marker missing: ${marker}`)
 

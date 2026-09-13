@@ -6,6 +6,14 @@
 
 本轮开发优先级已经明确调整为：**底层 Agent Runtime 与真实 Model Provider 优先，复杂 Desktop UI 后置。** 当前 Desktop 只要求能启动、能打包、能验证 Shell/Runtime 通路；完整 Codex 风格三栏 Workbench 作为后续目标记录在 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
+## 1.1 2026-09-13 Agent Platform Architecture Pivot（已批准）
+
+项目正式从“在单体 `core/` 内继续自研完整 Agent 基础设施”换轨为 **Upstream-first + `xma-*` package family + Everything is a Plugin**。这次换轨不否定现有 0.1.0 Runtime/Provider/Tool/Workspace 成果，它们是迁移基线；但后续不再盲目扩建简化版 Harness。
+
+新的长期主线：`xma-ai + xma-agent-loop`（Pi 第一参考）→ `xma-plugin` / DSH compatibility → `xma-tools` + Process/Shell → Session/Context/Memory（DSH + MiMo）→ Task/Subagent/Workflow → Browser/Computer/Artifact。Model Intelligence Preservation 同时生效：强模型保留任务判断权，Skill 用于增强知识与方法，不替模型写死思考流程。
+
+当前批次只更新文档与 Gate，Runtime 大迁移尚未开始；因此下面“已实现的骨架证据”仍准确描述现有代码。正式战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`。
+
 ## 2. 已实现的骨架证据
 
 - XMA Core 正式 `Session → Turn → Step` Runtime 第一版；
@@ -62,7 +70,7 @@
 
 ## 3. 当前架构已确定但尚未完成的底层
 
-以下是当前 0.1.x 真正的开发主线：
+以下条目是现有 0.1.x 基线仍需补齐的能力；在架构 Pivot 后，它们会按 `xma-*` package 迁移主线重新排序，而不是继续无边界扩建单体 Core：
 
 - Session Store generation migration / fork（export/redaction/纯 migration Contract 已有第一版）；
 - system-message reconciliation / compaction（Context Assembly/durable snapshot 已有第一版）；
@@ -99,13 +107,15 @@
 
 ## 5. 上游参考状态
 
-XMA 已建立三条固定参考线：
+XMA 当前固定五条参考线：
 
-- OpenAI Codex：Coding Runtime / Thread-Turn / ToolRouter / Provider / Permission-Sandbox / App Protocol；
-- DeepSeek Harness：Cordis Plugin Harness / Session / Agent Loop / Tool Pipeline / Skills；
-- Minecraft Host Agent：Minecraft Agent-First / Skills / Knowledge / Tool vertical / E2E。
+- Pi：Agent Loop / streaming / Tool execution / multi-provider AI；
+- DeepSeek Harness：Everything is a Plugin / Cordis / Session / Tool / Agent capability seam；
+- OpenAI Codex：Approval / Sandbox / Process / Thread-Turn / multi-agent / App Protocol；
+- MiMo Code：Context / Memory / Checkpoint / Task / Subagent / Workflow / Skill discovery；
+- Minecraft Host Agent：Minecraft Agent-First / server-setup Skill / Knowledge / Tool vertical / mod / 樱花frp / E2E。
 
-固定 commit、许可证、路径映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。后续每个子系统实现必须在对应上游固定 commit 下做子系统全文件审阅，不能靠概括记忆。
+固定 commit、许可证、路径映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。后续重要子系统必须按 Upstream-first 规则读真实源码、tests、protocol、failure handling；不能只靠 README 或概括记忆。
 
 ## 6. Desktop Runtime
 

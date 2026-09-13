@@ -4,6 +4,7 @@
 
 本文定义 Xiaoyu Management Agent（XMA）的长期产品架构边界。它回答“谁负责推理、状态放在哪里、工具如何执行、插件如何扩展、桌面/CLI 如何复用同一 Runtime”。具体 Agent Loop、Provider 和 Desktop 细节分别见：
 
+- `docs/architecture/AGENT-ENGINE-STRATEGY.md`；
 - `docs/architecture/AGENT-RUNTIME.md`；
 - `docs/architecture/WORKSPACE.md`；
 - `docs/architecture/AGENT-PLATFORM.md`；
@@ -51,18 +52,21 @@ CLI、Desktop、Web、Server 只是同一个 XMA Runtime 的不同入口。任�
 
 ## 3. 顶层目录
 
-XMA 产品代码长期只保留以下核心区域：
+XMA 产品代码长期结构升级为 **XMA TypeScript Platform package family + Rust Kernel**：
 
 ```text
 apps/       CLI / Desktop / Web / Server Shell
-core/       TypeScript Agent 平台核心
-agents/     Xiaoyu Manager / Code 等已实现专业 Agent
+packages/   稳定 xma-* Agent Platform packages
+core/       0.1.x compatibility facade / 尚未迁出的 Core
+agents/     Xiaoyu Manager / Code / 已实现专业 Agent
 skills/     XMA 产品级专业 Skill（SKILL.md + skill.json）
-plugins/    Provider、Tool、Integration、兼容层
+plugins/    迁移期 Provider、Tool、Integration、兼容层与产品插件
 native/     Rust Native / Security / Performance Kernel
 scripts/    开发、同步、构建、发布、Gate
 docs/       架构、规则、计划、安全文档
 ```
+
+首批稳定包边界为 `xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-native`；后续按能力成熟度加入 `xma-context`、`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`。逻辑上仍只有一个 XMA Runtime。
 
 仓库根还允许 `.agents/`、`.codex/`、`.claude/` 和 `CLAUDE.md` 这类**开发者 AI 上下文**。它们不是产品 Runtime 目录，不保存用户会话、Workspace 或 Secret。
 
@@ -100,40 +104,32 @@ Rust 负责：
 
 Rust 不认识 Minecraft Agent、Writer Agent、Claude 或 GPT，也不决定应该调用哪个模型/工具。
 
-## 5. Core Runtime 分层与模块粒度
+## 5. XMA Platform Packages 与迁移边界
 
-0.1.x 不急于拆成几十个 npm package。源码先按领域聚合，但**物理目录只在领域真正长大时创建**：
+XMA 不再把“永远保持单一 Core package”作为目标。稳定 Agent Platform 能力使用 `xma-<capability>` 命名，package 是长期替换/测试/复用边界；普通 helper 不独立建包。
+
+目标结构：
 
 ```text
-core/src/
-  agent.ts                          legacy runAgent 迁移兼容入口
-  agent/                            Agent identity / registry / delegation
-    contract.ts
-    registry.ts
-    delegation.ts
-  skill/                            Skill metadata / registry / loader
-    contract.ts
-    registry.ts
-    loader.ts
-  runtime.ts                        Turn/Step driver
-  session/                          durable contract / store / export
-    contract.ts
-    store.ts
-    export.ts
-  model.ts / provider.ts            标准 Model Contract / Provider Platform
-  context.ts                        Context Assembly
-  tool/                             Tool Router / Policy / Schema
-    router.ts
-    policy.ts
-    schema.ts
-  workspace.ts                      Workspace identity / ownership / access
-  plugin.ts                         services/events/effects/lifecycle
-  app-protocol.ts                   Shell ↔ Runtime command/event types
+packages/
+  xma-agent-loop/      Turn / Step / Tool loop
+  xma-ai/              Model / Provider / streaming abstraction
+  xma-plugin/          Context / Service / Event / Effect / lifecycle
+  xma-session/         durable Session / event log / projection
+  xma-tools/           Tool definition / plan / router / policy facade
+  xma-native/          TypeScript ↔ Rust capability bridge
+
+  # 第二阶段
+  xma-context/
+  xma-memory/
+  xma-task/
+  xma-subagent/
+  xma-workflow/
 ```
 
-命名和拆分遵循三个原则：**短、可辨识、不重复路径**。目录与 TypeScript 使用小写 kebab-case，Rust 使用 snake_case；普通文件/目录优先 1～3 个核心词，父目录已经表达领域时文件名去掉领域前缀。只有职责、生命周期或安全边界确实不同才拆文件；同一逻辑的类型/helper/constants 默认留在一起。
+`xma-*` 表示 XMA 拥有稳定接口、源码、测试和发布责任，**不表示必须从零发明实现**。`xma-agent-loop` 第一参考 Pi Agent Core；`xma-ai` 第一参考 Pi AI；`xma-plugin` 第一参考 DeepSeek Harness/Cordis；Context/Memory/Task/Subagent/Workflow 重点研究 MiMo Code 与 DSH。完整策略见 `AGENT-ENGINE-STRATEGY.md`。
 
-`session/`、`tool/`、`agent/`、`skill/` 都已经形成至少三个稳定且职责不同的模块，因此使用领域子目录；legacy `agent.ts` 只保留迁移兼容。未来仍按同一标准演进，而不是参考上游目录数量机械拆包。
+0.1.x 采用兼容迁移：现有 `core/src/{runtime,provider,model,context,...}` 继续工作并逐步成为 facade/re-export；所有 Host 切到新 packages 之前不得一次性删除 Core。命名仍遵循短、可辨识、不重复父目录；Everything is a Plugin 不得演变成微包地狱。
 
 ## 6. Session 是事实源
 
@@ -261,8 +257,11 @@ XMA 的产品不是某一个壳，而是同一 Runtime 的多入口发行：`xia
 
 ## 13. 参考项目的正确定位
 
-- **OpenAI Codex**：Coding Agent Runtime、Thread/Turn、ToolRouter、Provider/Permission/Sandbox、App Protocol 的重要实现参考；
-- **DeepSeek Harness**：TypeScript Plugin Harness、Cordis Service/Event/Effect、Session、Tool Pipeline、Agent Loop extension 的兼容与实现参考；
-- **Minecraft Host Agent**：Minecraft 垂直场景、Agent-First、Skill、Knowledge、真实上游工具和验收的实现参考。
+- **Pi**：Agent Loop、streaming、tool calling、parallel/sequential tool execution、steering/follow-up 与 multi-provider AI 的第一参考；
+- **DeepSeek Harness**：Everything is a Plugin、Cordis Service/Event/Effect、Session/Tool/Agent capability seam 与 DSH compatibility 的第一参考；
+- **OpenAI Codex**：Approval、Sandbox、Process/Tool execution、Thread/Turn/Session、multi-agent 与 App Protocol 的第一参考；
+- **MiMo Code**：Context compaction/reconstruction、Memory、Checkpoint、Task Tree、Subagent、Workflow、Skill discovery 与长期任务成本的第一参考；
+- **Minecraft Host Agent**：Minecraft 专业 Agent 的领域实现第一参考，尤其是 Agent-First、server-setup Skill、真实版本/API 校验、Java/服务端/mod 工具、Profile、SLP 验证与樱花frp 穿透闭环。
 
-三者都是参考，不是 XMA 的父项目。XMA 的产品边界、语言所有权、目录结构和版本规则由自己的 `AGENTS.md` 决定。
+这些项目提供成熟答案和失败处理经验，但 XMA 的产品身份、`xma-*` 接口、语言所有权、安全 Kernel 和发行体系保持独立。基础能力开发必须执行 Upstream-first / No Blind Reinvention；详见 `AGENT-ENGINE-STRATEGY.md` 与 `docs/development/UPSTREAM-REFERENCE.md`。
+

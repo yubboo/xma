@@ -6,6 +6,12 @@ XMA 的核心理念是 **Model is replaceable. Agent is ours.** Provider 层必�
 
 当前 0.1.0 已落地第一版 Provider 平台 Contract：`core/src/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`plugins/providers/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family；`plugins/providers/catalog.ts` 把用户看到的真实 Provider 品牌与底层协议 Adapter 分离。首个品牌产品入口是 **DeepSeek Official**，使用官方 endpoint、OS Credentials 与动态 `/models`；它复用 OpenAI-compatible transport 的前提是目标官方 API 实际兼容，而不是因为品牌名相似。当前本地协议测试仍**不能**替代 DeepSeek 外部真实凭据 E2E，未取得真实 E2E 前不得宣称 Product Ready。
 
+## 1.1 `xma-ai` 长期边界
+
+长期 Model/Provider/streaming 基础抽象归属 `packages/xma-ai/`；现有 `core/src/model.ts`、`core/src/provider.ts` 与 `plugins/providers/*` 在迁移期继续工作并逐步桥接。`xma-ai` 第一参考 **Pi AI** 的多 Provider、streaming 与统一消息/工具事件实现，同时必须保留 XMA 自己的 Provider Profile、OS Credential、Provider/Model Truth Contract、Brain Ready Probe 与品牌身份/协议 Adapter 分层。
+
+目标不是把所有厂商裁成最低公分母，而是建立统一基础事件后允许 Adapter 保留 provider-specific continuation、thinking、usage、tool semantics。上游实现只能作为成熟参考，实际外部 Provider Contract 仍以厂商当前官方协议与真实 E2E 为准。
+
 ## 2. Provider 不只是一个 HTTP stream 函数
 
 正式 Provider 至少包含以下职责：

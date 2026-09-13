@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const docs = [
   'docs/architecture/PROJECT-ARCHITECTURE.md',
+  'docs/architecture/AGENT-ENGINE-STRATEGY.md',
   'docs/architecture/DIRECTORY-STRUCTURE.md',
   'docs/architecture/LANGUAGE-OWNERSHIP.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
@@ -30,7 +31,7 @@ const docs = [
 ]
 for (const file of docs) if (!existsSync(file)) throw new Error(`Required XMA doc missing: ${file}`)
 const agents = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'DeepSeek Harness', 'Electron 41.2.0', 'Tauri 2', 'AGENT-RUNTIME.md', 'AGENT-PLATFORM.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', 'skills/', '.codex/', '.claude/']) {
+for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'Pi', 'DeepSeek Harness', 'MiMo Code', 'Minecraft Host Agent', 'Electron 41.2.0', 'Tauri 2', 'AGENT-ENGINE-STRATEGY.md', 'AGENT-RUNTIME.md', 'AGENT-PLATFORM.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', 'xma-agent-loop', 'Everything is a Plugin', 'Upstream-first', 'skills/', '.codex/', '.claude/']) {
   if (!agents.includes(marker)) throw new Error(`AGENTS.md rule missing: ${marker}`)
 }
 console.log('XMA Documentation Gate PASS')

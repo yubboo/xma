@@ -4,7 +4,7 @@
 
 XMA 的 Agent Harness 和业务变化速度快，TypeScript 更适合 Provider API、JSON Schema、Tool Calling、MCP、插件、HTTP/SSE/WebSocket、TUI/Desktop/Web 以及 I/O 编排。
 
-因此 XMA 默认所有新业务先考虑 TypeScript。
+因此 XMA 默认所有 Agent/Product 新业务先考虑 TypeScript。长期物理边界是 `packages/xma-*` TypeScript Platform packages，而不是把稳定能力继续永久塞进单一 `core/`。
 
 ## Rust 是 Native/Security Kernel
 
@@ -32,10 +32,12 @@ XMA 的 Agent Harness 和业务变化速度快，TypeScript 更适合 Provider A
 
 ## 上游参考不能改变 XMA 的语言所有权
 
-OpenAI Codex 与 Minecraft Host Agent 都有大量 Rust 产品/Agent 逻辑，DeepSeek Harness 则以 TypeScript Plugin Harness 为主。XMA 参考它们时只吸收适合自己的 Contract 和工程经验：
+Pi、DeepSeek Harness、OpenAI Codex、MiMo Code 与 Minecraft Host Agent 的语言选择各不相同。XMA 采用 Upstream-first，但上游不能改变自己的语言所有权：
 
-- Codex 的 Thread/Turn、ToolRouter、Permission/Sandbox 语义在 XMA Core 中主要由 TypeScript 编排，只有真实 OS enforcement 下沉 Rust；
+- Pi Agent Core / Pi AI 是 `xma-agent-loop` / `xma-ai` 的第一实现参考，吸收成熟事件、Tool Loop、Provider 抽象，但最终 XMA Platform 仍是 TypeScript；
+- Codex 的 Thread/Turn、ToolRouter、Permission/Sandbox 语义主要由 TypeScript 编排，只有真实 OS enforcement 下沉 Rust；
+- MiMo 的 Context/Memory/Task/Subagent/Workflow 重点在 TypeScript `xma-*` 包中吸收；
 - MCHA 的 Agent-First、Skills、Minecraft tools/knowledge 在 XMA 中 TypeScript 化，不能把其 Rust Agent Loop 搬进 `native/`；
-- DSH 的 Service/Event/Effect/Agent Loop 思想可以直接指导 TypeScript Core/Plugin Host，但不要求复制其 workspace package 粒度。
+- DSH 的 Service/Event/Effect/Capability seam 直接指导 `xma-plugin`，包粒度按 XMA 稳定能力边界决定，而不是机械复制。
 
 任何“为了对标上游而把 Agent/业务写进 Rust”的改动都属于架构回退。

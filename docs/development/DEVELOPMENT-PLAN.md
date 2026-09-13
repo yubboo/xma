@@ -4,19 +4,38 @@
 
 0.1.x 的目标不是把界面做得像一个完成品，而是让 XMA 成为**真正可持续工作的多 Provider Agent Platform**：真实模型能够持续多轮推理、调用受控工具、恢复 Session、操作 Workspace，并通过 Rust Native Kernel 安全执行本地副作用。
 
-开发顺序固定为：**底层 Runtime → Provider/Tool/Workspace 基础 → Agent/Skill Platform → Credentials/Provider 产品化 → Process/Workspace 产品化 → Xiaoyu Manager → Xiaoyu Code 真闭环 → Plugin/Host 兼容 → 其他专业 Agent → Desktop Workbench。**
+2026-09-13 架构换轨后的主线固定为：**Docs/Gates → `xma-ai + xma-agent-loop` → `xma-plugin` + DSH compatibility → `xma-tools` + Process/Shell → `xma-session/xma-context/xma-memory` → `xma-task/xma-subagent/xma-workflow` → Browser/Computer/Artifact → 专业 Agent 扩展 → Desktop Workbench。**
+
+现有 Stage A-D 代码与测试不是作废，而是迁移基线：逐步被新的 `xma-*` packages 吸收/桥接，直到 Host 全部切换后再收缩 legacy `core/`。
 
 UI 当前只维持开发壳和 Host 通路验证，不提前投入复杂工作台细节。完整三栏布局目标见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
 ## 2. 上游参考方法
 
-XMA 长期参考：
+XMA 强制执行 Upstream-first / No Blind Reinvention：
 
-- OpenAI Codex：Coding Agent Runtime、Thread/Turn、ToolRouter、Provider、Permission/Sandbox、App Protocol；
-- DeepSeek Harness：TypeScript Plugin Harness、Cordis Service/Event/Effect、Session、Tool Pipeline、Agent Loop；
-- Minecraft Host Agent：Agent-First、Minecraft Skills/Knowledge/Tools、会话/用量/确认门、真实上游验证。
+- **Pi**：Agent Loop、streaming、tool calling、parallel/sequential execution、steering/follow-up、multi-provider AI；
+- **DeepSeek Harness**：Everything is a Plugin、Cordis Service/Event/Effect、capability seam、Session/Tool/Agent extension；
+- **OpenAI Codex**：Approval、Sandbox、Process/Tool execution、Thread/Turn/Session、multi-agent、App Protocol；
+- **MiMo Code**：Context compaction/reconstruction、Memory、Checkpoint、Task Tree、Subagent、Workflow、Skill discovery；
+- **Minecraft Host Agent**：Minecraft 专业 Agent、server-setup Skill、领域 Tools/Knowledge、mod/服务器生命周期/樱花frp 穿透与真实 E2E。
 
-固定 commit、路径映射和许可证见 `UPSTREAM-REFERENCE.md`。实现任何重要子系统前，必须审阅对应上游子系统在固定 commit 下的全部相关源码/README/测试，而不是只看一个文件。
+固定 commit、路径映射和许可证见 `UPSTREAM-REFERENCE.md`。实现重要子系统前必须读对应源码、tests、protocol 和 failure handling，并在任务记录中说明吸收/拒绝项。
+
+## 2.1 2026-09-13 Agent Platform Architecture Pivot
+
+第一批只做文档/Gate 换轨，不在同一批偷偷重写 Runtime。随后依次执行：
+
+```text
+Stage P1  xma-ai + xma-agent-loop
+Stage P2  xma-plugin + xma-plugin-dsh conformance
+Stage P3  xma-tools + Process/Shell/Git 完整工作面
+Stage P4  xma-session + xma-context + xma-memory
+Stage P5  xma-task + xma-subagent + xma-workflow
+Stage P6  Browser + Computer + Artifact capabilities
+```
+
+每个新包都必须有 Contract Tests；涉及上游行为兼容时有 Conformance Tests；涉及 Agent 能力必须有 integration `model → tool → result → same model → final`；Product Ready 需要 Windows 实机真实 Provider/Tool E2E。
 
 ## 3. 0.1.x 阶段 A：Runtime Contract 重构
 
@@ -267,10 +286,11 @@ XMA 长期参考：
 
 Windows/Linux/macOS 各自平台构建的资产至少完成：install → 新终端 `xiaoyu --version` → `xiaoyu doctor` → 安全 Workspace TUI → upgrade → uninstall/PATH cleanup。
 
-## 7. 阶段 E：Plugin Host 与 DeepSeek Harness Compatibility
+## 7. 阶段 E / Pivot P2：`xma-plugin` 与 DeepSeek Harness Compatibility
 
 ### 实现
 
+- 将现有 `core/src/plugin.ts` 渐进迁移到 `packages/xma-plugin/`；
 - XMA Plugin scope/lifecycle transaction；
 - stable Service Registry；
 - typed event maps；
@@ -312,22 +332,27 @@ Thread/Turn、Tool Router、approval/sandbox、AGENTS discovery、exec/file-syst
 
 让用户在一个真实仓库里提出一个多文件任务，Xiaoyu Code 能：读规则 → 查代码 → 修改 → 执行测试 → 展示 diff/证据 → 继续同一 Session 修正，并且所有机器副作用受 Permission/Native 约束。
 
-## 9. 阶段 G：Minecraft Agent 第一条垂直闭环
+## 9. 阶段 G：Minecraft 专业 Agent 闭环
 
-在通用 Runtime 稳定后，把 Minecraft Host Agent 的成熟场景经验 TypeScript 化进 `agents/minecraft/` 与相关 plugins：
+在通用 `xma-agent-loop/xma-ai/xma-plugin/xma-tools` 稳定后，Minecraft 不另造 Runtime。领域第一参考固定为 `AndrewNog0724/minecraft-host-agent`：Agent-First 行为、`server-setup` Skill、Knowledge/API、真实工具语义与演示轨迹都作为设计/验收基线。
 
-- server-setup Skill；
-- MC/Java/server software Knowledge；
-- Mojang/Paper/Fabric/Modrinth 等真实 API tools；
-- sys info / Java / server artifact / config / process / probe；
-- Profile；
-- 网络/穿透按 XMA 安全边界后续接入；
-- 真实版本/哈希校验；
-- “先感知现状，再动作”。
+建议产品组合：专业 Agent identity + Minecraft Skill/Knowledge + Minecraft Tool Plugin。领域编排仍由用户选中的真实模型完成，Skill 只提供红线、决策清单和验收标准。
+
+重点能力：
+
+- 开工“先看后动”：发现已有 `server/`/Profile 先陈述现状并确认沿用、继续或新开；
+- MC/Java/server software 兼容查询，易变事实不写死 Prompt；
+- Java 探测/受管供给、Vanilla/Paper/Spigot/Fabric server artifact、配置生成；
+- `check_plan` 作为确定性部署前验收，不替模型做决策；
+- server 独立窗口启动、`latest.log` 就绪判定、端口探测与 MC SLP ping；
+- Modrinth + CurseForge/社区镜像的 mod 检索、依赖闭包、安装期权威重取与哈希校验；
+- Profile/Session/Usage 留痕；
+- 内网穿透七件套：`check_tunnel / ensure_frpc / select_tunnel_node / create_tunnel / start_tunnel / tunnel_status / delete_tunnel`，樱花frp API v4 + frpc 下载校验 + 节点确定性打分 + API online 轮询 + 端到端验证；
+- XMA 中所有文件/进程/网络副作用仍经 `xma-tools → Approval → xma-native → Rust Kernel`，不复制 MCHA Rust Agent Loop。
 
 ### 出口标准
 
-一条真实 Minecraft 用例从自然语言到可验证本地服务器闭环，轨迹、版本事实、下载来源、Native 副作用全部可审计。
+在支持范围内完成一条真实用例：用户只用自然语言描述“版本 + 账号情况 + 服务端/mod + 网络需求”，Minecraft Agent 能自动查证 → 必要追问 → 部署 → 启动验证 → 必要时穿透 → 交付连接信息；真实版本、下载源、哈希、Tool/Approval/Native 轨迹均可审计。外部第三方服务、账号实名、网络故障等不可控条件必须结构化解释，产品不做绝对 100% 成功承诺。
 
 ## 10. 阶段 H：External Host Adapters
 

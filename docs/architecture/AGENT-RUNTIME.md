@@ -4,7 +4,15 @@
 
 本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；Stage C 已落地 frozen ToolPlan/ToolRouter、Schema → Policy → Security Guard → Approval → Execute 流水线与 Rust filesystem/process 最小 Capability 链；Stage D 第一批又把 Workspace Binding、ownership、跨 Agent durable grant、Tool/Context Workspace scope 接入 Runtime。PTY/Network/process-tree ownership、Workspace persistence/instructions 等仍按本文继续实现。
 
-参考上，XMA 借鉴 Codex 的 Thread/Turn/ToolRouter/Permission 运行语义、DeepSeek Harness 的 Session/Event/Service/Effect 结构和 Minecraft Host Agent 的 Agent-First/Skill/Tool 实践；实现上仍严格服从 XMA 自己的 **TypeScript Agent Core + Rust Native/Security Kernel** 边界。
+参考上，XMA 把 **Pi Agent Core** 作为 Agent Loop / streaming / tool execution / steering-follow-up 的第一实现参考；DeepSeek Harness 作为 Session/Event/Service/Effect 与 capability seam 参考；Codex 作为 Permission/Sandbox/ToolRouter/Thread-Turn 参考；MiMo Code 作为长期 Context/Memory/Task/Subagent/Workflow 参考；MCHA 作为 Minecraft 专业 Agent 参考。实现上仍严格服从 XMA 自己的 **TypeScript `xma-*` Platform + Rust Native/Security Kernel** 边界。
+
+## 1.1 `xma-agent-loop` 目标与迁移原则
+
+长期 Agent Loop 归属 `packages/xma-agent-loop/`。当前 `core/src/runtime.ts` 仍是 0.1.x 可运行实现，在迁移期间作为 compatibility facade/bridge 保留，不做一次性推倒重写。
+
+`xma-agent-loop` 必须优先吸收 Pi 已验证的语义：streaming message lifecycle、text/thinking/toolcall 增量、Tool Result 回同一模型、parallel/sequential tool execution、cancellation、steering/follow-up、错误结算与可扩展 next-turn preparation。XMA 自己增加的 Session durable facts、Workspace identity、Approval、Rust capabilities 通过稳定 extension seam 接入，而不是把特例继续塞进主循环。
+
+**Model Intelligence Preservation**：Loop 负责提供能力和安全，不负责替旗舰模型制定业务决策。Skill 是可按需注入的专业知识/方法，不是把强模型锁进固定步骤。
 
 ## 2. 核心对象
 

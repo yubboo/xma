@@ -14,6 +14,16 @@
 - `docs/development/UPSTREAM-REFERENCE.md`；
 - `docs/development/DEVELOPMENT-PLAN.md`。
 
+## 1.1 Upstream-first / No Blind Reinvention（强制）
+
+Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、Subagent、Workflow、Approval、Sandbox、Plugin、Browser、Computer、Artifact 等基础能力开工前，必须先研究至少一个成熟上游的真实源码、测试、协议与失败处理。当前主参考：Pi、DeepSeek Harness、OpenAI Codex、MiMo Code、Minecraft Host Agent。
+
+任务记录必须写清：参考的固定 commit/目录、实际阅读文件、上游处理的 edge cases、XMA 吸收的 invariant、拒绝项、因 Rust Kernel/Workspace/Manager 产生的必要差异，以及真实 E2E 验收。**“我们自己也能写”不是重新造轮子的理由。**
+
+稳定 Agent Platform 能力按 `xma-<capability>` 建包；`xma-*` 表示 XMA 对接口/源码/测试/发布的 ownership，不表示从零发明实现。普通 helper 不拆成包。
+
+完整策略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`。
+
 ## 2. 语言所有权
 
 - 产品、Agent、业务、Provider、Session、Context、Tool Registry、Plugin、Skill、Knowledge、Workspace、UI 主逻辑优先 TypeScript。
@@ -30,7 +40,7 @@
 - 安全判断、权限、协议、生命周期、兼容层和容易误解的逻辑必须有中文解释。
 - 不给显而易见的赋值写无意义注释。
 - TypeScript Core 保持 strict；新增 `any` 必须有明确理由。
-- 不为了“架构漂亮”过度拆目录和 package。
+- 不为了“架构漂亮”制造微包；但 Agent Platform 的稳定 capability seam 必须按批准的 `xma-*` package family 拆分，普通 helper 留在所属 package 内。
 - 同一个事实只保留一个权威文档；AI Skill/README 引用它，不复制一份长期规则。
 
 ### 3.1 文件/目录命名与拆分
@@ -40,6 +50,7 @@
 | 对象 | 固定形式 | 示例 |
 |---|---|---|
 | 产品目录 | 小写 `kebab-case` | `model-provider/`、`deepseek-harness/` |
+| XMA 稳定平台包 | `xma-<capability>` | `xma-agent-loop`、`xma-ai`、`xma-plugin` |
 | TypeScript / TSX | 小写 `kebab-case` | `agent/registry.ts`、`install-runtime.ts` |
 | Rust 模块 | `snake_case` | `host_policy.rs`、`process_guard.rs` |
 | 测试 | `*.test.ts` | `workspace-runtime.test.ts` |
@@ -206,17 +217,13 @@ Electron renderer 禁止直接获得任意 filesystem/shell/Native 权限。
 
 ## 10. 上游参考规则
 
-XMA 参考 Codex、DeepSeek Harness、Minecraft Host Agent，但不得“看哪个像就抄哪个”。
+- Pi：Agent Loop / streaming / tool execution / multi-provider 第一参考；
+- DeepSeek Harness：Everything is a Plugin / Cordis / capability seam 第一参考；
+- Codex：Approval / Sandbox / process / Thread-Turn / multi-agent 第一参考；
+- MiMo Code：Context / Memory / Checkpoint / Task / Subagent / Workflow 第一参考；
+- MCHA：Minecraft 专业 Agent、server-setup Skill、领域 Tool/Knowledge、mod/穿透/场景 E2E 第一参考。
 
-重要子系统开发前必须：
-
-1. 使用 `UPSTREAM-REFERENCE.md` 固定的 commit 或显式升级；
-2. 审阅对应上游子系统目录的全部相关源码/README/测试；
-3. 记录吸收的 Contract 和拒绝的设计；
-4. 重新经过 XMA TypeScript/Rust、Workspace、安全、Plugin 边界；
-5. 如复制/改编实质代码，单独处理许可证/NOTICE/版权标注。
-
-禁止把 Codex 的 Rust 产品业务、MCHA 的 Rust Agent Loop 或 DSH 的包粒度机械搬进 XMA。
+重要子系统必须在固定 commit 下审阅对应目录的源码、README、测试和协议，不能只读 README 或凭记忆概括。上游可以停止维护，但 XMA 已实现的源码必须独立构建；不得把远程包/仓库存在作为核心运行前提。实质复制/改编代码必须遵守许可证，产品品牌、公共包名、UI 和主叙事保持 XMA。
 
 ## 11. AI 开发上下文规则
 

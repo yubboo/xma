@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const ROOTS = ['apps', 'core', 'agents', 'plugins', 'native', 'scripts'] as const
+const ROOTS = ['apps', 'core', 'packages', 'agents', 'plugins', 'native', 'scripts'] as const
 const MAX_NAME_LENGTH = 32
 const MAX_WORDS = 3
 
@@ -98,7 +98,17 @@ function walk(dir: string): void {
   }
 }
 
-for (const root of ROOTS) walk(root)
+for (const root of ROOTS) if (existsSync(root)) walk(root)
+
+
+// packages/ 是稳定 XMA Platform 包族；Stage 0 可以尚未创建，创建后首层目录必须使用 xma-*。
+if (existsSync('packages')) {
+  for (const name of readdirSync('packages')) {
+    const path = join('packages', name)
+    if (!statSync(path).isDirectory()) continue
+    if (!/^xma-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name)) fail(`XMA Platform package 必须使用 xma-*：${path}`)
+  }
+}
 
 // docs/ 采用专业文档大写 kebab-case；README 是固定行业文件名。
 function walkDocs(dir: string): void {

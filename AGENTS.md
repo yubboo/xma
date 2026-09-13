@@ -72,43 +72,45 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - 当前没有真实实现的 Writer/Minecraft/GameDev/Art 等 Agent 不创建空目录或“ready”假状态。
 - 外部 Host Adapter 只能位于 Integration/Compatibility 层；Core 禁止出现 `codex-agent.ts`、`claude-agent.ts` 等宿主专属平行 Agent。
 
-## 5. 插件规则：XMA 原生 + DeepSeek Harness 兼容
+## 5. 插件规则：Everything is a Plugin + DeepSeek Harness 兼容
 
-XMA Plugin Host 必须支持两条路径：
+XMA 正式采用 **Everything is a Plugin** 方向。Provider、Tool、Context Source、Memory、Session Projection、Approval Policy、Sandbox Provider、Subagent、Workflow、Browser、Computer、Artifact、Search/MCP/Git、UI Extension 与 Telemetry 等能力，默认通过稳定 Plugin / Capability seam 接入；Agent Loop 只保留最小且稳定的 Turn/Step 生命周期，不成为功能垃圾场。
 
-1. **XMA Native Plugin**：XMA 自己的插件 Contract。
-2. **DeepSeek Harness / Cordis Compatibility**：以 DeepSeek Harness 当前 Cordis 插件约定为兼容目标，包括：
-   - `inject` 服务依赖声明；
-   - `apply(ctx)` 生命周期；
-   - 稳定 `ctx.<service>` Service 容器；
-   - 类型化事件/事件分发；
-   - `effect()` / disposer 的可逆副作用；
-   - plugin mount / unmount / reload 生命周期。
+`xma-plugin` 至少提供：稳定 `ctx.<service>` Service 容器、显式 `inject`、`apply(ctx)` mount 生命周期、`effect()` / disposer 可逆副作用、类型化事件、Agent/Session/Workspace scope，以及 mount/unmount/reload。任何注册都必须可撤销，卸载后不能遗留 listener、timer、tool、provider 或幽灵状态。
 
-兼容层不得让 XMA Kernel 依赖 DeepSeek Harness 的内部源码。兼容适配放在 `plugins/compat/deepseek-harness/`。
+XMA Plugin Runtime 同时支持两条路径：
 
-**兼容性声明必须基于 Conformance Tests。没有测试通过的 DSH 专属 Service 不得宣称“完全兼容”。** 我们的目标是尽可能达到完整兼容，但文档必须区分“兼容目标”和“已验证能力”。
+1. **XMA Native Plugin**：XMA 自己的稳定 Plugin Contract；
+2. **DeepSeek Harness / Cordis Compatibility**：以真实 DSH/Cordis 行为为兼容目标，不只模仿 API 外形。兼容分 Contract / Service / Package / Behavior 四级，并由 Conformance Tests 证明。
 
-## 6. 目录规则：保持清楚，不要过度拆包
+兼容层不得让 Rust Kernel 依赖 DSH 内部源码。迁移期适配仍位于 `plugins/compat/deepseek-harness/`；稳定 package 目标为 `packages/xma-plugin-dsh/`。
 
-顶层核心区域只保留：
+**Everything is a Plugin 不等于 Everything can bypass security。** 任何真实文件、进程、网络、系统副作用都必须走 `xma-tools / capability → Policy / Approval → xma-native → Rust Security Kernel`。插件不得用 Node `child_process`、无约束 `fs` 等方式绕过 Native policy。
+
+## 6. 目录规则：`xma-*` 稳定能力包 + 兼容迁移
+
+长期顶层结构固定为：
 
 - `apps/`：CLI、Desktop、Web、Server 外壳；
-- `core/`：XMA TypeScript 核心；
+- `packages/`：稳定 XMA Agent Platform 能力包，统一 `xma-<capability>` 命名；
+- `core/`：0.1.x 迁移期 compatibility facade / 尚未迁出的 TypeScript Core；
 - `agents/`：Xiaoyu Manager 与已实际开发的专业 Agent；
 - `skills/`：XMA 产品级专业 Skill；
-- `plugins/`：跨 Agent 可复用插件、Provider、Tool 与兼容层；
-- `native/`：Rust Native Kernel；
+- `plugins/`：迁移期 Provider/Tool/Integration/Compatibility 与产品插件；
+- `native/`：Rust Native/Security/Performance Kernel；
 - `scripts/`：开发、同步、构建、发布、Gate；
 - `docs/`：架构、计划、规则、安全文档。
 
-在模块真正长大前，不要把 `memory/context/session/tools/...` 每个都拆成独立 npm 包。
+首批稳定 package family：`xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-native`；第二批再进入 `xma-context`、`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`。
+
+`xma-*` 表示 **XMA ownership of interface / source / test / release**，不表示必须从零发明内部实现。成熟上游已经解决的问题必须先研究再实现。普通 helper 仍留在所属 package 内，禁止把 Everything is a Plugin 误解成微包地狱。
 
 ### 6.1 命名与模块粒度（锁死）
 
 XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责。固定规则：
 
 - 产品目录与 TypeScript / TSX / PowerShell 文件使用**小写 kebab-case**，例如 `model-provider/`、`agent/registry.ts`、`xma-build-release.ps1`；
+- `packages/` 下稳定平台包统一命名为 **`xma-<capability>`**，例如 `xma-agent-loop`、`xma-ai`、`xma-plugin`；禁止使用上游品牌名作为 XMA 主包名；
 - Rust 模块文件遵循 Rust 生态使用 **snake_case**，例如 `host_policy.rs`；`main.rs` / `lib.rs` / `build.rs` 等官方约定名保持不变；
 - `.` 只表达文件角色/工具约定，不用于普通单词分隔：统一使用 `*.test.ts`、`*.config.ts`、`*.d.ts`；`package.json`、`Cargo.toml`、`tauri.conf.json` 等生态固定名保持官方名称；
 - `docs/` 的正式架构/开发/安全文档使用 `UPPER-KEBAB.md`；`README.md`、`AGENTS.md`、`CLAUDE.md` 等固定入口例外；
@@ -137,22 +139,23 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 
 1. `AGENTS.md`
 2. `docs/architecture/PROJECT-ARCHITECTURE.md`
-3. `docs/architecture/DIRECTORY-STRUCTURE.md`
-4. `docs/architecture/LANGUAGE-OWNERSHIP.md`
-5. `docs/architecture/AGENT-RUNTIME.md`
-6. `docs/architecture/AGENT-PLATFORM.md`
-7. `docs/architecture/WORKSPACE.md`
-8. `docs/architecture/MODEL-PROVIDER.md`
-9. `docs/architecture/PLUGIN-SYSTEM.md`
-10. `docs/architecture/DESKTOP-RUNTIME.md`
-11. `docs/architecture/DESKTOP-WORKBENCH.md`
-12. `docs/architecture/DISTRIBUTION.md`
-13. `docs/development/DEVELOPMENT-RULES.md`
-14. `docs/development/DEVELOPMENT-PLAN.md`
-15. `docs/development/PROJECT-STATUS.md`
-16. `docs/development/UPSTREAM-REFERENCE.md`
-17. `docs/development/VERSIONING-AND-RELEASES.md`
-18. `docs/development/WINDOWS-WORKFLOW.md`
+3. `docs/architecture/AGENT-ENGINE-STRATEGY.md`
+4. `docs/architecture/DIRECTORY-STRUCTURE.md`
+5. `docs/architecture/LANGUAGE-OWNERSHIP.md`
+6. `docs/architecture/AGENT-RUNTIME.md`
+7. `docs/architecture/AGENT-PLATFORM.md`
+8. `docs/architecture/WORKSPACE.md`
+9. `docs/architecture/MODEL-PROVIDER.md`
+10. `docs/architecture/PLUGIN-SYSTEM.md`
+11. `docs/architecture/DESKTOP-RUNTIME.md`
+12. `docs/architecture/DESKTOP-WORKBENCH.md`
+13. `docs/architecture/DISTRIBUTION.md`
+14. `docs/development/DEVELOPMENT-RULES.md`
+15. `docs/development/DEVELOPMENT-PLAN.md`
+16. `docs/development/PROJECT-STATUS.md`
+17. `docs/development/UPSTREAM-REFERENCE.md`
+18. `docs/development/VERSIONING-AND-RELEASES.md`
+19. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 
@@ -277,6 +280,8 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ## 12. Agent Runtime / Provider / Tool 新硬规则（锁死）
 
 - XMA 正式 Runtime 采用 **Session → Turn → Step** 语义：Session 是持久事实源；Turn 是一次用户驱动工作；Step 是一次模型请求及其 Tool Call 处理。
+- **Model Intelligence Preservation Contract**：旗舰模型负责理解任务、判断下一步、选工具、基于 Observation 修正方案、决定是否需要子 Agent 和何时完成；Framework 提供真实能力、状态、安全和审计，不得再用隐藏 Planner、固定决策树或缩水 Tool Surface 替模型思考。
+- **Skill 是增强，不是限制**：Skill 提供专业知识、经验、边界和验收标准；不得把强模型强制塞进固定 A→B→C 流程，也不得因为绑定 Skill 就缩小本可用的工具面。
 - **Model-visible ⇔ reconstructable**：任何进入模型请求的动态内容都必须能从 Session durable state 或有明确来源的 Context source 重建；UI 临时 state 不得偷偷影响模型。
 - 模型流式 chunk / progress 属于 live event；最终 assistant/tool/approval/usage 等需要恢复或审计的事实必须 durable。
 - Tool 必须通过 Schema → Policy/Plugin → Security Guard → Approval → Execute → Post-process/Redact → Durable Result 流水线；普通 Tool 失败结构化回模型，不得无故炸毁 Session。
@@ -293,17 +298,23 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - 跨 Workspace Context Source 在 render 前必须通过 read authorization，且 durable context source 记录目标 workspaceId。
 - Native Tool 必须绑定稳定 workspaceId；TypeScript Workspace policy 与 Rust roots/capability enforcement 必须同时存在，任一层都不能被当成另一层的替代。
 
-## 13. 上游参考纪律（锁死）
+## 13. 上游优先开发纪律（锁死）
 
-XMA 长期参考三个上游，但**只吸收适合 XMA 的 Contract 和工程经验**：
+XMA Agent Platform 采用 **Upstream-first Development Rule** 与 **No Blind Reinvention Rule**。基础能力开工前必须先研究成熟上游的真实源码、测试、协议和失败处理；“我们自己也能写”不构成重新实现的理由。只有上游方案明确不满足 XMA Contract / Security / Language Ownership 时，才允许设计不同方案，并记录差异。
 
-- OpenAI Codex：Coding Agent Runtime、Thread/Turn、Tool Router、Provider、Permission/Sandbox、App Protocol；
-- DeepSeek Harness：TypeScript Plugin Harness、Cordis Service/Event/Effect、Session、Tool Pipeline、Agent Loop extension；
-- Minecraft Host Agent：Agent-First、Minecraft Skills/Knowledge/Tools、会话/用量/确认门、真实上游验证。
+当前五个主要上游角色固定为：
 
-固定提交、许可证、路径级映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。重要子系统开工前必须审阅对应上游固定 commit 下的相关目录全文件（源码 + README + 测试 + 协议），并记录吸收/拒绝理由。
+- **Pi**：Agent Loop、streaming、tool calling、parallel/sequential tool execution、steering/follow-up、multi-provider AI；
+- **DeepSeek Harness**：Everything is a Plugin、Cordis Service/Event/Effect、Session/Tool/Agent capability seam、Subagent/Workflow extension；
+- **OpenAI Codex**：Approval、Sandbox、Process/Tool execution、Thread/Turn/Session、multi-agent、App Protocol；
+- **MiMo Code**：Context compaction/reconstruction、Memory、Checkpoint、Task Tree、Subagent、Workflow、Skill discovery、长期任务成本；
+- **Minecraft Host Agent (MCHA)**：Minecraft 专业 Agent、Agent-First、领域 Skill/Knowledge/Tools、真实上游查证、mod、服务器生命周期、内网穿透和场景 E2E。
 
-任何上游若与 XMA 语言所有权冲突，以 XMA 为准：**禁止把 Codex/MCHA 的 Rust Agent/业务架构搬进 XMA Rust Kernel；禁止因 DSH 大量拆包而过度拆 XMA。** 实质复制/改编上游代码必须单独完成许可证/NOTICE/版权标注审查。
+固定提交、许可证、路径级映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。重要子系统开工前必须记录：对应上游目录、实际读过的源码/测试/协议、吸收的 invariant、拒绝理由、XMA 必要差异和真实 E2E 证据。
+
+接口、产品身份和最终实现归 XMA。可以参考、选择性移植或按成熟实现重构，但不得把上游远程服务/包变成 XMA 核心运行的不可控黑盒。任何实质代码复制/改编仍需遵守对应许可证；产品 UI、公共 API、包名和主叙事统一使用 XMA 命名。
+
+完整战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`。
 
 ## 14. AI 开发上下文目录（锁死）
 

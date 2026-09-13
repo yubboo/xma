@@ -1,22 +1,23 @@
 # XMA 目录结构说明
 
-## 1. 为什么不拆成几十个 Package
+## 1. `xma-*` Package Family：稳定能力拆包，不制造微包地狱
 
-XMA 0.1.x 处于平台出生期。当前优先级是把 Agent Runtime、真实 Provider、Session、Tool/Permission、Workspace、Plugin Host 和 Native Kernel 真正跑通，而不是制造大量 npm workspace 边界。
-
-产品代码核心目录保持精简：
+XMA Agent Platform 的长期物理边界已经从“Core 永远单包”调整为 **稳定能力 `xma-*` package family**。包边界服务于独立生命周期、替换、测试和多消费者复用；普通 helper 不因为 Everything is a Plugin 就单独建包。
 
 ```text
 xma/
 ├─ apps/       # CLI / Desktop / Web / Server 四种产品入口
-├─ core/       # XMA TypeScript Agent 平台核心
-├─ agents/     # Xiaoyu Manager / Code 等已实现 Agent
+├─ packages/   # xma-agent-loop / xma-ai / xma-plugin / ...
+├─ core/       # 0.1.x compatibility facade / 尚未迁出的 TypeScript Core
+├─ agents/     # Xiaoyu Manager / Code / 已实现专业 Agent
 ├─ skills/     # XMA 产品级 Skill（SKILL.md + skill.json）
-├─ plugins/    # Provider / Tool / Integration / Compatibility
+├─ plugins/    # 迁移期 Provider / Tool / Integration / Compatibility
 ├─ native/     # Rust Native / Security Kernel
 ├─ scripts/    # 开发、构建、同步、GitHub、Gates
 └─ docs/       # 架构、计划、规则、安全文档
 ```
+
+首批正式目标：`xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-native`。第二批：`xma-context`、`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`。完整迁移策略见 `AGENT-ENGINE-STRATEGY.md`。
 
 ## 2. apps/
 
@@ -24,40 +25,33 @@ xma/
 
 未来 Desktop 三栏 Workbench 仍只是 Shell，布局见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
-## 3. core/
+## 3. packages/ 与 core/ 迁移关系
 
-当前统一承载 Agent、Session、Model、Provider Contract、Context、Plugin、Tool、Workspace 等 TypeScript 核心 Contract。0.1.0 采用“**小领域保持扁平，达到稳定规模再分组**”的物理布局：
+`packages/` 是稳定 Agent Platform 能力的长期归属；`core/` 在 0.1.x 继续作为 compatibility facade 和迁移中的实现区，直到所有 Host 都切到新包。不能为了目录漂亮一次性删掉已经工作的 `core/src/runtime.ts`、Session、Tool、Provider 等实现。
+
+目标 package：
 
 ```text
-core/src/
-├─ agent.ts                   # legacy runAgent 迁移兼容
-├─ agent/                     # Agent identity / registry / delegation
-│  ├─ contract.ts
-│  ├─ registry.ts
-│  └─ delegation.ts
-├─ skill/                     # 产品 Skill metadata / registry / loader
-│  ├─ contract.ts
-│  ├─ registry.ts
-│  └─ loader.ts
-├─ runtime.ts
-├─ context.ts
-├─ workspace.ts
-├─ provider.ts
-├─ session/                   # Durable Session Contract / Store / Export
-│  ├─ contract.ts
-│  ├─ store.ts
-│  └─ export.ts
-└─ tool/                      # Router / Policy / Schema 是三个不同安全职责
-   ├─ router.ts
-   ├─ policy.ts
-   └─ schema.ts
+packages/
+├─ xma-agent-loop/
+├─ xma-ai/
+├─ xma-plugin/
+├─ xma-session/
+├─ xma-tools/
+├─ xma-native/
+├─ xma-context/       # 第二批
+├─ xma-memory/
+├─ xma-task/
+├─ xma-subagent/
+└─ xma-workflow/
 ```
 
-这里的子目录只是源码组织，不代表拆成独立 npm package。只有真正需要独立发布/生命周期/消费者时才考虑 package 边界。
+当前 `core/src/agent/`、`skill/`、`session/`、`tool/` 等仍是有效源码；迁移时逐能力抽出，Core 暂时 re-export / bridge，确保 CLI/Desktop/Web/Server 不分叉 Agent Runtime。
 
 ### 3.1 命名规则与父目录去重
 
 - 目录、TypeScript/TSX、PowerShell：小写 `kebab-case`；
+- `packages/` 下稳定包：`xma-<capability>`，例如 `xma-agent-loop`、`xma-ai`；
 - Rust 模块：`snake_case`；
 - 正式 docs 文件：`UPPER-KEBAB.md`；
 - `.` 只表示 `test/config/d` 等角色或生态固定命名；普通单词不得用点号连接；
@@ -110,7 +104,7 @@ skills/
 - Tool/Capability providers；
 - `plugins/compat/deepseek-harness/` 兼容层。
 
-“一切能力可插件化”不等于“一切文件都拆 npm package”。
+Everything is a Plugin 是正式方向：这些能力最终应由 `xma-plugin` 的 Service/Event/Effect/lifecycle 管理；当前 `plugins/` 是迁移期和产品插件落点。插件真实副作用仍必须走 `xma-tools → xma-native → Rust Kernel`，不能绕过安全边界。
 
 ## 6. native/
 
@@ -195,17 +189,17 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 - 运行 Session；
 - 可绕过 `AGENTS.md` 的“隐藏规则”。
 
-## 10. 什么时候才拆包
+## 10. 什么时候建立新的 `xma-*` 包
 
-只有至少满足其一才考虑把 Core 模块拆为独立 workspace package：
+稳定平台能力只要至少满足一项即可建立 package：
 
-- 需要独立发布/版本；
-- 生命周期与 Core 明显独立；
+- 是长期稳定 capability seam；
+- 有独立生命周期或可替换实现；
 - 有多个稳定消费者；
-- 编译/测试隔离有真实收益；
-- 单包已经造成持续的 ownership/变更冲突。
+- 有明确上游成熟对应能力，需要独立 Conformance/Contract tests；
+- 独立测试、编译或 ownership 边界有真实收益。
 
-不能因为参考项目拆了很多包，就机械复制其目录规模。
+反过来，单个 helper、类型文件、常量或只有一个消费者的内部实现不单独建包。**Package family 是架构边界，不是文件分类法。**
 
 
 ## 当前 Agent / Skill Foundation 关键源码归属
