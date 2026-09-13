@@ -13,8 +13,37 @@ import {
   toggleTerminalVisual,
   workspaceRisk,
 } from '../src/tui.ts'
-import { parseArgs } from '../src/main.ts'
+import { assertCliNativeRuntimeStatus, parseArgs } from '../src/main.ts'
 
+
+
+test('CLI rejects a stale Native Runtime that lacks required OS Credential capabilities', () => {
+  assert.throws(() => assertCliNativeRuntimeStatus({
+    name: 'XMA Native Runtime',
+    version: '0.1.0',
+    protocol: 'xma.native.v1',
+    ready: true,
+    policyConfigured: true,
+    capabilities: ['runtime.status', 'fs.read_text', 'fs.write_text'],
+  }), /当前源码不匹配.*credential\.status/)
+
+  assert.doesNotThrow(() => assertCliNativeRuntimeStatus({
+    name: 'XMA Native Runtime',
+    version: '0.1.0',
+    protocol: 'xma.native.v1',
+    ready: true,
+    policyConfigured: true,
+    capabilities: [
+      'runtime.status',
+      'fs.read_text',
+      'fs.write_text',
+      'credential.status',
+      'credential.read',
+      'credential.write',
+      'credential.delete',
+    ],
+  }))
+})
 
 test('CLI ignores the pnpm/npm -- separator before a workspace argument', () => {
   const workspace = path.join(process.cwd(), 'fixture-workspace')

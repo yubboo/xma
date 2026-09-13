@@ -41,7 +41,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] XiaoYu CLI`：直接启动，不再次安装依赖；
+- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建，确保 `.cache/cargo-target/` 中 Native Runtime 与刚同步的 Rust 源码一致。Cargo 无变化时会直接复用增量结果；严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
 - `[7] 全量检查`：直接使用已经准备好的依赖，Rust check/test 使用 `--offline`；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
@@ -49,6 +49,17 @@ GitHub：`https://github.com/yubboo/xma.git`
 - `[5]/[6] 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行构建；不得再次执行 `pnpm install`。
 
 `esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
+
+## Source Sync 后的 Native 一致性
+
+`XMA-Sync.bat` 按设计保留 `.cache/`，因此源码升级后 `.cache\cargo-target\debug\xma-native-runtime.exe` 可能仍是上一版构建。Xiaoyu Terminal 依赖 Native Credentials / Filesystem / 后续 Process capabilities，**存在旧 exe 不代表它与当前 TypeScript 源码兼容**。
+
+固定要求：
+
+- `XMA.bat -> [4]` 每次启动前运行 Cargo `--offline` 增量构建当前 `xma-native-runtime`；
+- 不下载 crates；缺依赖时明确要求先运行 `[1]`，不得静默联网；
+- CLI 建立 stdio Native Client 后继续校验必需 capability；缺能力时 fail loud，禁止进入“能打开 TUI、但 API Key 永远保存不了”的半工作状态；
+- Provider/Model 配置异常只在 TUI 内提示，不得因为未配置 Brain、模型发现失败或 Probe 失败把整个 Xiaoyu 进程退出。
 
 ## Electron 41.2.0 主桌面端
 

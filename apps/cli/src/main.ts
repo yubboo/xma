@@ -29,6 +29,7 @@ import {
   createAgentSkillContextSource,
   type CredentialStoreStatus,
   type Disposer,
+  type NativeRuntimeStatus,
   type RuntimeLiveEvent,
   type ToolApprovalProvider,
 } from '../../../core/src/index.ts'
@@ -48,6 +49,16 @@ import { TerminalBrainStore, osCredentialKey, profileToProvider, type TerminalBr
 
 const AGENT_ID = codeAgent.id
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+
+
+export function assertCliNativeRuntimeStatus(status: NativeRuntimeStatus): void {
+  if (!status.ready || !status.policyConfigured) throw new Error('Native Runtime 未进入 ready/policyConfigured 状态。')
+  const requiredCapabilities = ['credential.status', 'credential.read', 'credential.write', 'credential.delete'] as const
+  const missingCapabilities = requiredCapabilities.filter(capability => !status.capabilities.includes(capability))
+  if (missingCapabilities.length > 0) {
+    throw new Error(`XMA Native Runtime 与当前源码不匹配，缺少能力：${missingCapabilities.join(', ')}。请通过 XMA.bat → [4] 重新启动，启动器会先执行 Cargo 离线增量构建。`)
+  }
+}
 
 export interface ParsedArgs {
   command: 'tui' | 'doctor' | 'server' | 'web' | 'help' | 'version'
@@ -237,7 +248,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     })
     try {
       const status = await nativeClient.status()
-      if (!status.ready || !status.policyConfigured) throw new Error('Native Runtime 未进入 ready/policyConfigured 状态。')
+      assertCliNativeRuntimeStatus(status)
       // Terminal 当前只开放文件读写；process.run 在绝对程序白名单配置面完成前保持不注册。
       disposeNativeTools = registerNativeTools(tools, {
         client: nativeClient,
@@ -380,6 +391,10 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       if (preset.credentialRequired && !input.apiKey && !input.credentialEnv?.trim()) {
         throw new Error(`${preset.displayName} 官方 API 需要 API Key。`)
       }
+
+      // 用户可能在启动后才完成 Native rebuild/系统凭据后端恢复；保存前重新读取一次真实状态，禁止使用陈旧 readiness。
+      if (input.apiKey) await refreshCredentialState()
+
       const id = brainStore.allocateId(displayName)
       let storedCredentialKey: string | undefined
       const credential = input.apiKey
@@ -395,11 +410,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
             ? { source: 'env' as const, key: input.credentialEnv.trim() }
             : undefined
 
-      if (storedCredentialKey && input.apiKey) {
-        await osCredentials!.set(storedCredentialKey, input.apiKey, AbortSignal.timeout(10_000))
-      }
       let profile: TerminalBrainProfile
       try {
+        if (storedCredentialKey && input.apiKey) {
+          await osCredentials!.set(storedCredentialKey, input.apiKey, AbortSignal.timeout(10_000))
+          const persisted = await osCredentials!.has(storedCredentialKey, AbortSignal.timeout(5_000))
+          if (!persisted) throw new Error('API Key 写入 OS Credentials 后无法读回确认；Provider 未保存。')
+        }
         profile = brainStore.upsert({
           id,
           providerId: preset.id,
@@ -417,7 +434,9 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         throw error
       }
       await refreshBrain()
-      return brainStore.list(osCredentialReadiness).find(item => item.id === profile.id)!
+      const saved = brainStore.list(osCredentialReadiness).find(item => item.id === profile.id)
+      if (!saved || !saved.active) throw new Error('Provider 已写入但没有成为当前 Brain；配置状态不一致。')
+      return saved
     },
     async selectBrain(profileId) {
       const profile = brainStore.select(profileId)

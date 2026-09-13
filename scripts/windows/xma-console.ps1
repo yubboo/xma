@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
 关联模块：XMA.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖；Web/CLI 直接启动；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
+当前实现：[1] 一次准备通用开发依赖；Web 直接启动；CLI 启动前离线增量构建当前 XMA Native Runtime；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
 职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -112,8 +112,24 @@ function Start-Web {
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:web')
 }
 
-function Start-Cli {
+function Ensure-CliNativeRuntime {
   Assert-CliJsDependencies
+  if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) {
+    throw 'Xiaoyu Terminal 需要 XMA Native Runtime。未检测到 Cargo，请先运行 [1] 一键准备开发环境。'
+  }
+
+  Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（Cargo 离线增量构建，不下载依赖）...' -ForegroundColor DarkCyan
+  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--package','xma-native-runtime','--offline')
+
+  $nativeExe = Join-Path $Root '.cache\cargo-target\debug\xma-native-runtime.exe'
+  if (-not (Test-Path -LiteralPath $nativeExe -PathType Leaf)) {
+    throw "XMA Native Runtime 构建结束但未找到：$nativeExe"
+  }
+  Write-Host "[通过] Xiaoyu Native Runtime 与当前源码一致：$nativeExe" -ForegroundColor Green
+}
+
+function Start-Cli {
+  Ensure-CliNativeRuntime
   Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
 }

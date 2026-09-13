@@ -1142,31 +1142,46 @@ class XiaoyuSurface {
       description: item.description,
     })), value => {
       if (!value.startsWith('catalog:')) return
-      void this.addProviderWizard(value.slice('catalog:'.length), 'os')
+      void this.addProviderWizard(value.slice('catalog:'.length), 'os').catch(error => {
+        this.notice = `Provider 配置失败 · ${error instanceof Error ? error.message : String(error)}`
+        this.tui.requestRender()
+      })
     })
   }
 
   private async openModelSelector(): Promise<void> {
-    this.notice = '正在读取 Provider 的真实模型列表…'
-    this.tui.requestRender()
-    const models = await this.backend.listBrainModels()
-    if (models.length === 0) {
-      this.notice = 'Provider 没有返回模型列表；当前 Profile 保留已配置的模型 ID。'
+    // Provider/Model 配置属于产品交互，任何失败都必须留在 TUI 内提示，禁止未处理 Promise 直接终止 CLI。
+    if (!this.backend.providerConfigured) {
+      this.notice = 'Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。'
       this.tui.requestRender()
       return
     }
-    this.showListOverlay('选择真实模型', models.slice(0, 100).map(model => ({ value: model, label: model })), model => {
-      void this.backend.selectBrainModel(model).then(async profile => {
-        this.notice = `模型已切换 · ${profile.displayName} · ${profile.model}`
+
+    this.notice = '正在读取 Provider 的真实模型列表…'
+    this.tui.requestRender()
+    try {
+      const models = await this.backend.listBrainModels()
+      if (models.length === 0) {
+        this.notice = 'Provider 没有返回模型列表；当前 Profile 保留已配置的模型 ID。'
         this.tui.requestRender()
-        const probe = await this.backend.probeBrain()
-        this.notice = `${probe.ready ? 'Brain Ready' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
-        this.tui.requestRender()
-      }).catch(error => {
-        this.notice = `模型切换失败 · ${error instanceof Error ? error.message : String(error)}`
-        this.tui.requestRender()
+        return
+      }
+      this.showListOverlay('选择真实模型', models.slice(0, 100).map(model => ({ value: model, label: model })), model => {
+        void this.backend.selectBrainModel(model).then(async profile => {
+          this.notice = `模型已切换 · ${profile.displayName} · ${profile.model}`
+          this.tui.requestRender()
+          const probe = await this.backend.probeBrain()
+          this.notice = `${probe.ready ? 'Brain Ready' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+          this.tui.requestRender()
+        }).catch(error => {
+          this.notice = `模型切换失败 · ${error instanceof Error ? error.message : String(error)}`
+          this.tui.requestRender()
+        })
       })
-    })
+    } catch (error) {
+      this.notice = `模型列表读取失败 · ${error instanceof Error ? error.message : String(error)}`
+      this.tui.requestRender()
+    }
   }
 
   private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
@@ -1195,8 +1210,9 @@ class XiaoyuSurface {
       return
     }
 
+    let profile: TerminalBrainProfileView
     try {
-      const profile = await this.backend.saveBrainProfile({
+      profile = await this.backend.saveBrainProfile({
         providerId,
         displayName: displayName.trim() || provider.displayName,
         ...(baseUrl !== undefined ? { baseUrl: baseUrl.trim() } : {}),
@@ -1204,13 +1220,16 @@ class XiaoyuSurface {
         ...(credentialMode === 'os' && credentialInput ? { apiKey: credentialInput } : {}),
         ...(credentialMode === 'env' && credentialInput.trim() ? { credentialEnv: credentialInput.trim() } : {}),
       })
-      this.notice = `Provider 已保存 · ${profile.displayName} · ${profile.model}`
-      this.tui.requestRender()
-      await this.openModelSelector()
     } catch (error) {
       this.notice = `Provider 保存失败 · ${error instanceof Error ? error.message : String(error)}`
       this.tui.requestRender()
+      return
     }
+
+    // Profile 保存成功即成为当前 Brain。后续远端模型发现失败不能反过来伪装成“保存失败”或清掉已保存配置。
+    this.notice = `Provider 已保存并设为当前 Brain · ${profile.displayName} · ${profile.model} · 正在读取真实模型…`
+    this.tui.requestRender()
+    await this.openModelSelector()
   }
 
   private showInputOverlay(
@@ -1327,56 +1346,67 @@ class XiaoyuSurface {
   }
 
   private async runPaletteAction(value: string): Promise<void> {
-    if (value === 'settings') {
-      this.openSettings()
-      return
-    }
-    if (value === 'visual') {
-      this.settings = toggleTerminalVisual(this.settings)
-      saveTerminalUiSettings(this.settings)
-      this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
+    try {
+      if (value === 'settings') {
+        this.openSettings()
+        return
+      }
+      if (value === 'visual') {
+        this.settings = toggleTerminalVisual(this.settings)
+        saveTerminalUiSettings(this.settings)
+        this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
+        this.tui.requestRender()
+        return
+      }
+      await this.runTerminalCommand(value)
+    } catch (error) {
+      this.notice = `命令执行失败 · ${error instanceof Error ? error.message : String(error)}`
       this.tui.requestRender()
-      return
     }
-    await this.runTerminalCommand(value)
   }
 
   private async runTerminalCommand(command: string): Promise<boolean> {
-    if (command === 'exit' || command === 'quit') {
-      this.requestExit()
-      return true
-    }
-    if (command === 'clear') {
-      this.transcript.length = 0
-      this.notice = '会话显示已清空'
+    try {
+      if (command === 'exit' || command === 'quit') {
+        this.requestExit()
+        return true
+      }
+      if (command === 'clear') {
+        this.transcript.length = 0
+        this.notice = '会话显示已清空'
+        this.tui.requestRender()
+        return true
+      }
+      if (command === 'workspace') {
+        this.notice = `Workspace · ${this.backend.workspace}`
+        this.tui.requestRender()
+        return true
+      }
+      if (command === 'provider') {
+        this.openProviderManager()
+        return true
+      }
+      if (command === 'model') {
+        await this.openModelSelector()
+        return true
+      }
+      if (command === 'agent') {
+        this.notice = `Agent · ${this.backend.agentLabel}`
+        this.tui.requestRender()
+        return true
+      }
+      if (command === 'doctor') {
+        const items = await this.backend.doctor()
+        this.notice = items.map(item => `${item.ok ? '●' : '○'} ${item.label}: ${item.detail}`).join('  ·  ')
+        this.tui.requestRender()
+        return true
+      }
+      return false
+    } catch (error) {
+      this.notice = `命令执行失败 · ${error instanceof Error ? error.message : String(error)}`
       this.tui.requestRender()
       return true
     }
-    if (command === 'workspace') {
-      this.notice = `Workspace · ${this.backend.workspace}`
-      this.tui.requestRender()
-      return true
-    }
-    if (command === 'provider') {
-      this.openProviderManager()
-      return true
-    }
-    if (command === 'model') {
-      await this.openModelSelector()
-      return true
-    }
-    if (command === 'agent') {
-      this.notice = `Agent · ${this.backend.agentLabel}`
-      this.tui.requestRender()
-      return true
-    }
-    if (command === 'doctor') {
-      const items = await this.backend.doctor()
-      this.notice = items.map(item => `${item.ok ? '●' : '○'} ${item.label}: ${item.detail}`).join('  ·  ')
-      this.tui.requestRender()
-      return true
-    }
-    return false
   }
 
   private async submit(raw: string): Promise<void> {
