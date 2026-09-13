@@ -1,0 +1,111 @@
+/**
+ * 文件作用：检查 Xiaoyu 终端发行层、跨平台安装脚本与 portable bundle 合同，防止普通用户安装流程退回源码开发模式。
+ * 关联模块：apps/cli、scripts/install、scripts/release、xma-build-release.ps1、docs/architecture/DISTRIBUTION.md。
+ * 当前实现：锁定 xiaoyu 主命令、xma 兼容别名、预构建 Runtime bundle、SHA-256 安装、每用户路径和禁止 pnpm/cargo 源码安装。
+ * 职责边界：Gate 只验证静态发行合同；真实签名、公证、GitHub Release 上传与跨 OS 安装仍必须由对应平台 E2E 验证。
+ */
+
+import { existsSync, readFileSync } from 'node:fs'
+
+function text(file: string): string {
+  if (!existsSync(file)) throw new Error(`XMA Distribution Gate missing file: ${file}`)
+  return readFileSync(file, 'utf8')
+}
+
+const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string> }
+const cliPackage = JSON.parse(text('apps/cli/package.json')) as { bin?: Record<string, string> }
+if (cliPackage.bin?.xiaoyu !== '../../dist/cli/main.js') throw new Error('XMA canonical CLI command must be `xiaoyu`.')
+if (cliPackage.bin?.xma !== '../../dist/cli/main.js') throw new Error('XMA must keep `xma` as a compatibility alias.')
+if (!(rootPackage.scripts?.test ?? '').includes('apps/cli/tests/*.test.ts')) throw new Error('XMA tests must include apps/cli/tests.')
+if (rootPackage.scripts?.['release:cli-stage'] !== 'tsx scripts/release/cli.ts') throw new Error('XMA portable CLI staging script is missing.')
+if (!(rootPackage.scripts?.check ?? '').includes('pnpm gate:distribution')) throw new Error('pnpm check must include Distribution Gate.')
+
+const cli = text('apps/cli/src/main.ts')
+for (const marker of [
+  "AGENT_ID = 'xiaoyu.code'",
+  'confirmWorkspaceTrust',
+  'JsonlSessionStore',
+  'WorkspaceRegistry',
+  'XIAOYU_BASE_URL',
+  'StdioNativeClient',
+  'registerNativeTools',
+  'allowedPrograms: []',
+  'ToolApprovalProvider',
+  "command: 'server'",
+  "command: 'web'",
+]) {
+  if (!cli.includes(marker)) throw new Error(`XMA terminal runtime marker missing: ${marker}`)
+}
+
+const tui = text('apps/cli/src/tui.ts')
+for (const marker of ['Workspace 安全确认', '仅本次信任', 'while (true)', 'Tool Approval', '当前 Session 允许', '/doctor', '/exit']) {
+  if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
+}
+
+const stage = text('scripts/release/cli.ts')
+for (const marker of [
+  "'.cache', 'release', 'cli'",
+  "'runtime', nodeName",
+  "'app', 'cli.js'",
+  "'app', 'server.js'",
+  "'native', nativeName",
+  "'web'",
+  "'bin', 'xiaoyu.cmd'",
+  "for (const name of ['xiaoyu', 'xma'])",
+]) {
+  if (!stage.includes(marker)) throw new Error(`XMA portable bundle marker missing: ${marker}`)
+}
+
+const windowsBytes = readFileSync('scripts/install/windows.ps1')
+if (!(windowsBytes[0] === 0xef && windowsBytes[1] === 0xbb && windowsBytes[2] === 0xbf)) throw new Error('XMA Windows bootstrap must use UTF-8 BOM for PowerShell 5.1.')
+if (!windowsBytes.toString('utf8').includes('\r\n')) throw new Error('XMA Windows bootstrap must use CRLF.')
+const windows = text('scripts/install/windows.ps1')
+for (const marker of [
+  "Programs\\Xiaoyu",
+  "SetEnvironmentVariable('Path'",
+  'Get-FileHash -Algorithm SHA256',
+  'Expand-Archive',
+  'LOCALAPPDATA',
+  'cli-portable',
+]) {
+  if (!windows.includes(marker)) throw new Error(`XMA Windows installer marker missing: ${marker}`)
+}
+for (const forbidden of ['pnpm ', 'cargo ', 'winget ', 'git clone']) {
+  if (windows.toLowerCase().includes(forbidden)) throw new Error(`XMA Windows end-user installer must not require development dependency: ${forbidden}`)
+}
+
+const unix = text('scripts/install/unix.sh')
+for (const marker of [
+  '$HOME/.local/share',
+  '$HOME/.local/bin',
+  'sha256sum',
+  'shasum -a 256',
+  'xiaoyu-$os-$arch.tar.gz',
+]) {
+  if (!unix.includes(marker)) throw new Error(`XMA Unix installer marker missing: ${marker}`)
+}
+for (const forbidden of ['pnpm ', 'cargo ', 'git clone']) {
+  if (unix.toLowerCase().includes(forbidden)) throw new Error(`XMA Unix end-user installer must not require development dependency: ${forbidden}`)
+}
+
+const release = text('scripts/windows/xma-build-release.ps1')
+for (const marker of ['scripts/release/cli.ts', 'scripts/release/manifest.ts', 'install.ps1', 'install.sh']) {
+  if (!release.includes(marker)) throw new Error(`XMA Windows release distribution marker missing: ${marker}`)
+}
+const manifestSource = text('scripts/release/manifest.ts')
+for (const marker of ["argument('directory', 'dist/release')", "'release-manifest.json'", "'checksums.txt'"]) {
+  if (!manifestSource.includes(marker)) throw new Error(`XMA release manifest output contract missing: ${marker}`)
+}
+
+
+const workflow = text('.github/workflows/release.yml')
+for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
+  if (!workflow.includes(marker)) throw new Error(`XMA cross-platform release workflow marker missing: ${marker}`)
+}
+
+const architecture = text('docs/architecture/DISTRIBUTION.md')
+for (const marker of ['xiaoyu', '%LOCALAPPDATA%\\Programs\\Xiaoyu', '~/.local/share/xiaoyu', '.cache', 'dist/release']) {
+  if (!architecture.includes(marker)) throw new Error(`XMA Distribution architecture doc marker missing: ${marker}`)
+}
+
+console.log('XMA Distribution Gate PASS (xiaoyu CLI + portable runtime + verified per-user installers)')

@@ -102,7 +102,7 @@ function Start-Web {
 
 function Start-Cli {
   Assert-CoreDependencies
-  Write-Host '[启动] 正在启动 XiaoYu CLI / TUI...' -ForegroundColor Cyan
+  Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
 }
 
@@ -168,7 +168,7 @@ while ($true) {
   Write-Host '      系统工具 + Workspace JS 依赖 + XMA Native Rust crates' -ForegroundColor DarkGray
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
-  Write-Host '  [4] 运行 · XiaoYu CLI                 已准备后直接启动'
+  Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'
   Write-Host '  [5] 一键构建发布 · 当前平台            默认 Electron 主桌面端'
   Write-Host '  [6] 一键构建发布 · Windows             Electron Setup + Portable'
   Write-Host '  [7] 全量检查                          使用 [1] 已准备的依赖，不偷偷下载'

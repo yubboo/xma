@@ -72,6 +72,27 @@ New-Item -ItemType Directory -Force -Path $release | Out-Null
 $nativeExe = Join-Path $CargoTargetDir 'release\xma-native-runtime.exe'
 if (Test-Path $nativeExe) { Copy-Item $nativeExe (Join-Path $release 'xma-native-runtime.exe') -Force }
 
+Write-Host '[发行] 正在生成 Xiaoyu Terminal portable bundle（内置 Node + CLI/Server/Web + Rust Native Kernel）...' -ForegroundColor Cyan
+Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','scripts/release/cli.ts')
+$stageInfoPath = Join-Path $Root '.cache\release\cli\stage.json'
+if (-not (Test-Path $stageInfoPath)) { throw 'Xiaoyu CLI staging 完成但 stage.json 不存在。' }
+$stageInfo = Get-Content $stageInfoPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($stageInfo.os -ne 'windows') { throw "Windows 发布流程收到非 Windows CLI staging：$($stageInfo.os)。" }
+$cliArchive = Join-Path $release ([string]$stageInfo.archiveName)
+if (Test-Path $cliArchive) { Remove-Item $cliArchive -Force }
+Compress-Archive -Path (Join-Path ([string]$stageInfo.stageRoot) '*') -DestinationPath $cliArchive -CompressionLevel Optimal
+$releaseBaseUrl = "https://github.com/yubboo/xma/releases/download/v$ProjectVersion"
+Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @(
+  'exec','tsx','scripts/release/manifest.ts',
+  "--directory=$release",
+  "--version=$ProjectVersion",
+  "--base-url=$releaseBaseUrl"
+)
+Copy-Item (Join-Path $Root 'scripts\install\windows.ps1') (Join-Path $release 'install.ps1') -Force
+Copy-Item (Join-Path $Root 'scripts\install\unix.sh') (Join-Path $release 'install.sh') -Force
+Write-Host "[完成] Xiaoyu Terminal 安装资产：$cliArchive" -ForegroundColor Green
+Write-Host '[说明] 普通用户安装包不包含源码/node_modules/Cargo cache，也不要求 pnpm/Rust/MSVC。' -ForegroundColor DarkGray
+
 if ($DesktopRuntime -in @('electron','both')) {
   Write-Host "[构建] 正在构建 Electron $ElectronVersion 主桌面端；staging 写入 $DesktopCacheDir，最终产物直接写入 dist\release\electron。" -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:desktop:electron')

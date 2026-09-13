@@ -9,7 +9,7 @@
 1. 阅读 `AGENTS.md`。
 2. 阅读 `docs/architecture/PROJECT-ARCHITECTURE.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PLUGIN-SYSTEM.md`。
 3. 阅读 `docs/development/DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`UPSTREAM-REFERENCE.md`。
-4. 若涉及 Windows/发布，额外阅读 `WINDOWS-WORKFLOW.md` 与 `VERSIONING-AND-RELEASES.md`。
+4. 若涉及 Terminal/安装/发布，额外阅读 `docs/architecture/DISTRIBUTION.md`、`WINDOWS-WORKFLOW.md` 与 `VERSIONING-AND-RELEASES.md`。
 5. 先判断修改属于 TypeScript Agent/业务层还是 Rust Native/Security 层；不允许语言职责漂移。
 
 ## 实施纪律
@@ -21,6 +21,7 @@
 - 需要 Approval 的副作用先 durable 记录最终决策再执行；allow-session 没有稳定 scope key 时禁止复用。
 - Rust 只执行 Native/Security/Performance，不实现专业 Agent 决策；Native 先锁 Host Policy，真实 FS/Process 再由 Rust capability 二次 enforcement。
 - UI 是 Runtime 客户端；当前优先底层，不为“看起来完成”堆假 UI。
+- Terminal 主命令固定为 `xiaoyu`，`xma` 仅兼容；普通用户只安装预构建资产，installer 不得 clone 源码或要求 pnpm/cargo/MSVC。
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
 - 命名遵循 XMA 统一规则：目录/TS 用小写 kebab-case，Rust 用 snake_case，`.` 只用于 test/config/d 等语义角色；普通名字 1～3 个核心词，父目录去重，同逻辑不碎拆，完成前运行 `pnpm gate:naming`。

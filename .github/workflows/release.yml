@@ -1,0 +1,106 @@
+name: XMA Release Assets
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: Portable ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            archive: unix
+          - os: windows-latest
+            archive: windows
+          - os: macos-latest
+            archive: unix
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: npm install -g pnpm@11.17.0
+      - name: Restore workspace dependencies without Desktop runtime downloads
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm rebuild esbuild
+      - run: pnpm check
+      - run: pnpm build
+      - run: cargo build --workspace --release
+      - run: pnpm release:cli-stage
+
+      - name: Archive Windows portable bundle
+        if: matrix.archive == 'windows'
+        shell: pwsh
+        run: |
+          $stage = Get-Content '.cache/release/cli/stage.json' -Raw -Encoding UTF8 | ConvertFrom-Json
+          New-Item -ItemType Directory -Force -Path 'dist/release' | Out-Null
+          $archive = Join-Path 'dist/release' ([string]$stage.archiveName)
+          Compress-Archive -Path (Join-Path ([string]$stage.stageRoot) '*') -DestinationPath $archive -CompressionLevel Optimal
+
+      - name: Archive Unix portable bundle
+        if: matrix.archive == 'unix'
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="$(node -e "const x=JSON.parse(require('fs').readFileSync('.cache/release/cli/stage.json','utf8')); process.stdout.write(x.stageRoot)")"
+          archive="$(node -e "const x=JSON.parse(require('fs').readFileSync('.cache/release/cli/stage.json','utf8')); process.stdout.write(x.archiveName)")"
+          mkdir -p dist/release
+          tar -czf "dist/release/$archive" -C "$stage" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-${{ matrix.os }}
+          path: dist/release/xiaoyu-*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: portable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g pnpm@11.17.0
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: portable-*
+          path: dist/release
+          merge-multiple: true
+      - name: Build unified manifest and bootstrap assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          pnpm exec tsx scripts/release/manifest.ts --directory=dist/release --version="$version" --base-url="$base"
+          cp scripts/install/windows.ps1 dist/release/install.ps1
+          cp scripts/install/unix.sh dist/release/install.sh
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/release/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/release/* \
+              --title "Xiaoyu Management Agent $GITHUB_REF_NAME" \
+              --notes "Xiaoyu portable Terminal assets for Windows, Linux and macOS."
+          fi

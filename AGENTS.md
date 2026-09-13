@@ -8,7 +8,7 @@
 - 中文名称：**小鱼管理智能体**
 - 简称：**XMA**
 - GitHub：`https://github.com/yubboo/xma.git`
-- CLI 命令：`xma`
+- CLI 主命令：`xiaoyu`（`xma` 只保留兼容别名）
 - 核心理念：**Model is replaceable. Agent is ours. / 模型可以更换，小鱼始终属于用户。**
 
 XMA 不是某一家大模型的外壳，也不是 Minecraft 专用工具。XMA 是用户拥有的 Agent 平台。GPT、Claude、Gemini、DeepSeek、MiMo 以及未来模型都只是可替换的外部 Brain Provider。
@@ -117,12 +117,13 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 8. `docs/architecture/PLUGIN-SYSTEM.md`
 9. `docs/architecture/DESKTOP-RUNTIME.md`
 10. `docs/architecture/DESKTOP-WORKBENCH.md`
-11. `docs/development/DEVELOPMENT-RULES.md`
-12. `docs/development/DEVELOPMENT-PLAN.md`
-13. `docs/development/PROJECT-STATUS.md`
-14. `docs/development/UPSTREAM-REFERENCE.md`
-15. `docs/development/VERSIONING-AND-RELEASES.md`
-16. `docs/development/WINDOWS-WORKFLOW.md`
+11. `docs/architecture/DISTRIBUTION.md`
+12. `docs/development/DEVELOPMENT-RULES.md`
+13. `docs/development/DEVELOPMENT-PLAN.md`
+14. `docs/development/PROJECT-STATUS.md`
+15. `docs/development/UPSTREAM-REFERENCE.md`
+16. `docs/development/VERSIONING-AND-RELEASES.md`
+17. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 
@@ -172,6 +173,19 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备开发环境`，不得擅自安装。
 - Git 提交必须同时受 `.gitignore` 与 GitHub Safety 二次校验保护；即使文件被误暂存，禁止路径也必须拒绝提交。
 - 必须提交用于可复现构建的源码锁文件，例如 `pnpm-lock.yaml`、`Cargo.lock`；不得提交依赖目录、构建产物、运行数据、用户工作区、Secret、安装包和本地缓存。
+
+## 10.1 Distribution / Terminal 产品入口（锁死）
+
+- XMA 对外 Terminal 主命令固定为 `xiaoyu`；`xma` 只作为兼容别名，不再作为品牌主入口。
+- CLI/TUI、Desktop、Server、Web 都是同一 Core/App Protocol 的 Host，禁止各自复制 Agent Loop。
+- 普通用户安装必须使用**预构建发行资产**；禁止要求用户 clone 源码、执行 `pnpm install`、`cargo build`、安装 MSVC 或把 `node_modules/.cache/target` 打进安装包。
+- Windows 默认每用户安装到 `%LOCALAPPDATA%\Programs\Xiaoyu`，只修改 User PATH；Linux/macOS 默认使用 `~/.local/bin` + `~/.local/share/xiaoyu`，不默认要求 root。
+- `scripts/install/windows.ps1` 与 `scripts/install/unix.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。
+- portable Terminal bundle 第一批内置 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel；未来可评估 Node SEA，但不能因此破坏可验证升级和安全边界。
+- Terminal 打开 Home/文件系统根目录必须显式警告，默认退出，只允许用户“仅本次信任”；不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
+- 发行 staging 属于 `.cache/release/`；正式下载资产属于 `dist/release/`；两者都不得提交 Git。
+
+详细合同见 `docs/architecture/DISTRIBUTION.md`。
 
 ## 11. 安全与发布底线
 

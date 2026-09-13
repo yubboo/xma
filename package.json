@@ -15,11 +15,11 @@
     "dev:server": "tsx apps/server/src/main.ts",
     "dev:desktop": "pnpm --dir apps/desktop run dev:electron",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test core/tests/*.test.ts apps/desktop/tests/*.test.ts",
+    "test": "tsx --test core/tests/*.test.ts apps/cli/tests/*.test.ts apps/desktop/tests/*.test.ts",
     "gate:architecture": "tsx scripts/gates/architecture.ts",
     "gate:comments": "tsx scripts/gates/comments.ts",
     "gate:docs": "tsx scripts/gates/documentation.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm gate:naming && pnpm gate:architecture && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
+    "check": "pnpm typecheck && pnpm test && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
     "build:web": "vite build apps/web --outDir ../../dist/web --emptyOutDir",
     "build:cli": "tsup apps/cli/src/main.ts --format esm --platform node --out-dir dist/cli",
     "build:server": "tsup apps/server/src/main.ts --format esm --platform node --out-dir dist/server",
@@ -36,7 +36,9 @@
     "build:desktop:electron": "pnpm --dir apps/desktop run build:electron",
     "build:desktop:tauri": "pnpm --dir apps/desktop run build:tauri",
     "gate:ai-context": "tsx scripts/gates/ai-context.ts",
-    "gate:naming": "tsx scripts/gates/naming.ts"
+    "gate:naming": "tsx scripts/gates/naming.ts",
+    "release:cli-stage": "tsx scripts/release/cli.ts",
+    "gate:distribution": "tsx scripts/gates/distribution.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

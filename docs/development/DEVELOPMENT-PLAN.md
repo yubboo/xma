@@ -197,6 +197,35 @@ XMA 长期参考：
 - 大输出不会无限塞入模型 Context；
 - 导出无 Secret。
 
+## 6.5 插入批次：Distribution + Terminal Runtime
+
+这批在 Stage D 第二批前优先完成“真正能安装、真正能在终端持续运行”的产品入口，但不改变 Backend First 原则。
+
+### 第一批落地
+
+- `xiaoyu` canonical command + `xma` compatibility alias；
+- 持续 TUI，而不是欢迎页打印后退出；
+- Workspace Home/root 风险确认；
+- CLI 绑定正式 Workspace + JSONL Session Runtime；
+- 第一批环境变量 OpenAI-compatible Brain；
+- `xiaoyu doctor/server/web` 入口；
+- portable bundle：私有 Node + CLI/Server/Web + Rust Native；
+- Windows / Unix bootstrap installer；
+- Release manifest / SHA-256 / `.cache` staging 与 `dist/release` 合同；
+- Terminal Native 文件 ToolSet：Rust-backed `read_text/write_text` + TUI deny/allow-once/allow-session Approval；默认不开放 process 工具。
+
+### 尚未完成
+
+- OS Keychain Provider Settings；
+- Terminal process Tool allowlist / Approval（文件 read/write 第一批已接 Rust Kernel）；
+- PTY/ConPTY；
+- 正式公网安装域名；GitHub tag release workflow 已有代码，但尚未完成真实 tag/release E2E；
+- macOS/Linux 实机 installer E2E 与签名/公证。
+
+### 出口标准
+
+Windows/Linux/macOS 各自平台构建的资产至少完成：install → 新终端 `xiaoyu --version` → `xiaoyu doctor` → 安全 Workspace TUI → upgrade → uninstall/PATH cleanup。
+
 ## 7. 阶段 E：Plugin Host 与 DeepSeek Harness Compatibility
 
 ### 实现

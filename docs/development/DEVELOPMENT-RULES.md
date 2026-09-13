@@ -275,3 +275,14 @@ Git 不存在时只能提示用户先运行 `XMA.bat → [1]`。
 ## 17. 版本与交付
 
 版本与包名遵守 `VERSIONING-AND-RELEASES.md`：未冻结 0.1.0 的修正仍重新生成 `xma-0.1.0.zip` 和 `xma-0.1.0.sha256.txt`；禁止 fixed/hotfix/final/v2/new 后缀。
+
+
+## Distribution 与终端入口
+
+- 正式终端命令使用 `xiaoyu`；`xma` 只做兼容 alias。
+- Terminal/Desktop/Web/Server 只做 Host，不得复制 Core Agent Runtime。
+- 普通用户 installer 只安装预构建资产，不得 clone 源码或运行 pnpm/cargo/MSVC。
+- Windows 使用 `%LOCALAPPDATA%\Programs\Xiaoyu` + User PATH；Unix 使用 `~/.local/share/xiaoyu` + `~/.local/bin`。
+- 安装资产必须 HTTPS + SHA-256 + staging 验证后再替换正式目录；开发缓存、源码、`node_modules` 不得进入用户包。
+- Home/根目录属于高风险 Workspace，Terminal 必须默认拒绝并要求“仅本次信任”。
+- 当前第一批 portable bundle 内置 Node Runtime；Node SEA 只作为未来优化，不得先于安装/升级/回滚合同。

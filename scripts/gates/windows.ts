@@ -265,7 +265,7 @@ for (const marker of [
   '[1] 一键准备开发环境',
   '← 推荐首次运行',
   '[2] 开发运行 · Web                    已准备后直接启动',
-  '[4] 运行 · XiaoYu CLI                 已准备后直接启动',
+  '[4] 运行 · Xiaoyu Terminal            已准备后直接启动',
   '[3] 开发运行 · Desktop',
   'Electron 41.2.0',
   'Tauri 2',

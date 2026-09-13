@@ -16,7 +16,7 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 - XMA Native Plugin Host；
 - DeepSeek Harness / Cordis 插件兼容适配骨架；
 - Minecraft / Code / Writer 三个 Agent 定义，其中 Minecraft 是第一条优先实现线；
-- CLI、Desktop、Web、Server 四种 Shell；
+- `xiaoyu` Terminal CLI/TUI、Desktop、Web、Server 四种 Shell；
 - Desktop：Electron 41.2.0 主运行时 + Tauri 2 备用运行时；
 - Windows 一键环境、同步、GitHub 推送、构建发布入口；
 - Architecture / Naming / Comment / Documentation Gates；
@@ -59,6 +59,22 @@ XMA.bat
 ```
 
 菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
+
+
+## Terminal / Distribution 第一批
+
+XMA 的终端主命令固定为 `xiaoyu`，`xma` 仅保留兼容别名。开发源码继续通过 `XMA.bat` 准备依赖；普通用户发行则使用预构建 portable runtime，不要求安装 Node/pnpm/Rust/MSVC。
+
+```text
+xiaoyu [workspace]   持续 Terminal Workbench
+xiaoyu doctor        环境检查
+xiaoyu server        Headless Server（发行包）
+xiaoyu web           本地 Web + Server（发行包）
+```
+
+第一批 TUI 已接正式 Workspace/Session Runtime，并可通过 `XIAOYU_BASE_URL`、`XIAOYU_MODEL`、`XIAOYU_API_KEY` 使用 OpenAI-compatible Brain；未配置 Brain 时明确显示未就绪，不伪造回复。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
+
+发行架构、Windows `%LOCALAPPDATA%\Programs\Xiaoyu`、Linux/macOS `~/.local` 合同与一键安装 bootstrap 见 `docs/architecture/DISTRIBUTION.md`。公网 `irm/curl` 安装命令只有在 Release/域名真实部署后才算可用。
 
 ## 仓库
 

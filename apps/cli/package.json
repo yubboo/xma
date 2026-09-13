@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
+    "xiaoyu": "../../dist/cli/main.js",
     "xma": "../../dist/cli/main.js"
   }
 }

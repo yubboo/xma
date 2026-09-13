@@ -17,6 +17,7 @@ const docs = [
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/DESKTOP-RUNTIME.md',
   'docs/architecture/DESKTOP-WORKBENCH.md',
+  'docs/architecture/DISTRIBUTION.md',
   'docs/security/NATIVE-CAPABILITIES.md',
   'docs/development/DEVELOPMENT-RULES.md',
   'docs/development/DEVELOPMENT-PLAN.md',
@@ -28,7 +29,7 @@ const docs = [
 ]
 for (const file of docs) if (!existsSync(file)) throw new Error(`Required XMA doc missing: ${file}`)
 const agents = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'DeepSeek Harness', 'Electron 41.2.0', 'Tauri 2', 'AGENT-RUNTIME.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'UPSTREAM-REFERENCE.md', '.codex/', '.claude/']) {
+for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'DeepSeek Harness', 'Electron 41.2.0', 'Tauri 2', 'AGENT-RUNTIME.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.codex/', '.claude/']) {
   if (!agents.includes(marker)) throw new Error(`AGENTS.md rule missing: ${marker}`)
 }
 console.log('XMA Documentation Gate PASS')

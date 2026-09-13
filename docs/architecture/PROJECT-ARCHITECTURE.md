@@ -229,6 +229,14 @@ Server ──┘
 
 Desktop 后期三栏 Workbench、CLI TUI、Web 管理页都只消费这层。这样 UI 可以大改而不改变 Agent 语义，也可以先完成底层再做复杂 UI。
 
+## 12.5 Distribution / Launcher
+
+XMA 的产品不是某一个壳，而是同一 Runtime 的多入口发行：`xiaoyu` Terminal、Desktop、Server、Web。正式终端主命令固定为 `xiaoyu`，`xma` 仅兼容旧入口。
+
+普通用户安装与源码开发必须彻底分开：开发者通过 Git + `[1]` 恢复依赖；普通用户只下载预构建 portable runtime。0.1.x 第一批 portable bundle 包含私有 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel，因此终端用户不需要安装 Node/pnpm/Rust/MSVC。
+
+安装器必须先验证 Release Manifest / SHA-256，再通过 staging 原子替换。Windows 默认 `%LOCALAPPDATA%\Programs\Xiaoyu` + User PATH；Linux/macOS 默认 `~/.local/share/xiaoyu` + `~/.local/bin`。发行 staging 只能进入 `.cache/release`，正式资产只进入 `dist/release`，二者都不提交 Git。详细合同见 `DISTRIBUTION.md`。
+
 ## 13. 参考项目的正确定位
 
 - **OpenAI Codex**：Coding Agent Runtime、Thread/Turn、ToolRouter、Provider/Permission/Sandbox、App Protocol 的重要实现参考；

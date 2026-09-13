@@ -193,3 +193,24 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 ### Naming Gate 扫描边界
 
 `pnpm gate:naming` 只治理 XMA 自己维护的源码/配置；`node_modules/.cache/dist/build/target/release` 与 Tauri `src-tauri/gen` 等依赖、缓存、构建和生成目录必须被递归忽略。第三方文件命名不能反向污染 XMA 的 kebab-case / snake_case 规则。
+
+
+## Distribution / Terminal 目录
+
+```text
+apps/cli/
+├─ src/
+│  ├─ main.ts          # xiaoyu 产品入口 / Runtime 接线
+│  └─ tui.ts           # 纯 Terminal Shell / 交互
+└─ tests/
+
+scripts/
+├─ install/
+│  ├─ windows.ps1      # 独立 Windows bootstrap
+│  └─ unix.sh          # Linux/macOS bootstrap
+└─ release/
+   ├─ cli.ts           # portable staging
+   └─ manifest.ts      # release manifest / checksum 元数据
+```
+
+发行中间态只允许进入 `.cache/release/`；用户可下载资产只允许进入 `dist/release/`。`xiaoyu` 是正式 CLI 主命令，`xma` 仅兼容旧入口。

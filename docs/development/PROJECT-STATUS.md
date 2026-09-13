@@ -40,8 +40,11 @@
 - emit/parallel/serial/bail/waterfall 基础事件语义；
 - Rust stdio JSON-RPC Runtime 骨架；
 - Minecraft / Code / Writer Agent 身份骨架；
-- CLI / Web / Desktop / Server Shell；
+- `xiaoyu` 持续 Terminal TUI + Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
+- portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
+- `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认与环境变量 OpenAI-compatible Brain；
+- Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
 - 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；
 - Electron 41.2.0 Runtime 的显式下载、校验、Windows staging 原子安装链；
@@ -106,15 +109,15 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-Stage C 已经由用户 Windows `[7]` 完成真实 `cargo fmt/check/test --offline` 验证；Stage D 第一批 Workspace ownership/binding/grant/scope 已进入代码。下一批继续按底层顺序推进：
+Stage C 已经由用户 Windows `[7]` 完成真实 Rust 验证；Stage D 第一批 Workspace ownership/binding/grant/scope 已进入代码。当前插入 Distribution + Terminal Runtime 第一批，让 XMA 具备真实安装与持续终端入口，然后继续 Stage D：
 
-1. Workspace persistence + repo/project metadata；
-2. Workspace instructions discovery（AGENTS.md/CLAUDE.md 等）与作用域/硬上限；
-3. large Tool output attachment + durable reference；
-4. context compaction durable event + system-message reconciliation；
-5. Session fork / generation migration 接入 Store；
-6. App Protocol Workspace/Approval 实际 Handler，再接 CLI/Server；
-7. process-tree ownership/cancellation + PTY/ConPTY。
+1. Windows `xiaoyu` portable/installer 实机 E2E：构建、安装、PATH、doctor、升级；
+2. Linux/macOS release workflow 与对应 installer E2E（各平台原生构建，不伪造跨平台）；
+3. Terminal `process.run` absolute executable allowlist 配置 + Approval；文件 read/write + Approval 第一批已完成；
+4. Workspace persistence + repo/project metadata；
+5. Workspace instructions discovery（AGENTS.md/CLAUDE.md 等）与作用域/硬上限；
+6. large Tool output attachment + compaction / Session fork；
+7. App Protocol Workspace/Approval Handler + process-tree / PTY/ConPTY。
 
 完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
 
