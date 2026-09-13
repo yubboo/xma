@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "scripts": {
     "web:dev": "pnpm --dir ../.. exec vite apps/web --host 127.0.0.1 --port 1420 --strictPort",
-    "web:build": "pnpm --dir ../.. exec vite build apps/web --outDir ../desktop/web --emptyOutDir",
+    "web:build": "pnpm --dir ../.. exec vite build apps/web --base ./ --outDir ../desktop/web --emptyOutDir",
     "main:build": "pnpm --dir ../.. exec tsup apps/desktop/src/main.ts --format esm --platform node --external electron --out-dir apps/desktop/dist",
     "dev": "pnpm run dev:electron",
     "dev:electron": "pnpm --dir ../.. exec tsx apps/desktop/scripts/dev-electron.ts",

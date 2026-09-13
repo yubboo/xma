@@ -188,6 +188,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
 - Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
 - `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime；`electron` 不进入 pnpm `allowBuilds`，并禁止用 `pnpm rebuild electron` 触发隐式下载。
+- Electron 发布包通过 `file://` 加载 `apps/desktop/web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`；禁止生成 `/assets/...` 绝对路径，否则安装后会出现只有原生窗口、Web UI 空白的故障。
 - Electron Runtime 安装采用确定性链路：`@electron/get` 返回已校验 ZIP 路径后，Windows 必须使用系统 PowerShell `Expand-Archive` 解压到 staging，经版本/可执行文件校验后再原子替换 `dist` 并写 `path.txt`。Windows 固定使用系统解压链，避免把 Runtime 安装成功与 Node ZIP 流实现绑定；项目同时固定 `pnpm-workspace.yaml -> overrides.yauzl >= 3.3.1` 保护 Electron Builder 与非 Windows 构建链。
 - Electron 下载 ZIP 默认缓存到 XMA 项目根 `.cache/electron/`，不得默认写入 Windows 用户 `%LOCALAPPDATA%`；`.cache/` 属于本地缓存，不进入源码包/Git，同步新版本源码时必须保留。用户显式设置 `electron_config_cache` 时允许覆盖。
 - Tauri 2 只作为备用桌面运行时，Windows 使用系统 WebView2。

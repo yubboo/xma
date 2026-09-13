@@ -35,6 +35,7 @@ if (!cliSource.startsWith('#!/usr/bin/env node')) throw new Error('XMA CLI entry
 const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as { scripts?: Record<string, string> }
 const desktopWebBuild = desktopPackage.scripts?.['web:build'] ?? ''
 if (!desktopWebBuild.includes('--emptyOutDir')) throw new Error('XMA Desktop web build must explicitly empty apps/desktop/web')
+if (!desktopWebBuild.includes('--base ./')) throw new Error('XMA Desktop packaged Web UI must use relative Vite asset paths for Electron file:// loading')
 const desktopWebDev = desktopPackage.scripts?.['web:dev'] ?? ''
 if (!desktopWebDev.includes('exec vite apps/web --host 127.0.0.1 --port 1420 --strictPort')) {
   throw new Error('XMA Desktop web:dev must bind Vite to 127.0.0.1:1420 without forwarding a literal -- argument')
@@ -43,6 +44,14 @@ if (desktopWebDev.includes(' -- --host')) throw new Error('XMA Desktop web:dev m
 const desktopLauncher = readFileSync('apps/desktop/scripts/dev-electron.ts', 'utf8')
 if (desktopLauncher.includes('shell: true') || desktopLauncher.includes("shell: process.platform === 'win32'")) {
   throw new Error('XMA Desktop launcher must not use shell:true with child-process arguments (Node DEP0190)')
+}
+const desktopMain = readFileSync('apps/desktop/src/main.ts', 'utf8')
+for (const marker of ["label: '文件'", "label: '编辑'", "label: '视图'", "label: '窗口'", "label: '帮助'"]) {
+  if (!desktopMain.includes(marker)) throw new Error(`XMA Desktop Chinese menu regression: missing ${marker}`)
+}
+const webIndex = readFileSync('apps/web/index.html', 'utf8')
+if (!webIndex.includes('lang="zh-CN"') || !webIndex.includes('<title>XMA · 小鱼管理智能体</title>')) {
+  throw new Error('XMA Web/Desktop shell must declare the Chinese UI locale and title')
 }
 
 console.log('XMA Architecture Gate PASS (TypeScript Agent + Rust Native + plugin compatibility)')

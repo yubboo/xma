@@ -81,3 +81,5 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 - 禁止把 `pnpm approve-builds` 变成人工固定步骤。
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
+
+- Electron 发布包通过 `file://` 加载 `apps/desktop/web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`；禁止生成 `/assets/...` 绝对路径，否则安装后会出现只有原生窗口、Web UI 空白的故障。

@@ -38,5 +38,6 @@
 - 两者共享 apps/web 与 core，不复制 Agent Runtime；
 - Electron 安装链已完整审计：用户 Windows 实测 Node ZIP 解压链出现不稳定行为，因此 Windows 改为 `@electron/get` -> PowerShell `Expand-Archive` -> staging 校验 -> `dist/path.txt` 原子落地；pnpm-workspace.yaml 同时 override `yauzl >= 3.3.1`；
 - Electron 原子安装核心已有离线测试，覆盖成功安装、解压失败、旧半成品替换、版本不一致。
+- Electron 发布包 Web UI 使用相对静态资源路径，避免 `file://` 下绝对 `/assets` 导致安装后黑屏；Desktop 原生菜单和当前平台总览界面为中文。
 
 > 当前仍不得宣称 Electron 41.2.0 Windows 真机链已最终验证；必须以用户 Windows 实机或 Windows CI 的 Runtime 文件状态校验 + 实际 Desktop 启动结果为准。
