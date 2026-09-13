@@ -18,13 +18,25 @@ test('TUI home renders the canonical xiaoyu identity and current runtime facts',
     agentLabel: 'Xiaoyu Code',
     providerLabel: '未配置 Provider',
     providerReady: false,
-  })
+  }, { columns: 112, rows: 34 })
   assert.match(output, /XIAOYU/)
   assert.match(output, /Xiaoyu Code/)
+  assert.match(output, /Brain 未配置/)
   assert.match(output, /\/doctor/)
-  assert.match(output, /\/exit/)
+  assert.doesNotMatch(output, /┌─/)
 })
 
+test('TUI home falls back to a compact identity on narrow terminals', () => {
+  const output = renderHome({
+    version: '0.1.0',
+    workspace: '/tmp/project',
+    agentLabel: 'Xiaoyu Code',
+    providerLabel: 'Provider Ready',
+    providerReady: true,
+  }, { columns: 64, rows: 24 })
+  assert.match(output, /XIAOYU/)
+  assert.match(output, /Provider Ready/)
+})
 
 test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
   assert.equal(approvalDecision('1'), 'deny')
