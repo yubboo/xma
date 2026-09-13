@@ -1,7 +1,7 @@
 /**
  * 文件作用：验证 XMA 正式 Session → Turn → Step Runtime 的关键不变量和 JSONL 恢复能力。
  * 关联模块：core/src/runtime.ts、session/contract.ts、session/store.ts、model.ts、tool/router.ts。
- * 当前实现：多 Step Tool Loop、请求快照、恢复续聊、取消结算、单写者锁和截断尾修复回归测试。
+ * 当前实现：多 Step Tool Loop、Provider continuation durable round-trip、请求快照、恢复续聊、取消结算、单写者锁和截断尾修复回归测试。
  * 职责边界：全部 Provider 都是确定性测试夹具；真实厂商 Provider 必须在 Stage B 通过独立 Conformance/E2E 证明。
  */
 
@@ -46,12 +46,15 @@ class TwoStepProvider implements ModelProvider {
       assert.equal(request.messages.at(-1)?.role, 'user')
       assert.equal(request.messages.at(-1)?.content, '检查一下')
       assert.equal(request.tools.length, 1)
+      yield { type: 'reasoning' as const, text: 'internal-provider-reasoning' }
+      yield { type: 'provider-continuation' as const, data: { adapterId: 'fixture-adapter', opaque: 'continuation-state' } }
       yield { type: 'tool-call' as const, callId: 'call-1', name: 'demo.inspect', arguments: {} }
       return
     }
 
     const assistantCall = request.messages.find(message => message.role === 'assistant' && message.toolCalls?.[0]?.callId === 'call-1')
     assert.equal(assistantCall?.toolCalls?.[0]?.name, 'demo.inspect')
+    assert.deepEqual(assistantCall?.providerContinuation, { adapterId: 'fixture-adapter', opaque: 'continuation-state' })
     assert.ok(request.messages.some(message => message.role === 'tool' && message.toolCallId === 'call-1' && message.content === 'observation-ok'))
     yield { type: 'text' as const, text: '检查完成' }
     yield { type: 'usage' as const, inputTokens: 12, outputTokens: 3 }
@@ -112,6 +115,7 @@ test('Runtime persists a reconstructable multi-step tool turn', async () => {
   const rebuilt = deriveModelMessages(snapshot.events)
   assert.deepEqual(rebuilt.map(message => message.role), ['user', 'assistant', 'tool', 'assistant'])
   assert.equal(rebuilt[1]?.toolCalls?.[0]?.callId, 'call-1')
+  assert.deepEqual(rebuilt[1]?.providerContinuation, { adapterId: 'fixture-adapter', opaque: 'continuation-state' })
   await session.close()
 })
 

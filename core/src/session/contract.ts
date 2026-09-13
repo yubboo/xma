@@ -1,7 +1,7 @@
 /**
  * 文件作用：定义 XMA Session / Turn / Step 的 durable event Contract，并提供从事实日志重建模型请求历史的纯函数。
  * 关联模块：../context.ts、store.ts、../runtime.ts、../model.ts、未来 App Protocol/Session Projection。
- * 当前实现：Session Header、durable event、Context Snapshot、Model Message 投影、Step 请求重建与 Session 基础统计。
+ * 当前实现：Session Header、durable event、Context Snapshot、Model Message/Provider continuation 投影、Step 请求重建与 Session 基础统计。
  * 职责边界：本文件只描述可持久事实与投影，不执行模型请求、不做文件 IO，也不保存 Provider Secret。
  */
 
@@ -87,6 +87,8 @@ export type SessionEventData =
       stepId: string
       content: string
       toolCalls: readonly ModelToolCall[]
+      /** Provider 协议续传状态；例如某些 thinking+tools API 要求下一请求回传的隐藏状态。 */
+      providerContinuation?: JsonObject
       interrupted: boolean
     }
   | {
@@ -177,6 +179,7 @@ export function deriveModelMessages(events: readonly SessionEvent[]): ModelMessa
     if (event.type === 'assistant/message') {
       const message: ModelMessage = { role: 'assistant', content: event.content }
       if (event.toolCalls.length > 0) message.toolCalls = event.toolCalls.map(call => structuredClone(call))
+      if (event.providerContinuation) message.providerContinuation = structuredClone(event.providerContinuation)
       messages.push(message)
       continue
     }

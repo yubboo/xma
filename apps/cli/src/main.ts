@@ -2,7 +2,7 @@
 /**
  * 文件作用：XMA `xiaoyu` 命令的产品入口，解析参数并把 Terminal Shell 接到正式 Agent Runtime。
  * 关联模块：tui.ts、core Runtime/Workspace/Session、OpenAI-compatible Provider、Server/Web 发行入口。
- * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、Xiaoyu Code Agent/Skill Context、OS Credentials + 非 Secret Brain Profile/环境兼容 Provider、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
+ * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、Xiaoyu Code Agent/Skill Context、真实 Provider Catalog/多 Profile/OS Credentials/Brain Ready、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
  * 职责边界：本文件只做 Product Launcher；Agent 推理、Tool 安全、Provider 协议和 Native 权限必须继续由 Core/Plugin/Rust 层实现。
  */
 
@@ -33,6 +33,12 @@ import {
   type ToolApprovalProvider,
 } from '../../../core/src/index.ts'
 import { NativeCredentialStore } from '../../../plugins/providers/credentials.ts'
+import {
+  CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
+  builtinProviderCatalogEntry,
+  listBuiltinProviderCatalog,
+  providerCatalogDisplayName,
+} from '../../../plugins/providers/catalog.ts'
 import { OpenAiCompatibleAdapter } from '../../../plugins/providers/openai-compatible.ts'
 import { registerNativeTools } from '../../../plugins/tools/native.ts'
 import { codeAgent } from '../../../agents/code/agent.ts'
@@ -72,7 +78,8 @@ function helpText(currentVersion: string): string {
     '  xiaoyu --help',
     '',
     'Brain：',
-    '  在 Terminal 内按 Ctrl+P → Brain / Provider 添加 OpenAI-compatible Profile。',
+    '  在 Terminal 内按 Ctrl+P → Brain / Provider 添加真实 Provider Profile（首批：DeepSeek 官方 API）。',
+    '  使用 /model 可从当前 Provider 的真实模型目录切换模型。',
     '  默认把 API Key 安全保存到 OS Credentials；Profile 只保存引用，不保存 Secret。',
     '  自定义 API Key 环境变量仍作为兼容配置方式保留。',
     '  XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY 继续作为兼容配置。',
@@ -149,7 +156,10 @@ function nativeExecutable(): string | undefined {
 }
 
 function brainLabel(profile: TerminalBrainProfile | undefined): string {
-  return profile ? `${profile.displayName} · ${profile.model}` : 'Brain 未配置'
+  if (!profile) return 'Brain 未配置'
+  const providerName = providerCatalogDisplayName(profile.providerId)
+  const profileName = profile.displayName === providerName ? '' : ` · ${profile.displayName}`
+  return `${providerName}${profileName} · ${profile.model}`
 }
 
 function doctorItems(
@@ -157,14 +167,16 @@ function doctorItems(
   brainStore: TerminalBrainStore,
   osCredentialReadiness: ReadonlyMap<string, boolean> = new Map(),
   credentialStatus?: CredentialStoreStatus,
+  brainProbeReady = false,
 ): readonly DoctorItem[] {
   const active = brainStore.active()
   const activeView = brainStore.list(osCredentialReadiness).find(profile => profile.id === active?.id)
   const native = nativeExecutable()
   const nativeExists = native !== undefined && existsSync(native)
-  const brainReady = active !== undefined && (activeView?.credentialReady ?? true)
+  const credentialReady = active !== undefined && (activeView?.credentialReady ?? true)
+  const brainReady = credentialReady && brainProbeReady
   const brainDetail = active
-    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : ''}`
+    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : brainProbeReady ? ' · Brain Ready 已验证' : ' · Brain Ready 未验证/未通过'}`
     : '未配置 Provider'
   const skillHome = skillsRoot()
   const skillReady = [
@@ -249,6 +261,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   providerRegistry.registerAdapter(new OpenAiCompatibleAdapter())
 
   const osCredentialReadiness = new Map<string, boolean>()
+  const brainProbeReadiness = new Map<string, boolean>()
   let credentialStatus: CredentialStoreStatus | undefined
   let activeProfile: TerminalBrainProfile | undefined
   let model: ReturnType<ProviderRegistry['createModel']> | undefined
@@ -294,6 +307,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   }
 
   const activeView = () => brainStore.list(osCredentialReadiness).find(profile => profile.id === activeProfile?.id)
+  const activeProbeKey = () => activeProfile ? `${activeProfile.id}\u0000${activeProfile.model}` : undefined
   const requireActiveProfile = (): TerminalBrainProfile => {
     if (!activeProfile) throw new Error('Brain 未配置。请在 Ctrl+P → Brain / Provider 中添加 Provider。')
     return activeProfile
@@ -324,7 +338,8 @@ async function createBackend(workspace: string, currentVersion: string): Promise
 
   const doctor = async (): Promise<readonly DoctorItem[]> => {
     await refreshCredentialState()
-    return doctorItems(workspace, brainStore, osCredentialReadiness, credentialStatus)
+    const key = activeProbeKey()
+    return doctorItems(workspace, brainStore, osCredentialReadiness, credentialStatus, key ? brainProbeReadiness.get(key) === true : false)
   }
 
   return {
@@ -334,15 +349,38 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     get providerLabel() {
       return brainLabel(activeProfile)
     },
+    get providerConfigured() {
+      return Boolean(activeProfile)
+    },
     get providerReady() {
-      return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)
+      const key = activeProbeKey()
+      return Boolean(activeProfile) && (activeView()?.credentialReady ?? true) && Boolean(key && brainProbeReadiness.get(key) === true)
+    },
+    listBrainProviderCatalog() {
+      return listBuiltinProviderCatalog().map(item => ({
+        id: item.id,
+        displayName: item.displayName,
+        description: item.description,
+        credentialRequired: item.credentialRequired,
+        customEndpoint: item.id === CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
+      }))
     },
     listBrainProfiles() {
       return brainStore.list(osCredentialReadiness)
     },
     async saveBrainProfile(input) {
       if (input.apiKey && input.credentialEnv) throw new Error('API Key 只能选择 OS Credentials 或环境变量其中一种来源。')
-      const id = brainStore.allocateId(input.displayName)
+      const preset = builtinProviderCatalogEntry(input.providerId)
+      if (!preset) throw new Error(`Provider Catalog 不存在：${input.providerId}`)
+      const displayName = input.displayName?.trim() || preset.displayName
+      const baseUrl = input.baseUrl?.trim() || preset.baseUrl
+      const selectedModel = input.model?.trim() || preset.defaultModel
+      if (!baseUrl) throw new Error(`${preset.displayName} 需要 Base URL。`)
+      if (!selectedModel) throw new Error(`${preset.displayName} 需要默认模型 ID。`)
+      if (preset.credentialRequired && !input.apiKey && !input.credentialEnv?.trim()) {
+        throw new Error(`${preset.displayName} 官方 API 需要 API Key。`)
+      }
+      const id = brainStore.allocateId(displayName)
       let storedCredentialKey: string | undefined
       const credential = input.apiKey
           ? (() => {
@@ -364,10 +402,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       try {
         profile = brainStore.upsert({
           id,
-          displayName: input.displayName,
-          baseUrl: input.baseUrl,
-          model: input.model,
+          providerId: preset.id,
+          adapterId: preset.adapterId,
+          displayName,
+          baseUrl,
+          model: selectedModel,
           ...(credential ? { credential } : {}),
+          ...(preset.options ? { options: preset.options } : {}),
         })
       } catch (error) {
         if (storedCredentialKey && osCredentials) {
@@ -397,10 +438,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     },
     async probeBrain(): Promise<BrainProbeView> {
       const profile = requireActiveProfile()
+      const probeKey = `${profile.id}\u0000${profile.model}`
       if (!await ensureCredentialReady(profile)) {
+        brainProbeReadiness.set(probeKey, false)
         return { ready: false, latencyMs: 0, message: credentialMissingMessage(profile) }
       }
       const result = await providerRegistry.probe(profile.id, profile.model, AbortSignal.timeout(20_000))
+      brainProbeReadiness.set(probeKey, result.ready)
       return {
         ready: result.ready,
         latencyMs: result.latencyMs,
@@ -410,6 +454,14 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     async sendMessage(message, write, signal, approve) {
       const profile = requireActiveProfile()
       if (!model || !await ensureCredentialReady(profile)) throw new Error(`Brain 未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
+      const probeKey = `${profile.id}\u0000${profile.model}`
+      if (brainProbeReadiness.get(probeKey) !== true) {
+        const probe = await providerRegistry.probe(profile.id, profile.model, AbortSignal.timeout(20_000))
+        brainProbeReadiness.set(probeKey, probe.ready)
+        if (!probe.ready) {
+          throw new Error(`Brain Ready 失败：${probe.error?.code ?? 'unknown'} · ${probe.error?.message ?? '真实 Provider Probe 未通过'}`)
+        }
+      }
       const listener = (event: RuntimeLiveEvent): void => {
         if (event.type === 'model/text-delta' && event.sessionId === session.id) write(event.text)
       }

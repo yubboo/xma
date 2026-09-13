@@ -4,7 +4,7 @@
 
 XMA 的核心理念是 **Model is replaceable. Agent is ours.** Provider 层必须让 GPT、Claude、Gemini、DeepSeek、MiMo、本地模型和未来 Provider 可以替换，而不要求 Agent Loop 到处写 `if provider === ...`。
 
-当前 0.1.0 已落地第一版 Provider 平台 Contract：`core/src/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`plugins/providers/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family。它通过本地协议测试证明请求、流式文本、Tool Call 拼装、Usage、取消与 Brain Ready Probe 的实现，但**尚未因为 mock 通过就宣称任何外部厂商已经 Product Ready**。外部 Provider Ready 必须由目标 API 的真实 Probe/E2E 证明。
+当前 0.1.0 已落地第一版 Provider 平台 Contract：`core/src/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`plugins/providers/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family；`plugins/providers/catalog.ts` 把用户看到的真实 Provider 品牌与底层协议 Adapter 分离。首个品牌产品入口是 **DeepSeek Official**，使用官方 endpoint、OS Credentials 与动态 `/models`；它复用 OpenAI-compatible transport 的前提是目标官方 API 实际兼容，而不是因为品牌名相似。当前本地协议测试仍**不能**替代 DeepSeek 外部真实凭据 E2E，未取得真实 E2E 前不得宣称 Product Ready。
 
 ## 2. Provider 不只是一个 HTTP stream 函数
 
@@ -33,15 +33,35 @@ ProviderDescriptor
 ```text
 core/src/model.ts                         统一 ModelRequest / ModelEvent / ModelProvider
 core/src/provider.ts                      Profile / Credential / Capability / Catalog / Registry / Probe
+plugins/providers/catalog.ts              真实 Provider 品牌目录 / preset；品牌身份与协议 Adapter 分离
 plugins/providers/openai-compatible.ts    第一条真实 HTTP/SSE transport family
 plugins/providers/builtin.ts              内建 Provider service 装配，不内置任何 Secret
 core/tests/provider-openai-compatible.test.ts
                                          本地协议级 Conformance 起点
 ```
 
-当前已经具备：Profile Secret 边界、环境/内存 Credential Resolver、OS Credentials Store Contract 与 Native bridge、Provider Adapter Registry、能力声明、模型目录发现、真实 HTTP/SSE 流解析、分片 Tool Call arguments 合并、Usage 归一化、取消与错误分类、最小 Brain Ready Probe。
+当前已经具备：Profile Secret 边界、环境/内存 Credential Resolver、OS Credentials Store Contract 与 Native bridge、Provider Adapter Registry、`providerId` 品牌身份、内建 Provider Catalog、能力声明、模型目录发现、真实 HTTP/SSE 流解析、分片 Tool Call arguments 合并、Usage 归一化、取消与错误分类，以及包含 catalog/text/tool-call round trip 的 Brain Ready Probe。
 
 当前**没有**具备：外部厂商真实 Ready 证据、通用自动 Retry 驱动、Anthropic/Gemini native Adapter、价格/Cost Catalog、远程 compaction、OS Credentials 三平台实机 E2E 证据，以及完整的跨 Adapter Conformance Harness。
+
+
+## 2.2 Provider / Model Truth Contract
+
+Provider 产品层必须保证“用户配置什么真实模型，Xiaoyu 就由什么真实模型推理”，而不是只把 Provider 做成一个 Base URL 表单：
+
+- `providerId` 表示用户真实选择的品牌/服务身份，例如 `deepseek`；`adapterId` 表示协议/transport family，例如 `xma.openai-compatible`。二者不能互相冒充。
+- Profile 负责一个真实账号/endpoint 的非 Secret 配置，同一品牌允许多个 Profile；`profileId` 不能被当成品牌身份。
+- 当前活动的 `providerId + profileId + modelId` 必须进入每个真实请求与 `ModelIdentity`；未经用户可见、可审计的路由变化，不得隐藏换模或降级。
+- Tool Call / Observation 必须回给当前真实模型继续推理。XMA 的 Tool Policy、Approval 与 Rust Native Kernel 负责“能不能做、怎么安全做”，不替模型做正常任务推理。
+- Provider 有真实 catalog API 时，可用 model ID 以实时 catalog 为准；preset 的默认模型仅用于首次创建 Profile 的 bootstrap。
+- Provider Catalog 只展示已经有真实 endpoint/auth/protocol 产品路径的品牌；计划中的品牌不得用可点击假卡片冒充支持完成。
+- Provider-specific thinking/reasoning/tool/usage 能力必须按实际 API Contract 验证与透传；XMA 不伪造，也不主动裁成最低公分母。
+
+### DeepSeek Official 第一批产品路径
+
+当前 DeepSeek Catalog entry 使用官方 `https://api.deepseek.com`，通过真实 `/models` 获取账号当前可用 model ID；preset 中的默认模型只负责首次 Profile bootstrap，模型选择页随后以 API 返回结果为准。DeepSeek 的品牌身份始终保留为 `providerId = deepseek`，即使底层 transport 复用 OpenAI-compatible Adapter，也不会把用户看到的 Provider 伪装成“Generic OpenAI”。
+
+Terminal 支持多个 Provider Profile；DeepSeek 可分别保存“个人账号 / 工作账号”等独立 Profile。API Key 默认只写 OS Credentials，`brain.json` 保存稳定 Credential Reference。`/model` 从当前 Profile 的真实 model catalog 切换模型，切换后重新执行 Brain Ready Probe。DeepSeek preset 当前对**真实 Agent Turn**显式启用 thinking，并使用 high reasoning effort；这些请求参数属于 Provider Profile 的 Adapter option，不进入 Core Agent Loop。当前 DeepSeek API 在 thinking 模式下不接受 named/`required` `tool_choice`，因此 Brain Ready 的确定性 Tool Call 子探针会**仅在该探针请求中**关闭 thinking；这不是对实际 Agent Turn 的能力降级，外部真实验收仍必须覆盖 thinking + tools 的自然 Tool Call 闭环。
 
 ## 3. Provider Profile 与 Secret
 
@@ -131,7 +151,8 @@ Reasoning 是 Provider capability，不是 XMA 自己编造的“思维链”。
 - Provider 不返回 reasoning 时，XMA 不伪造“思考中内容”；
 - reasoning effort 等配置由 ModelDescriptor/Provider 验证；
 - usage 中的 reasoning token 按 Provider 能提供的事实记录；
-- 不把隐藏 reasoning 当成 Session 可恢复文本。
+- 不把隐藏 reasoning 当成普通 assistant 文本或对用户展示的“思考过程”；
+- 若目标 Provider 协议为了 thinking + tools 的正确续传**强制要求**回传隐藏状态，Adapter 可以产生 opaque `providerContinuation`，Runtime 只做 durable round-trip、不理解厂商字段；redacted Session export 必须移除该 continuation。
 
 ## 8. Usage / Cost / Latency
 
@@ -175,14 +196,14 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 5. 记录 first-token / total latency、capability observation、usage availability；
 6. 返回结构化结果供 CLI/Desktop 展示。
 
-只有真实请求成功才能标记 Brain Ready。当前 OpenAI-compatible Adapter 的 `probe()` 已执行真实 HTTP `POST /chat/completions` 并验证返回 JSON；本地测试服务器只验证协议实现，不构成任何外部厂商 Ready 证据。假 Provider / fixture 只用于测试，不能改变产品状态。
+只有真实请求成功才能标记 Brain Ready。当前 OpenAI-compatible Adapter 的 `probe()` 会在声明相应 capability 时先读取真实 `/models` 并确认目标 model 存在，再执行最小 text request；若声明 native tool calling，还会执行一次确定性最小 Tool Call，并把 Tool Result 作为 observation 回给同一模型要求其继续响应。Provider 可以为**探针本身**声明最小兼容 override；DeepSeek 当前因为官方 API 不允许 thinking 模式与 named/`required` `tool_choice` 同时使用，Tool Call 子探针临时设为 `thinking: disabled`，但普通 text probe 与实际 Agent Turn 仍使用 Profile 的真实 thinking/high 配置。对于真实 DeepSeek thinking + tools Agent Turn，Adapter 会保存并回传协议要求的 `reasoning_content` continuation；Core 只看 opaque `providerContinuation`，不会把它当普通消息文本。Terminal 只在当前 `profileId + modelId` 的真实 Probe 成功后显示 Brain Ready；重启后首次实际发送会重新验证，而不是把“配置文件存在”当成 Ready。本地测试服务器只验证协议实现，不构成任何外部厂商 Ready 证据。
 
 ## 11. Provider 实现顺序
 
 0.1.x 不同时写五个半成品 Adapter。顺序固定为：
 
 1. 完成 Provider Registry / Profile / Credential / Capability / Catalog Contract； **第一版已落地**
-2. 完成一个 **OpenAI-compatible transport family** 的真实 Adapter，打通 streaming text + tool call + usage + cancellation； **协议实现与本地 Conformance 已落地，外部 Provider E2E 待真实凭据验证**。DeepSeek/MiMo 等只有在其目标 API 实际兼容时才复用，不凭品牌名称假定兼容；
+2. 完成一个 **OpenAI-compatible transport family** 的真实 Adapter，打通 streaming text + tool call + usage + cancellation； **协议实现与本地 Conformance 已落地**。在它之上先做真实品牌 Catalog，DeepSeek Official 已进入第一批产品路径，但外部真实凭据 E2E 尚待 Windows 实机验收；其他品牌只有在目标 API 实际兼容时才复用，不凭品牌名称假定兼容；
 3. 完成一个**非 OpenAI 协议族**的真实 Adapter，优先 Anthropic Claude native，证明 Contract 没被 OpenAI JSON 绑死；
 4. Gemini native；
 5. OpenAI first-party/Responses 特有能力、额外云 Provider、本地模型作为独立能力迭代；
@@ -210,4 +231,4 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 
 ## 13. 当前 0.1.0 验证边界
 
-当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、OS CredentialReference/Store 适配与 legacy env 配置迁移、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化和真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。同样，本地 Fake Native 只能验证 Credentials Contract，不能替代 Windows Credential Manager、macOS Keychain、Linux Secret Service 的实机 E2E。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。
+当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、OS CredentialReference/Store 适配与 legacy env 配置迁移、品牌 `providerId` 与 Adapter 分离、DeepSeek Catalog preset、thinking/reasoning 参数映射、`reasoning_content` durable provider continuation、redacted export 移除 continuation、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化，以及 catalog → text → tool call → observation round trip 的真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。同样，本地 Fake Native 只能验证 Credentials Contract，不能替代 Windows Credential Manager、macOS Keychain、Linux Secret Service 的实机 E2E。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。

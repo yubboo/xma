@@ -115,6 +115,13 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - “Brain Ready”必须有真实请求证据；fixture/mock 不能改变产品 Ready 状态。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
+- **Provider Truth Contract：** 用户选择的 `providerId + profileId + modelId` 必须对应真实请求目标，禁止隐藏换模、隐藏降级、便宜模型代跑或本地 Planner 接管正常推理。
+- **品牌与协议分离：** Provider 品牌是产品身份，Adapter 是协议/transport 实现；同一 Adapter 可以被多个真实兼容品牌复用，但模型身份、Profile、catalog、capability 与 Ready 证据不能因此混为一谈。
+- 同一 Turn 的 Tool Result 必须回到当前真实模型继续推理；Policy/Approval/Native 只负责权限与副作用安全。
+- 有 models/catalog API 时以实时目录为可用模型事实来源；静态默认模型只允许作为 bootstrap。
+- 未完成真实 endpoint/auth/protocol 的品牌不得进入可用 Provider Catalog；不做“先画卡片、后补实现”的假产品面。
+- 声明 native tool calling 的 Provider，Brain Ready 至少验证一次真实 `model → tool call → observation → same model → final` round trip。
+- thinking+tools 若要求回传隐藏协议状态，Adapter 必须产生 opaque `providerContinuation`；Core 只能持久 round-trip，不能解析为自己的 Planner/Reasoning，redacted export 必须移除。
 
 ## 6. Tool / Permission / Native 规则
 

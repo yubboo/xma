@@ -1,7 +1,7 @@
 /**
  * 文件作用：验证第一条 OpenAI-compatible Adapter 的统一 Provider Contract 与真实 HTTP/SSE 行为。
  * 关联模块：core/src/provider.ts、model.ts、plugins/providers/openai-compatible.ts。
- * 当前实现：Profile/Secret 边界、Model Catalog、文本/Tool Call/Usage 流、取消、错误归一化和 Brain Ready Probe 测试。
+ * 当前实现：Profile/Secret 边界、Model Catalog、文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化和 Brain Ready Probe 测试。
  * 职责边界：这里使用本机 mock HTTP server 证明协议实现，不代表任何外部厂商已通过真实账号 E2E 或可被标记为产品 Ready。
  */
 
@@ -44,6 +44,7 @@ async function withServer(
 function profile(baseUrl: string): ProviderProfile {
   return {
     id: 'fixture-openai',
+    providerId: 'fixture',
     adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
     displayName: 'Fixture OpenAI Compatible',
     baseUrl,
@@ -84,6 +85,7 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
       const body = await readJson(request)
       requests.push({ url: request.url, authorization: request.headers.authorization, body })
       response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.write('data: {"choices":[{"delta":{"reasoning_content":"先分析"}}]}\n\n')
       response.write('data: {"choices":[{"delta":{"content":"你好"}}]}\n\n')
       response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"demo.inspect","arguments":"{\\"path\\":"}}]}}]}\n\n')
       response.write('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"README.md\\"}"}}]}}]}\n\n')
@@ -98,7 +100,15 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
     credentials.set('fixture-key', 'secret-123456789')
     const registry = new ProviderRegistry(credentials)
     registry.registerAdapter(new OpenAiCompatibleAdapter())
-    registry.saveProfile(profile(baseUrl))
+    registry.saveProfile({
+      ...profile(baseUrl),
+      options: {
+        reasoning: true,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'high',
+        reasoningContentToolContinuation: true,
+      },
+    })
 
     const models = await registry.listModels('fixture-openai', new AbortController().signal)
     assert.deepEqual(models.map(model => model.id), ['another-model', 'fixture-model'])
@@ -112,20 +122,56 @@ test('OpenAI-compatible Adapter normalizes catalog, streaming text, tool calls a
     })) events.push(event)
 
     assert.deepEqual(events, [
+      { type: 'reasoning', text: '先分析' },
       { type: 'text', text: '你好' },
       { type: 'usage', inputTokens: 21, outputTokens: 7, cachedInputTokens: 5, reasoningTokens: 2 },
+      { type: 'provider-continuation', data: { adapterId: OPENAI_COMPATIBLE_ADAPTER_ID, reasoningContent: '先分析' } },
       { type: 'tool-call', callId: 'call-1', name: 'demo.inspect', arguments: { path: 'README.md' } },
     ])
+    const continuation = events.find(event => event.type === 'provider-continuation')
+    assert.equal(continuation?.type, 'provider-continuation')
+    const secondEvents: ModelEvent[] = []
+    for await (const event of provider.stream({
+      messages: [
+        { role: 'user', content: 'hello' },
+        {
+          role: 'assistant',
+          content: '你好',
+          toolCalls: [{ callId: 'call-1', name: 'demo.inspect', arguments: { path: 'README.md' } }],
+          ...(continuation?.type === 'provider-continuation' ? { providerContinuation: continuation.data } : {}),
+        },
+        { role: 'tool', content: 'ok', toolCallId: 'call-1', toolName: 'demo.inspect' },
+      ],
+      tools: [{ name: 'demo.inspect', description: 'inspect', inputSchema: { type: 'object' } }],
+      signal: new AbortController().signal,
+    })) secondEvents.push(event)
+    assert.ok(secondEvents.length > 0)
+
     assert.equal(requests.every(item => item.authorization === 'Bearer secret-123456789'), true)
-    const chat = requests.find(item => item.url.endsWith('/chat/completions'))
+    const chats = requests.filter(item => item.url.endsWith('/chat/completions'))
+    const chat = chats[0]
     assert.equal(chat?.body?.model, 'fixture-model')
     assert.ok(Array.isArray(chat?.body?.tools))
+    assert.deepEqual(chat?.body?.thinking, { type: 'enabled' })
+    assert.equal(chat?.body?.reasoning_effort, 'high')
     assert.deepEqual((chat?.body?.messages as Array<Record<string, unknown>>).map(message => message.role), ['system', 'user'])
+    const secondChat = chats[1]
+    const secondMessages = secondChat?.body?.messages as Array<Record<string, unknown>>
+    const assistantMessage = secondMessages.find(message => message.role === 'assistant')
+    assert.equal(assistantMessage?.reasoning_content, '先分析')
   })
 })
 
 test('Brain Ready Probe is only ready after a real request succeeds and returns structured failure otherwise', async () => {
+  let toolProbeSeen = false
+  let probeContinuationSeen = false
+  let deepSeekProbeCompatSeen = false
   await withServer(async (request, response) => {
+    if (request.url === '/v1/models' && request.method === 'GET') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(JSON.stringify({ data: [{ id: 'fixture-model' }] }))
+      return
+    }
     if (request.url !== '/v1/chat/completions') {
       response.writeHead(404)
       response.end('not found')
@@ -134,17 +180,54 @@ test('Brain Ready Probe is only ready after a real request succeeds and returns 
     const body = await readJson(request)
     assert.equal(body.stream, false)
     response.writeHead(200, { 'content-type': 'application/json' })
+    const messages = body.messages as Array<Record<string, unknown>>
+    if (messages.some(message => message.role === 'tool')) {
+      const assistant = messages.find(message => message.role === 'assistant')
+      probeContinuationSeen = assistant?.reasoning_content === 'probe reasoning'
+      deepSeekProbeCompatSeen = assistant?.content === '' && body.reasoning_effort === undefined && (body.thinking as Record<string, unknown> | undefined)?.type === 'disabled'
+      response.end(JSON.stringify({ id: 'round-trip-response', choices: [{ message: { role: 'assistant', content: 'done' } }] }))
+      return
+    }
+    if (body.tool_choice) {
+      toolProbeSeen = true
+      assert.deepEqual(body.thinking, { type: 'disabled' })
+      assert.equal(body.reasoning_effort, undefined)
+      response.end(JSON.stringify({
+        id: 'tool-probe-response',
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: null,
+            reasoning_content: 'probe reasoning',
+            tool_calls: [{ id: 'call-probe', type: 'function', function: { name: 'xma_probe', arguments: '{"ok":true}' } }],
+          },
+        }],
+      }))
+      return
+    }
     response.end(JSON.stringify({ id: 'probe-response', choices: [{ message: { role: 'assistant', content: 'OK' } }] }))
   }, async baseUrl => {
     const credentials = new MemoryCredentialResolver()
     credentials.set('fixture-key', 'secret-123456789')
     const registry = new ProviderRegistry(credentials)
     registry.registerAdapter(new OpenAiCompatibleAdapter())
-    registry.saveProfile(profile(baseUrl))
+    registry.saveProfile({
+      ...profile(baseUrl),
+      options: {
+        reasoning: true,
+        thinkingMode: 'enabled',
+        reasoningEffort: 'high',
+        reasoningContentToolContinuation: true,
+        toolProbeThinkingMode: 'disabled',
+      },
+    })
     const result = await registry.probe('fixture-openai', undefined, new AbortController().signal)
     assert.equal(result.ready, true)
     assert.equal(result.model, 'fixture-model')
     assert.ok(result.latencyMs >= 0)
+    assert.equal(toolProbeSeen, true)
+    assert.equal(probeContinuationSeen, true)
+    assert.equal(deepSeekProbeCompatSeen, true)
   })
 
   const credentials = new MemoryCredentialResolver()

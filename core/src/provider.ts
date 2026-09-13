@@ -37,6 +37,8 @@ export type ProviderAuth =
 
 export interface ProviderProfile {
   id: string
+  /** 真实 Provider 品牌/服务身份，例如 deepseek；不得拿 adapterId 冒充用户选择的品牌。 */
+  providerId: string
   adapterId: string
   displayName: string
   baseUrl: string
@@ -178,6 +180,7 @@ const FORBIDDEN_PROFILE_HEADERS = new Set([
 
 function validateProfile(profile: ProviderProfile): void {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profile.id)) throw new Error(`Invalid XMA provider profile id: ${profile.id}`)
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(profile.providerId)) throw new Error(`Invalid XMA provider id: ${profile.providerId}`)
   if (!profile.adapterId) throw new Error(`XMA provider profile ${profile.id} is missing adapterId.`)
   if (!profile.defaultModel.trim()) throw new Error(`XMA provider profile ${profile.id} is missing defaultModel.`)
   let url: URL

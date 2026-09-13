@@ -45,7 +45,7 @@ XMA 长期参考：
 - assistant Tool Call + Tool Result 可从 durable event 重建成下一 Step 的模型历史；
 - 取消时对已发出的 Tool Call 写入 `TOOL_ABORTED` 结果；
 - Step 记录 Provider identity + 冻结 Tool Schema 快照；
-- 原始 reasoning 只走 live event，不默认进入 durable model history；
+- 原始 reasoning 不作为普通 assistant durable 文本；Provider 协议若为 thinking+tools 强制要求隐藏续传状态，则由 Adapter 产生 opaque `providerContinuation`，Runtime 只做 durable round-trip，redacted export 移除该状态；
 - `ContextRegistry` 已实现稳定 Source 注册、order+id 确定性排序、64 KiB 默认硬上限与 SHA-256 snapshot；
 - Runtime 已在每个 Step 前组装 Context，并把变化后的 `context/snapshot + digest` 写入 durable Session；
 - `requestMessagesForStep / requestToolsForStep / requestContextForStep` 可重建历史 Step 的模型可见输入；
@@ -83,17 +83,19 @@ XMA 长期参考：
 
 ### 当前落地（本批次）
 
-- `ProviderRegistry` 已实现 Adapter/Profile 注册与非 Secret Profile 校验；
+- `ProviderRegistry` 已实现 Adapter/Profile 注册与非 Secret Profile 校验；Profile 已显式区分真实品牌 `providerId` 与协议 `adapterId`，`ModelIdentity` 记录品牌/Profile/model，禁止把协议名冒充真实 Provider；
 - `EnvironmentCredentialResolver / MemoryCredentialResolver / CompositeCredentialResolver` 已实现请求时 Secret 解析；
 - `CredentialStore` + `NativeCredentialStore` 已增加 `os` CredentialReference；Rust Native Runtime 已实现 Windows Credential Manager、macOS Keychain、Linux Secret Service（存在 `secret-tool` 时）读/写/删 bridge；
-- Terminal Provider 默认使用掩码 API Key 输入 → OS Credentials → Profile 只存稳定别名；`brain.json` 升级到 v2，v1 `credentialEnv` / `XIAOYU_*` 保持兼容读取；
+- Terminal Provider 默认使用掩码 API Key 输入 → OS Credentials → Profile 只存稳定别名；`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 身份并可同时保存多个独立 Profile；v1/v2 只作为显式迁移输入兼容读取；
+- `plugins/providers/catalog.ts` 已建立真实 Provider Catalog 第一版：只展示已实现产品路径的品牌，首个入口为 DeepSeek Official + 自定义 OpenAI-compatible；未实现品牌不画假卡片；
+- DeepSeek Official 使用官方 endpoint preset，模型通过真实 `/models` 动态发现；`/model` 可切换当前 Profile 的真实 model ID，切换后重新 Probe；真实 Agent Turn 显式启用 thinking/high reasoning，并按协议要求 durable round-trip `reasoning_content` continuation，避免 Tool Result 回传后丢失模型推理上下文；当前 DeepSeek named/`required` tool choice 与 thinking 不兼容，因此确定性 Brain Ready Tool 子探针只在探针请求中关闭 thinking，实际 Agent Turn 不降级；
 - Profile 静态拒绝 `Authorization` / `X-Api-Key` 等 Secret-bearing Header；
 - `ProviderCapabilities / ModelDescriptor / ProviderRequestError / BrainReadyProbeResult` 已进入 Core；
 - `xma.openai-compatible` 已实现真实 HTTP/SSE Chat Completions transport family；
-- 已覆盖 `/models`、stream text、分片 Tool Call arguments、Usage、取消、错误分类与最小 Brain Ready Probe；
+- 已覆盖 `/models`、stream text、分片 Tool Call arguments、Usage、取消、错误分类；Brain Ready Probe 已升级为目标 model catalog 校验 + 最小 text request + 声明 native tool calling 时的 Tool Call/Observation round trip；
 - 本地 HTTP 测试证明协议实现，但不构成任何外部厂商 Ready 证据。
 
-仍未完成：真实外部 Provider E2E、OS Credentials Windows/macOS/Linux 实机 E2E、通用 Retry driver、Anthropic/Gemini native、通用跨 Adapter Conformance Harness、Cost Catalog。
+仍未完成：DeepSeek Official Windows 真实 API/OS Credentials 重启 E2E 与由此产生的 Product Ready 证据、其他外部 Provider E2E、macOS/Linux OS Credentials 实机 E2E、通用 Retry driver、Anthropic/Gemini native、通用跨 Adapter Conformance Harness、Cost Catalog。
 
 ### 真实 Adapter 顺序
 

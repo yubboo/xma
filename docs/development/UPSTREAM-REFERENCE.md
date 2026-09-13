@@ -190,6 +190,12 @@ Rust Native/Security Kernel
 
 已核对 `codex-rs/model-provider/` package tree，并重点审阅 `src/lib.rs`、`src/provider.rs` 对 capability、auth、account/model catalog、runtime provider 与错误恢复职责的切分；同时把 `auth.rs`、`models_endpoint.rs`、`models_identity.rs`、`shared_state.rs` 等列为 Provider 后续深化的同一参考域。XMA 本批吸收的是“Provider 不只是 stream()”和 Secret/Profile/Capability/Catalog 分离；**没有宣称已经逐行复刻整个 Codex provider package**，也不会把 Codex 的 Rust 产品层语言所有权搬入 XMA。
 
+### Provider Catalog / DeepSeek Official 产品化补充
+
+本批继续使用同一个 Codex 固定 commit，重新核对 `codex-rs/model-provider/src/` 全树清单，确认 `provider.rs`、`models_endpoint.rs`、`models_identity.rs`、auth/shared-state 与测试仍是同一参考域；这次没有声称逐文件重新精读整个 package。XMA 吸收的是“真实服务身份、模型目录与 transport/auth 分层”，并把它落实为 `providerId`（用户选择的品牌/服务）与 `adapterId`（协议实现）分离。
+
+DeepSeek 产品入口以目标厂商**当前官方 API 文档**为实时 Contract 来源：官方 endpoint、`/models`、Chat Completions、Tool Calls/Thinking 等能力必须以真实文档与实测为准，不能由品牌名或旧教程猜测。静态默认 model 只用于首次 bootstrap；运行时 model list 以真实 API 返回为准。外部真实凭据 E2E 未通过前，代码接入只能标记“待验收”，不能写成 Product Ready。
+
 ### 本批拒绝项
 
 - 不把 Provider HTTP JSON 放进 `core/src/runtime.ts`；

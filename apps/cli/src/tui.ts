@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA `xiaoyu` 终端工作台的交互界面、主题、命令分发与 Workspace 风险确认。
  * 关联模块：main.ts、Core Agent Runtime、Workspace、Provider、Tool Approval 与 Native 文件 ToolSet。
- * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、动态丰富视觉、Ctrl+P 命令面板、Brain 配置、终端设置、风险确认、斜杠补全、流式回复与 Tool Approval。
+ * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、Ctrl+P 命令面板、真实 Provider Catalog/多 Profile/模型切换、终端设置、流式回复与 Tool Approval。
  * 职责边界：TUI 只负责终端视觉和交互；不得复制 Agent Loop、Provider 协议、Workspace Policy 或 Native 安全逻辑。
  */
 
@@ -53,6 +53,7 @@ const COMMANDS = [
   { value: 'doctor', label: 'doctor', description: '检查当前运行环境' },
   { value: 'workspace', label: 'workspace', description: '查看当前 Workspace' },
   { value: 'provider', label: 'provider', description: '配置 Brain / Provider' },
+  { value: 'model', label: 'model', description: '切换当前真实模型' },
   { value: 'agent', label: 'agent', description: '查看当前 Agent' },
   { value: 'clear', label: 'clear', description: '清空当前终端显示' },
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
@@ -64,6 +65,7 @@ const PALETTE_ACTIONS = [
   { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor' },
   { value: 'workspace', label: 'Workspace', description: '查看当前工作区' },
   { value: 'provider', label: 'Brain / Provider', description: '配置、测试和选择模型' },
+  { value: 'model', label: '模型切换', description: '从当前 Provider 的真实模型目录切换' },
   { value: 'agent', label: 'Agent', description: '查看当前 Agent' },
   { value: 'clear', label: '清空显示', description: '清空当前会话的终端显示' },
   { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端' },
@@ -127,17 +129,28 @@ export interface BrainProbeView {
   message: string
 }
 
+export interface BrainProviderCatalogItem {
+  id: string
+  displayName: string
+  description: string
+  credentialRequired: boolean
+  customEndpoint: boolean
+}
+
 export interface TerminalBackend {
   version: string
   workspace: string
   agentLabel: string
   readonly providerLabel: string
+  readonly providerConfigured: boolean
   readonly providerReady: boolean
+  listBrainProviderCatalog(): readonly BrainProviderCatalogItem[]
   listBrainProfiles(): readonly TerminalBrainProfileView[]
   saveBrainProfile(input: {
-    displayName: string
-    baseUrl: string
-    model: string
+    providerId: string
+    displayName?: string
+    baseUrl?: string
+    model?: string
     apiKey?: string
     credentialEnv?: string
   }): Promise<TerminalBrainProfileView>
@@ -1057,8 +1070,8 @@ class XiaoyuSurface {
     const profiles = this.backend.listBrainProfiles()
     const active = profiles.find(profile => profile.active)
     const items: AutocompleteItem[] = [
-      { value: 'add-os', label: '新增 OpenAI-compatible Provider', description: 'API Key 安全保存到 OS Credentials' },
-      { value: 'add-env', label: '新增 Provider · 环境变量兼容', description: '只保存 API Key 环境变量名' },
+      { value: 'catalog', label: '＋ 添加 Provider', description: '选择已真实接入的 Provider；API Key 默认保存到 OS Credentials' },
+      { value: 'add-env', label: '＋ 自定义 Provider · 环境变量兼容', description: '兼容旧环境变量工作流' },
     ]
     if (active) {
       items.push(
@@ -1066,16 +1079,18 @@ class XiaoyuSurface {
         { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
       )
     }
+    const providerNames = new Map(this.backend.listBrainProviderCatalog().map(item => [item.id, item.displayName]))
     for (const profile of profiles) {
       const credential = profile.credential?.source === 'os'
         ? profile.credentialReady ? 'Key: OS Credentials' : '缺少 OS Credentials'
         : profile.credential?.source === 'env'
           ? profile.credentialReady ? `Key: ${profile.credential.key}` : `缺少 ${profile.credential.key}`
           : '无需 API Key'
+      const providerName = providerNames.get(profile.providerId) ?? profile.providerId
       items.push({
         value: `select:${profile.id}`,
         label: `${profile.active ? '●' : '○'} ${profile.displayName}`,
-        description: `${profile.model} · ${profile.source === 'environment' ? '环境变量' : '用户配置'} · ${credential}`,
+        description: `${providerName} · ${profile.model} · ${profile.source === 'environment' ? '环境变量' : '用户配置'} · ${credential}`,
       })
     }
     this.showListOverlay('Brain / Provider', items, value => {
@@ -1085,12 +1100,12 @@ class XiaoyuSurface {
 
   private async runProviderAction(value: string): Promise<void> {
     try {
-      if (value === 'add-os') {
-        await this.addProviderWizard('os')
+      if (value === 'catalog') {
+        this.openProviderCatalog()
         return
       }
       if (value === 'add-env') {
-        await this.addProviderWizard('env')
+        await this.addProviderWizard('custom-openai-compatible', 'env')
         return
       }
       if (value === 'probe') {
@@ -1102,28 +1117,15 @@ class XiaoyuSurface {
         return
       }
       if (value === 'models') {
-        this.notice = '正在读取模型列表…'
-        this.tui.requestRender()
-        const models = await this.backend.listBrainModels()
-        if (models.length === 0) {
-          this.notice = 'Provider 没有返回模型列表；可重新新增 Profile 手工填写模型 ID。'
-          this.tui.requestRender()
-          return
-        }
-        this.showListOverlay('选择模型', models.slice(0, 80).map(model => ({ value: model, label: model })), model => {
-          void this.backend.selectBrainModel(model).then(profile => {
-            this.notice = `模型已切换 · ${profile.model}`
-            this.tui.requestRender()
-          }).catch(error => {
-            this.notice = `模型切换失败 · ${error instanceof Error ? error.message : String(error)}`
-            this.tui.requestRender()
-          })
-        })
+        await this.openModelSelector()
         return
       }
       if (value.startsWith('select:')) {
         const profile = await this.backend.selectBrain(value.slice('select:'.length))
-        this.notice = `Brain 已切换 · ${profile.displayName} · ${profile.model}`
+        this.notice = `Brain 已切换 · ${profile.displayName} · ${profile.model} · 正在验证…`
+        this.tui.requestRender()
+        const probe = await this.backend.probeBrain()
+        this.notice = `${probe.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
         this.tui.requestRender()
       }
     } catch (error) {
@@ -1132,31 +1134,79 @@ class XiaoyuSurface {
     }
   }
 
-  private async addProviderWizard(credentialMode: 'os' | 'env'): Promise<void> {
-    const displayName = await this.showInputOverlay('Provider 名称', '例如：OpenAI Compatible', '')
+  private openProviderCatalog(): void {
+    const catalog = this.backend.listBrainProviderCatalog()
+    this.showListOverlay('添加 Provider', catalog.map(item => ({
+      value: `catalog:${item.id}`,
+      label: item.displayName,
+      description: item.description,
+    })), value => {
+      if (!value.startsWith('catalog:')) return
+      void this.addProviderWizard(value.slice('catalog:'.length), 'os')
+    })
+  }
+
+  private async openModelSelector(): Promise<void> {
+    this.notice = '正在读取 Provider 的真实模型列表…'
+    this.tui.requestRender()
+    const models = await this.backend.listBrainModels()
+    if (models.length === 0) {
+      this.notice = 'Provider 没有返回模型列表；当前 Profile 保留已配置的模型 ID。'
+      this.tui.requestRender()
+      return
+    }
+    this.showListOverlay('选择真实模型', models.slice(0, 100).map(model => ({ value: model, label: model })), model => {
+      void this.backend.selectBrainModel(model).then(async profile => {
+        this.notice = `模型已切换 · ${profile.displayName} · ${profile.model}`
+        this.tui.requestRender()
+        const probe = await this.backend.probeBrain()
+        this.notice = `${probe.ready ? 'Brain Ready' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+        this.tui.requestRender()
+      }).catch(error => {
+        this.notice = `模型切换失败 · ${error instanceof Error ? error.message : String(error)}`
+        this.tui.requestRender()
+      })
+    })
+  }
+
+  private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
+    const catalog = this.backend.listBrainProviderCatalog()
+    const provider = catalog.find(item => item.id === providerId)
+    if (!provider) throw new Error(`Provider Catalog 不存在：${providerId}`)
+    const displayName = await this.showInputOverlay('Profile 名称', `例如：${provider.displayName} / 工作账号 / 个人账号`, provider.displayName)
     if (displayName === undefined) return
-    const baseUrl = await this.showInputOverlay('Base URL', '例如：https://api.example.com/v1', '')
-    if (baseUrl === undefined) return
-    const model = await this.showInputOverlay('默认模型 ID', '例如：gpt-4.1 / deepseek-chat', '')
-    if (model === undefined) return
+    let baseUrl: string | undefined
+    let model: string | undefined
+    if (provider.customEndpoint) {
+      baseUrl = await this.showInputOverlay('Base URL', '例如：https://api.example.com/v1', '')
+      if (baseUrl === undefined) return
+      model = await this.showInputOverlay('默认模型 ID', '请输入 endpoint 实际支持的 model ID', '')
+      if (model === undefined) return
+    }
     const credentialInput = credentialMode === 'os'
-      ? await this.showInputOverlay('API Key', '安全写入系统凭据库；输入内容不会回显；留空表示无需鉴权', '', { secret: true })
+      ? await this.showInputOverlay('API Key', provider.credentialRequired
+          ? '安全写入系统凭据库；输入内容不会回显'
+          : '安全写入系统凭据库；留空表示此 endpoint 无需鉴权', '', { secret: true })
       : await this.showInputOverlay('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY')
     if (credentialInput === undefined) return
+    if (credentialMode === 'os' && provider.credentialRequired && !credentialInput.trim()) {
+      this.notice = `${provider.displayName} 官方 API 需要 API Key。`
+      this.tui.requestRender()
+      return
+    }
 
     try {
       const profile = await this.backend.saveBrainProfile({
-        displayName: displayName.trim() || 'OpenAI Compatible',
-        baseUrl: baseUrl.trim(),
-        model: model.trim(),
+        providerId,
+        displayName: displayName.trim() || provider.displayName,
+        ...(baseUrl !== undefined ? { baseUrl: baseUrl.trim() } : {}),
+        ...(model !== undefined ? { model: model.trim() } : {}),
         ...(credentialMode === 'os' && credentialInput ? { apiKey: credentialInput } : {}),
         ...(credentialMode === 'env' && credentialInput.trim() ? { credentialEnv: credentialInput.trim() } : {}),
       })
       this.notice = `Provider 已保存 · ${profile.displayName} · ${profile.model}`
       this.tui.requestRender()
-      const probe = await this.backend.probeBrain()
-      this.notice = `${probe.ready ? 'Brain Ready' : 'Provider 已保存但未就绪'} · ${probe.message}`
-      this.tui.requestRender()
+      await this.openModelSelector()
     } catch (error) {
       this.notice = `Provider 保存失败 · ${error instanceof Error ? error.message : String(error)}`
       this.tui.requestRender()
@@ -1311,6 +1361,10 @@ class XiaoyuSurface {
       this.openProviderManager()
       return true
     }
+    if (command === 'model') {
+      await this.openModelSelector()
+      return true
+    }
     if (command === 'agent') {
       this.notice = `Agent · ${this.backend.agentLabel}`
       this.tui.requestRender()
@@ -1333,7 +1387,7 @@ class XiaoyuSurface {
     this.notice = ''
 
     if (line === '/' || line === '/help') {
-      this.notice = '/settings 终端设置 · /vivid 视觉 · /doctor 检查 · /workspace · /provider · /agent · /clear · /exit'
+      this.notice = '/settings 终端设置 · /vivid 视觉 · /doctor 检查 · /workspace · /provider · /model · /agent · /clear · /exit'
       this.tui.requestRender()
       return
     }
@@ -1354,8 +1408,8 @@ class XiaoyuSurface {
       this.tui.requestRender()
       return
     }
-    if (!this.backend.providerReady) {
-      this.notice = 'Brain 未配置或未就绪 · 按 Ctrl+P → Brain / Provider 完成配置与 Brain Ready 测试'
+    if (!this.backend.providerConfigured) {
+      this.notice = 'Brain 未配置 · 按 Ctrl+P → Brain / Provider 添加真实 Provider'
       this.tui.requestRender()
       return
     }

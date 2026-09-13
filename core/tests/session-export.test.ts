@@ -1,7 +1,7 @@
 /**
  * 文件作用：验证 XMA Session Export、Secret Redaction 与未来相邻版本 Migration Contract。
  * 关联模块：core/src/session/export.ts、session/contract.ts、runtime.ts。
- * 当前实现：文本/嵌套 JSON 脱敏、原 Snapshot 不被修改、相邻迁移和未来版本拒绝测试。
+ * 当前实现：文本/嵌套 JSON 脱敏、Provider continuation 安全移除、原 Snapshot 不被修改、相邻迁移和未来版本拒绝测试。
  * 职责边界：测试不会把 Secret 写入 Provider Profile；这里故意构造含 Secret 的历史，用于证明导出边界能做二次防护。
  */
 
@@ -45,9 +45,21 @@ test('Session export redacts known Secret values recursively without mutating th
         content: `user ${secret}`,
       },
       {
-        type: 'tool/result',
+        type: 'assistant/message',
         sessionId: 'export-test',
         sequence: 3,
+        timestamp: '2026-09-13T00:00:02.500Z',
+        turnId: 'turn-1',
+        stepId: 'step-1',
+        content: 'assistant',
+        toolCalls: [],
+        providerContinuation: { adapterId: 'fixture', reasoningContent: `hidden ${secret}` },
+        interrupted: false,
+      },
+      {
+        type: 'tool/result',
+        sessionId: 'export-test',
+        sequence: 4,
         timestamp: '2026-09-13T00:00:03.000Z',
         turnId: 'turn-1',
         stepId: 'step-1',
@@ -61,7 +73,7 @@ test('Session export redacts known Secret values recursively without mutating th
       {
         type: 'turn/end',
         sessionId: 'export-test',
-        sequence: 4,
+        sequence: 5,
         timestamp: '2026-09-13T00:00:04.000Z',
         turnId: 'turn-1',
         outcome: 'completed',
@@ -75,6 +87,7 @@ test('Session export redacts known Secret values recursively without mutating th
   const json = JSON.stringify(exported)
   assert.equal(json.includes(secret), false)
   assert.equal(json.includes('[REDACTED]'), true)
+  assert.equal(json.includes('providerContinuation'), false)
   assert.equal(JSON.stringify(snapshot).includes(secret), true)
 })
 

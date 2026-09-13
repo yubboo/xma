@@ -29,6 +29,7 @@ const required = [
   'core/src/tool/router.ts',
   'core/src/native.ts',
   'plugins/providers/builtin.ts',
+  'plugins/providers/catalog.ts',
   'plugins/providers/openai-compatible.ts',
   'plugins/tools/native.ts',
   'apps/desktop/scripts/electron/build.ts',
@@ -67,7 +68,7 @@ for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/a
   if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
 }
 const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
-for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpers', '父目录已经表达领域时去掉重复前缀']) {
+for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpers', '父目录已经表达领域时去掉重复前缀', 'Provider Truth Contract', '隐藏降级']) {
   if (!developmentRules.includes(marker)) throw new Error(`XMA development naming rule missing: ${marker}`)
 }
 
@@ -100,7 +101,7 @@ for (const marker of ['WorkspaceBinding', 'descriptorDigest', 'workspace/access-
   if (!workspaceDoc.includes(marker)) throw new Error(`XMA Workspace architecture marker missing: ${marker}`)
 }
 const providerDoc = readFileSync('docs/architecture/MODEL-PROVIDER.md', 'utf8')
-for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests']) {
+for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests', 'Provider / Model Truth Contract', 'providerId', 'adapterId', 'DeepSeek Official']) {
   if (!providerDoc.includes(marker)) throw new Error(`XMA Model Provider architecture marker missing: ${marker}`)
 }
 
@@ -110,7 +111,7 @@ for (const marker of ['class ContextRegistry', 'maxCharacters', 'sha256', 'sourc
   if (!contextSource.includes(marker)) throw new Error(`XMA Context architecture marker missing: ${marker}`)
 }
 const sessionSource = readFileSync('core/src/session/contract.ts', 'utf8')
-for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep', "type: 'workspace/access-granted'", "type: 'workspace/access-revoked'", "type: 'workspace/access-used'"]) {
+for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep', 'providerContinuation', "type: 'workspace/access-granted'", "type: 'workspace/access-revoked'", "type: 'workspace/access-used'"]) {
   if (!sessionSource.includes(marker)) throw new Error(`XMA Session reconstruction marker missing: ${marker}`)
 }
 const workspaceSource = readFileSync('core/src/workspace.ts', 'utf8')
@@ -118,16 +119,20 @@ for (const marker of ['class WorkspaceRegistry', 'WorkspaceBinding', 'descriptor
   if (!workspaceSource.includes(marker)) throw new Error(`XMA Workspace core marker missing: ${marker}`)
 }
 const exportSource = readFileSync('core/src/session/export.ts', 'utf8')
-for (const marker of ['SessionExportEnvelope', 'redacted: boolean', 'SessionMigrationRegistry']) {
+for (const marker of ['SessionExportEnvelope', 'redacted: boolean', 'SessionMigrationRegistry', 'delete clone.providerContinuation']) {
   if (!exportSource.includes(marker)) throw new Error(`XMA Session export/migration marker missing: ${marker}`)
 }
 const providerSource = readFileSync('core/src/provider.ts', 'utf8')
-for (const marker of ['ProviderRegistry', 'ProviderCapabilities', 'CredentialReference', 'BrainReadyProbeResult', 'ProviderRequestError']) {
+for (const marker of ['ProviderRegistry', 'ProviderCapabilities', 'CredentialReference', 'BrainReadyProbeResult', 'ProviderRequestError', 'providerId']) {
   if (!providerSource.includes(marker)) throw new Error(`XMA Provider architecture marker missing: ${marker}`)
 }
 const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', 'utf8')
-for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(']) {
+for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(', 'provider-continuation', 'reasoning_content', 'reasoningContentToolContinuation']) {
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
+}
+const providerCatalog = readFileSync('plugins/providers/catalog.ts', 'utf8')
+for (const marker of ['DEEPSEEK_PROVIDER_ID', 'CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID', 'https://api.deepseek.com', 'modelCatalogDiscovery', 'thinkingMode', 'reasoningEffort', 'reasoningContentToolContinuation', 'toolProbeThinkingMode']) {
+  if (!providerCatalog.includes(marker)) throw new Error(`XMA Provider Catalog marker missing: ${marker}`)
 }
 const toolsSource = readFileSync('core/src/tool/router.ts', 'utf8')
 for (const marker of ['class ToolPlan', 'class ToolRouter', 'createPlan()', 'validateToolArguments', 'dispatchMany', 'Workspace-scoped tool requires a bound Session Workspace', 'Cross-workspace tool access requires durable Workspace access auditing']) {
@@ -158,6 +163,9 @@ if (runtimeSource.includes('chat/completions') || runtimeSource.includes('Author
   throw new Error('XMA Core Runtime must not contain provider-specific HTTP/auth protocol details')
 }
 const modelSource = readFileSync('core/src/model.ts', 'utf8')
+for (const marker of ['providerContinuation', "type: 'provider-continuation'"]) {
+  if (!modelSource.includes(marker)) throw new Error(`XMA Model provider-continuation marker missing: ${marker}`)
+}
 if (modelSource.includes('chat/completions') || modelSource.includes('x-api-key')) {
   throw new Error('XMA model Contract must remain provider-neutral')
 }

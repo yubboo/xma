@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA 正式 Session → Turn → Step Agent Runtime 主驱动。
  * 关联模块：context.ts、session/contract.ts、session/store.ts、model.ts、tool/router.ts、provider.ts、未来 App Protocol。
- * 当前实现：创建/恢复 Session、durable Context Assembly、多 Step Tool Loop、冻结请求快照、取消结算与请求延迟记录。
+ * 当前实现：创建/恢复 Session、durable Context Assembly、多 Step Tool Loop、Provider continuation round-trip、冻结请求快照、取消结算与请求延迟记录。
  * 职责边界：Runtime 只编排稳定生命周期；专业 Agent 特例、厂商协议、Approval/Native 安全实现必须走各自扩展层，禁止塞进主循环。
  */
 
@@ -11,7 +11,7 @@ import type { ModelEvent, ModelMessage, ModelProvider, ModelToolCall, ModelToolS
 import { activeWorkspaceGrants, deriveModelMessages, SESSION_FORMAT_VERSION, type SessionEvent, type SessionEventInput, type SessionHeader, type SessionSnapshot } from './session/contract.ts'
 import type { SessionHandle, SessionStore } from './session/store.ts'
 import { ToolApprovalSessionCache, ToolRegistry, type ToolApprovalProvider, type ToolPolicy, type ToolResult, type ToolSecurityGuard } from './tool/router.ts'
-import type { Disposer, JsonValue } from './types.ts'
+import type { Disposer, JsonObject, JsonValue } from './types.ts'
 import { WorkspaceToolSecurityGuard, type WorkspaceAccessGrant, type WorkspaceAccessRequest, type WorkspacePermission, type WorkspaceRegistry } from './workspace.ts'
 
 export type RuntimeLiveEvent =
@@ -325,6 +325,7 @@ export class AgentSession {
         }])
 
         let assistantText = ''
+        let providerContinuation: JsonObject | undefined
         const pendingToolCalls: ModelToolCall[] = []
         const usage: UsageAccumulator = {}
         const requestStartedAt = performance.now()
@@ -341,8 +342,12 @@ export class AgentSession {
             }
             if (event.type === 'reasoning') {
               firstResponseAt ??= performance.now()
-              // 原始 reasoning 默认只作为 live event，不进入 durable history，避免把隐藏推理当成后续模型上下文。
+              // 原始 reasoning 不作为普通 assistant 文本；协议必须续传的部分只能由 Adapter 另行发 provider-continuation。
               this.#emit({ type: 'model/reasoning-delta', sessionId: this.id, turnId, stepId, text: event.text })
+              continue
+            }
+            if (event.type === 'provider-continuation') {
+              providerContinuation = structuredClone(event.data)
               continue
             }
             if (event.type === 'tool-call') {
@@ -369,6 +374,7 @@ export class AgentSession {
               stepId,
               content: assistantText,
               toolCalls: structuredClone(pendingToolCalls),
+              ...(providerContinuation ? { providerContinuation: structuredClone(providerContinuation) } : {}),
               interrupted: true,
             }])
           }
@@ -394,6 +400,7 @@ export class AgentSession {
           stepId,
           content: assistantText,
           toolCalls: structuredClone(pendingToolCalls),
+          ...(providerContinuation ? { providerContinuation: structuredClone(providerContinuation) } : {}),
           interrupted: false,
         }])
         finalText = assistantText

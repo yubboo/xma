@@ -35,6 +35,17 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - Framework 可以限制权限、Schema、生命周期和副作用，但不能抢走正常任务的推理权。
 - UI/TUI 必须展示真实 Provider、Model、Reasoning/能力、延迟和可获得的使用统计。
 
+### 3.1 Provider / Model Truth Contract（锁死）
+
+- 用户当前选择的 `providerId + profileId + modelId` 必须就是每个真实模型请求的实际目标；禁止隐藏换模、降级到其他模型、用便宜模型代跑，除非用户明确选择并且该路由变化形成可见、可审计的 durable 事实。
+- 同一 Turn 的 Agent Loop 默认持续把 Tool Result / Observation 返回给**同一个真实模型**继续推理；XMA Policy / Approval / Native Kernel 只约束副作用，不得替代模型做正常推理。
+- **Provider 品牌身份 ≠ Protocol Adapter / Transport Family。** `DeepSeek`、`OpenAI`、`Claude` 等是用户看到并选择的真实服务身份；`OpenAI-compatible`、`Anthropic Messages`、`Gemini` 等是协议实现。品牌入口不得只是给通用 Base URL 表单换皮。
+- 同一 Provider 品牌允许存在多个独立 Profile/账号；Secret、endpoint、model 与 capability 必须按 Profile 隔离。
+- Provider 有真实模型目录 API 时，运行时可用 model ID 必须以真实目录为准；静态 bootstrap 只能用于首次配置，不能冒充实时可用模型列表。
+- 一个品牌只有在真实 endpoint/auth/catalog/protocol 已实现后才允许进入“可配置/可使用”的 Provider Catalog；计划中的品牌不得用假卡片或假 Ready 冒充已经支持。
+- `Brain Ready` 必须验证真实凭据、目标模型、最小文本请求；若声明 native tool calling，还必须完成最小真实 Tool Call → Tool Result → 同模型继续响应的 round trip。
+- Provider-specific thinking/reasoning/tool/usage 能力必须按真实 API Contract 透传和验证；XMA 不伪造模型没有提供的能力，也不得为了统一接口主动把顶级模型能力裁成最低公分母。若 thinking+tools 协议强制要求隐藏续传状态，必须用 Adapter-owned opaque continuation 保持真实协议语义，不得因为 XMA 的统一消息格式把该能力静默关掉。
+
 ## 4. Agent / Workspace / Plugin / Skill / Host 边界
 
 - **Agent**：专业身份与能力组合；主 `Xiaoyu` 是 Manager Agent，Code/Minecraft/Writer/GameDev 等是可组合的专业 Agent。

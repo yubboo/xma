@@ -1,7 +1,7 @@
 /**
  * 文件作用：提供 XMA Session 的安全导出、可组合 Redaction 与未来格式迁移 Contract。
  * 关联模块：contract.ts、store.ts、../provider.ts、未来 App Protocol/CLI export。
- * 当前实现：Session Export Envelope、已知 Secret 精确脱敏、递归 JSON Redactor、Migration Registry。
+ * 当前实现：Session Export Envelope、已知 Secret 精确脱敏、redacted export 移除 Provider continuation、Migration Registry。
  * 职责边界：导出不得主动解析/保存 Provider Secret；调用方只能把 Credentials Service 已知的 Secret 值临时交给 redactor，结果中不得保留原值。
  */
 
@@ -50,6 +50,8 @@ function redactEvent(event: SessionEvent, redactor: SessionRedactor): SessionEve
         ...call,
         arguments: redactJson(call.arguments, redactor) as typeof call.arguments,
       }))
+      // redacted export 是安全投影而非 replay artifact；Provider continuation 可能包含隐藏 reasoning/协议状态，直接移除。
+      if (clone.providerContinuation) delete clone.providerContinuation
     }
   } else if (clone.type === 'turn/end') {
     clone.text = redactor.redactText(clone.text)

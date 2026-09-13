@@ -77,15 +77,15 @@ test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
 
 test('TUI slash command suggestions expose only implemented terminal commands', () => {
   const all = slashCommandSuggestions('/')
-  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'agent', 'clear', 'exit'])
+  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
   assert.deepEqual(slashCommandSuggestions('/pro').map(item => item.value), ['provider'])
+  assert.deepEqual(slashCommandSuggestions('/mod').map(item => item.value), ['model'])
   assert.equal(slashCommandSuggestions('/missing').length, 0)
 })
 
 test('TUI command palette exposes only functional terminal actions', () => {
   const values = commandPaletteOptions().map(item => item.value)
-  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'agent', 'clear', 'exit'])
-  assert.equal(values.includes('model-switch'), false)
+  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
 })
 
 test('TUI visual setting toggles vivid/minimal without changing other terminal settings', () => {

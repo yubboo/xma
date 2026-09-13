@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA 第一条真实 OpenAI-compatible Transport Adapter。
  * 关联模块：core/src/provider.ts、core/src/model.ts、未来 Provider Settings/Conformance Tests。
- * 当前实现：Bearer 认证、/models Catalog、Chat Completions SSE 文本/Tool Call/Usage、取消、错误归一化与真实最小 Brain Ready Probe。
+ * 当前实现：Bearer 认证、/models Catalog、Chat Completions SSE 文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化与完整 Brain Ready Probe。
  * 职责边界：本文件只代表 OpenAI-compatible 协议族，不因厂商品牌名称推断兼容；OpenAI Responses、Claude/Gemini native 必须使用独立 Adapter。
  */
 
@@ -46,6 +46,19 @@ function numberValue(value: JsonValue | undefined): number | undefined {
 function booleanOption(profile: ProviderProfile, key: string, fallback: boolean): boolean {
   const value = profile.options?.[key]
   return typeof value === 'boolean' ? value : fallback
+}
+
+function stringOption(profile: ProviderProfile, key: string): string | undefined {
+  const value = profile.options?.[key]
+  return typeof value === 'string' ? value : undefined
+}
+
+/** 只映射 XMA 明确允许的兼容协议扩展；禁止把任意 Profile JSON 直接摊进请求体。 */
+function applyRequestOptions(profile: ProviderProfile, body: JsonObject): void {
+  const thinkingMode = stringOption(profile, 'thinkingMode')
+  if (thinkingMode === 'enabled' || thinkingMode === 'disabled') body.thinking = { type: thinkingMode }
+  const reasoningEffort = stringOption(profile, 'reasoningEffort')
+  if (reasoningEffort === 'low' || reasoningEffort === 'high' || reasoningEffort === 'max') body.reasoning_effort = reasoningEffort
 }
 
 function endpoint(baseUrl: string, suffix: string): string {
@@ -99,9 +112,10 @@ async function providerFetch(url: string, init: RequestInit, signal: AbortSignal
   }
 }
 
-function toOpenAiMessage(message: ModelMessage): JsonObject {
+function toOpenAiMessage(message: ModelMessage, profile: ProviderProfile): JsonObject {
+  let result: JsonObject
   if (message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0) {
-    return {
+    result = {
       role: 'assistant',
       content: message.content,
       tool_calls: message.toolCalls.map(call => ({
@@ -110,14 +124,23 @@ function toOpenAiMessage(message: ModelMessage): JsonObject {
         function: { name: call.name, arguments: JSON.stringify(call.arguments) },
       })),
     }
-  }
-  if (message.role === 'tool') {
+  } else if (message.role === 'tool') {
     if (!message.toolCallId) throw new ProviderRequestError('malformed_response', 'XMA tool message is missing toolCallId.', false)
-    const tool: JsonObject = { role: 'tool', content: message.content, tool_call_id: message.toolCallId }
-    if (message.toolName) tool.name = message.toolName
-    return tool
+    result = { role: 'tool', content: message.content, tool_call_id: message.toolCallId }
+    if (message.toolName) result.name = message.toolName
+  } else {
+    result = { role: message.role, content: message.content }
   }
-  return { role: message.role, content: message.content }
+
+  // DeepSeek 等 thinking+tools 兼容协议要求把上一轮 reasoning_content 原样回传。
+  // Core 只持久化 opaque providerContinuation，不理解这个字段；只有本 Adapter 在显式 Profile option 开启时解包。
+  if (message.role === 'assistant' && booleanOption(profile, 'reasoningContentToolContinuation', false)) {
+    const continuation = message.providerContinuation
+    const adapterId = continuation ? stringValue(continuation.adapterId) : undefined
+    const reasoningContent = continuation ? stringValue(continuation.reasoningContent) : undefined
+    if (adapterId === OPENAI_COMPATIBLE_ADAPTER_ID && reasoningContent) result.reasoning_content = reasoningContent
+  }
+  return result
 }
 
 function toOpenAiTool(spec: ModelToolSpec): JsonObject {
@@ -222,16 +245,17 @@ class OpenAiCompatibleModel implements ModelProvider {
     private readonly model: string,
     private readonly credentials: CredentialResolver,
   ) {
-    this.identity = { provider: profile.id, model, displayName: profile.displayName }
+    this.identity = { provider: profile.providerId, profile: profile.id, model, displayName: profile.displayName }
   }
 
   async *stream(request: ModelRequest): AsyncIterable<ModelEvent> {
     const headers = await resolveHeaders(this.profile, this.credentials)
     const body: JsonObject = {
       model: this.model,
-      messages: request.messages.map(toOpenAiMessage),
+      messages: request.messages.map(message => toOpenAiMessage(message, this.profile)),
       stream: true,
     }
+    applyRequestOptions(this.profile, body)
     if (request.tools.length > 0) body.tools = request.tools.map(toOpenAiTool)
     if (booleanOption(this.profile, 'includeUsage', true)) body.stream_options = { include_usage: true }
 
@@ -243,6 +267,7 @@ class OpenAiCompatibleModel implements ModelProvider {
     )
 
     const pending = new Map<number, PendingToolCall>()
+    let reasoningText = ''
     for await (const data of sseData(response, request.signal)) {
       if (data === '[DONE]') break
       let parsed: unknown
@@ -265,7 +290,10 @@ class OpenAiCompatibleModel implements ModelProvider {
       const text = stringValue(delta.content)
       if (text) yield { type: 'text', text }
       const reasoning = stringValue(delta.reasoning_content)
-      if (reasoning) yield { type: 'reasoning', text: reasoning }
+      if (reasoning) {
+        reasoningText += reasoning
+        yield { type: 'reasoning', text: reasoning }
+      }
 
       for (const rawTool of arrayValue(delta.tool_calls)) {
         const tool = objectValue(rawTool, 'tool_call delta')
@@ -287,6 +315,13 @@ class OpenAiCompatibleModel implements ModelProvider {
       }
     }
 
+    if (reasoningText && booleanOption(this.profile, 'reasoningContentToolContinuation', false)) {
+      yield {
+        type: 'provider-continuation',
+        data: { adapterId: OPENAI_COMPATIBLE_ADAPTER_ID, reasoningContent: reasoningText },
+      }
+    }
+
     for (const [index, call] of [...pending.entries()].sort((a, b) => a[0] - b[0])) {
       if (!call.id || !call.name) {
         throw new ProviderRequestError('malformed_response', `Provider returned incomplete tool call at index ${index}.`, false)
@@ -303,7 +338,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
   capabilities(profile: ProviderProfile): ProviderCapabilities {
     return {
       streamingText: true,
-      nativeToolCalling: true,
+      nativeToolCalling: booleanOption(profile, 'nativeToolCalling', true),
       parallelToolCalls: booleanOption(profile, 'parallelToolCalls', true),
       reasoning: booleanOption(profile, 'reasoning', false),
       visionInput: booleanOption(profile, 'visionInput', false),
@@ -350,12 +385,19 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
     const started = performance.now()
     try {
       const headers = await resolveHeaders(profile, credentials)
+      if (this.capabilities(profile).modelCatalogDiscovery) {
+        const models = await this.listModels(profile, credentials, signal)
+        if (!models.some(item => item.id === model)) {
+          throw new ProviderRequestError('model_not_found', `Provider model is not available in /models: ${model}`, false, 404)
+        }
+      }
       const body: JsonObject = {
         model,
         messages: [{ role: 'user', content: 'Reply with OK.' }],
         stream: false,
-        max_tokens: 1,
+        max_tokens: 16,
       }
+      applyRequestOptions(profile, body)
       const response = await providerFetch(
         endpoint(profile.baseUrl, 'chat/completions'),
         { method: 'POST', headers, body: JSON.stringify(body) },
@@ -370,6 +412,113 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
         throw new ProviderRequestError('malformed_response', `Provider probe response is invalid JSON: ${String(error)}`, false)
       }
       objectValue(parsed, 'probe response')
+
+      if (this.capabilities(profile).nativeToolCalling) {
+        const toolBody: JsonObject = {
+          model,
+          messages: [{ role: 'user', content: 'Call the xma_probe tool exactly once.' }],
+          stream: false,
+          max_tokens: 64,
+          tools: [{
+            type: 'function',
+            function: {
+              name: 'xma_probe',
+              description: 'XMA Brain Ready capability probe.',
+              parameters: {
+                type: 'object',
+                properties: { ok: { type: 'boolean' } },
+                required: ['ok'],
+                additionalProperties: false,
+              },
+            },
+          }],
+          tool_choice: { type: 'function', function: { name: 'xma_probe' } },
+        }
+        applyRequestOptions(profile, toolBody)
+        // 某些 thinking+tools API（当前 DeepSeek）不允许 thinking 模式下使用 named/required tool_choice。
+        // Profile 可只为确定性的 Brain Ready 工具探针临时关闭 thinking；真实 Agent Turn 仍使用用户配置的 thinking 模式。
+        const toolProbeThinkingMode = stringOption(profile, 'toolProbeThinkingMode')
+        if (toolProbeThinkingMode === 'enabled' || toolProbeThinkingMode === 'disabled') {
+          toolBody.thinking = { type: toolProbeThinkingMode }
+          // DeepSeek V4 thinking 模式不接受 tool_choice；探针切到 non-thinking 时也移除 reasoning_effort，避免互相冲突的控制参数。
+          if (toolProbeThinkingMode === 'disabled') delete toolBody.reasoning_effort
+        }
+        const toolResponse = await providerFetch(
+          endpoint(profile.baseUrl, 'chat/completions'),
+          { method: 'POST', headers, body: JSON.stringify(toolBody) },
+          signal,
+          headers,
+        )
+        let toolParsed: unknown
+        try {
+          toolParsed = await toolResponse.json()
+        } catch (error) {
+          throw new ProviderRequestError('malformed_response', `Provider tool probe response is invalid JSON: ${String(error)}`, false)
+        }
+        const toolPayload = objectValue(toolParsed, 'tool probe response')
+        const choice = arrayValue(toolPayload.choices)[0]
+        if (choice === undefined) throw new ProviderRequestError('unsupported_capability', 'Provider tool probe returned no choice.', false)
+        const choiceObject = objectValue(choice, 'tool probe choice')
+        const message = objectValue(choiceObject.message, 'tool probe message')
+        const toolCalls = arrayValue(message.tool_calls)
+        const firstToolCall = toolCalls[0]
+        if (firstToolCall === undefined) throw new ProviderRequestError('unsupported_capability', 'Provider did not return a native tool call.', false)
+        const call = objectValue(firstToolCall, 'tool probe call')
+        const callId = stringValue(call.id)
+        const fn = objectValue(call.function, 'tool probe function')
+        const functionName = stringValue(fn.name)
+        const argumentsText = stringValue(fn.arguments) ?? '{}'
+        if (!callId || functionName !== 'xma_probe') {
+          throw new ProviderRequestError('unsupported_capability', 'Provider returned the wrong tool during Brain Ready probe.', false)
+        }
+        const probeReasoning = stringValue(message.reasoning_content)
+        const assistantProbeMessage: JsonObject = {
+          role: 'assistant',
+          // DeepSeek V4 thinking+tools 兼容要求 assistant tool-call message 的 content 非 null；空字符串保留协议语义。
+          content: '',
+          tool_calls: [{
+            id: callId,
+            type: 'function',
+            function: { name: functionName, arguments: argumentsText },
+          }],
+        }
+        if (probeReasoning && booleanOption(profile, 'reasoningContentToolContinuation', false)) {
+          assistantProbeMessage.reasoning_content = probeReasoning
+        }
+
+        const roundTripBody: JsonObject = {
+          model,
+          messages: [
+            { role: 'user', content: 'Call the xma_probe tool exactly once.' },
+            assistantProbeMessage,
+            { role: 'tool', tool_call_id: callId, content: '{"ok":true}' },
+          ],
+          tools: toolBody.tools!,
+          stream: false,
+          max_tokens: 16,
+        }
+        applyRequestOptions(profile, roundTripBody)
+        if (toolProbeThinkingMode === 'enabled' || toolProbeThinkingMode === 'disabled') {
+          roundTripBody.thinking = { type: toolProbeThinkingMode }
+          if (toolProbeThinkingMode === 'disabled') delete roundTripBody.reasoning_effort
+        }
+        const roundTripResponse = await providerFetch(
+          endpoint(profile.baseUrl, 'chat/completions'),
+          { method: 'POST', headers, body: JSON.stringify(roundTripBody) },
+          signal,
+          headers,
+        )
+        let roundTripParsed: unknown
+        try {
+          roundTripParsed = await roundTripResponse.json()
+        } catch (error) {
+          throw new ProviderRequestError('malformed_response', `Provider tool round-trip response is invalid JSON: ${String(error)}`, false)
+        }
+        const roundTripPayload = objectValue(roundTripParsed, 'tool round-trip response')
+        if (arrayValue(roundTripPayload.choices).length === 0) {
+          throw new ProviderRequestError('unsupported_capability', 'Provider did not complete the tool-call round trip.', false)
+        }
+      }
       return {
         profileId: profile.id,
         adapterId: this.id,
