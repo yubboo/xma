@@ -44,7 +44,7 @@
 - Windows 环境/同步/GitHub/构建脚本；
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
 - `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认与环境变量 OpenAI-compatible Brain；
-- Terminal TUI 已迁到固定 `@earendil-works/pi-tui@0.74.0`：真实 Editor/IME 光标、差分渲染、输入历史、斜杠命令自动补全；风险页默认退出并支持键盘选择，UI 不再展示尚未实现的假快捷入口；
+- Terminal TUI 已迁到固定 `@earendil-works/pi-tui@0.74.0`：真实 Editor/IME 光标、差分渲染、输入历史、斜杠命令自动补全；Home/Prompt 使用固定锚点，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板与 Terminal Settings（丰富/简洁、提示、Logo）已接线，风险页默认退出并支持键盘选择；UI 不再展示尚未实现的假快捷入口；
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
 - 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；

@@ -1,18 +1,18 @@
 /**
  * 文件作用：实现 XMA `xiaoyu` 终端工作台的交互界面、主题、命令分发与 Workspace 风险确认。
  * 关联模块：main.ts、Core Agent Runtime、Workspace、Provider、Tool Approval 与 Native 文件 ToolSet。
- * 当前实现：基于 Pi TUI 的差分渲染/真实 Editor，提供居中品牌首页、Prompt 卡片、持续输入、风险确认、斜杠命令自动补全、流式回复与 Tool Approval。
+ * 当前实现：基于 Pi TUI 的差分渲染/真实 Editor，提供固定 Home/Prompt Dock、动态丰富视觉、Ctrl+P 命令面板、终端设置、风险确认、斜杠自动补全、流式回复与 Tool Approval。
  * 职责边界：TUI 只负责终端视觉和交互；不得复制 Agent Loop、Provider 协议、Workspace Policy 或 Native 安全逻辑。
  */
 
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../../core/src/tool/policy.ts'
 
 const ESC = '\u001b['
-const CURSOR_MARKER = '\u001b_pi:c\u0007'
 const reset = `${ESC}0m`
 const bold = `${ESC}1m`
 const orange = `${ESC}38;2;255;126;63m`
@@ -48,6 +48,8 @@ const LOGO_YU = [
 
 const COMMANDS = [
   { value: 'help', label: 'help', description: '查看快捷命令' },
+  { value: 'settings', label: 'settings', description: '打开终端设置' },
+  { value: 'vivid', label: 'vivid', description: '切换丰富 / 简洁视觉' },
   { value: 'doctor', label: 'doctor', description: '检查当前运行环境' },
   { value: 'workspace', label: 'workspace', description: '查看当前 Workspace' },
   { value: 'provider', label: 'provider', description: '查看当前 Brain / Provider' },
@@ -55,6 +57,63 @@ const COMMANDS = [
   { value: 'clear', label: 'clear', description: '清空当前终端显示' },
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
 ] as const
+
+const PALETTE_ACTIONS = [
+  { value: 'settings', label: '终端设置', description: '视觉、提示与 Logo，仅影响 Terminal' },
+  { value: 'visual', label: '切换丰富显示', description: '动态星点 / 简洁模式' },
+  { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor' },
+  { value: 'workspace', label: 'Workspace', description: '查看当前工作区' },
+  { value: 'provider', label: 'Brain / Provider', description: '查看当前 Provider 状态' },
+  { value: 'agent', label: 'Agent', description: '查看当前 Agent' },
+  { value: 'clear', label: '清空显示', description: '清空当前会话的终端显示' },
+  { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端' },
+] as const
+
+export interface TerminalUiSettings {
+  visual: 'vivid' | 'minimal'
+  tips: boolean
+  logo: 'auto' | 'compact'
+}
+
+export const DEFAULT_TERMINAL_UI_SETTINGS: Readonly<TerminalUiSettings> = Object.freeze({
+  visual: 'vivid',
+  tips: true,
+  logo: 'auto',
+})
+
+function terminalSettingsPath(): string {
+  const configured = process.env.XIAOYU_CONFIG_HOME?.trim()
+  if (configured) return path.join(path.resolve(configured), 'tui.json')
+  if (process.platform === 'win32') {
+    const roaming = process.env.APPDATA ?? path.join(homedir(), 'AppData', 'Roaming')
+    return path.join(roaming, 'Xiaoyu', 'tui.json')
+  }
+  if (process.platform === 'darwin') return path.join(homedir(), 'Library', 'Application Support', 'Xiaoyu', 'tui.json')
+  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), '.config'), 'xiaoyu', 'tui.json')
+}
+
+function loadTerminalUiSettings(): TerminalUiSettings {
+  try {
+    const raw = JSON.parse(readFileSync(terminalSettingsPath(), 'utf8')) as Partial<TerminalUiSettings>
+    return {
+      visual: raw.visual === 'minimal' ? 'minimal' : 'vivid',
+      tips: raw.tips !== false,
+      logo: raw.logo === 'compact' ? 'compact' : 'auto',
+    }
+  } catch {
+    return { ...DEFAULT_TERMINAL_UI_SETTINGS }
+  }
+}
+
+function saveTerminalUiSettings(settings: TerminalUiSettings): void {
+  try {
+    const file = terminalSettingsPath()
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, `${JSON.stringify(settings, null, 2)}\n`, 'utf8')
+  } catch {
+    // TUI 设置写入失败不应阻断 Agent Runtime；当前 Session 内仍继续生效。
+  }
+}
 
 export interface DoctorItem {
   label: string
@@ -99,6 +158,8 @@ interface PiTuiToolkit {
   TUI: new (terminal: unknown, showHardwareCursor?: boolean) => any
   ProcessTerminal: new () => any
   Editor: new (tui: unknown, theme: unknown, options?: { paddingX?: number; autocompleteMaxVisible?: number }) => any
+  Box: new (paddingX?: number, paddingY?: number, bgFn?: (value: string) => string) => any
+  SelectList: new (items: readonly AutocompleteItem[], maxVisible: number, theme: unknown) => any
   visibleWidth(value: string): number
   matchesKey(data: string, key: string): boolean
 }
@@ -205,8 +266,8 @@ function contentWidth(columns: number): number {
   return Math.max(54, Math.min(76, columns - 8))
 }
 
-function renderLogo(columns: number): string[] {
-  if (columns < 82) {
+function renderLogo(columns: number, mode: TerminalUiSettings['logo'] = 'auto'): string[] {
+  if (mode === 'compact' || columns < 82) {
     return [
       centerPlain('✦  XIAOYU', columns).replace('XIAOYU', `${orange}${bold}XIAOYU${reset}`),
       centerPlain('Xiaoyu Management Agent', columns).replace('Xiaoyu Management Agent', `${textSoft}Xiaoyu Management Agent${reset}`),
@@ -223,18 +284,20 @@ function renderLogo(columns: number): string[] {
   return rows
 }
 
-function renderStars(columns: number, variant = 0): string {
+function renderStars(columns: number, phase = 0): string {
   if (columns < 80) return ''
   const layouts = [
     [[0.08, '✧', textFaint], [0.25, '·', textFaint], [0.38, '✦', yellow], [0.63, '·', textFaint], [0.81, '✦', textFaint]],
     [[0.06, '·', textFaint], [0.30, '✦', textFaint], [0.69, '✧', textFaint], [0.88, '·', textFaint]],
   ] as const
-  const points = layouts[variant % layouts.length]!
+  const points = layouts[Math.floor(phase / 2) % layouts.length]!
   const chars = Array.from({ length: columns }, () => ' ')
   const styles = new Map<number, string>()
-  for (const [ratio, glyph, style] of points) {
-    const index = Math.max(0, Math.min(columns - 1, Math.floor(columns * ratio)))
-    chars[index] = glyph
+  for (let pointIndex = 0; pointIndex < points.length; pointIndex += 1) {
+    const [ratio, glyph, style] = points[pointIndex]!
+    const drift = ((phase + pointIndex) % 5) - 2
+    const index = Math.max(0, Math.min(columns - 1, Math.floor(columns * ratio) + drift))
+    chars[index] = phase % 4 === 0 && glyph === '·' ? '✧' : glyph
     styles.set(index, style)
   }
   return chars.map((char, index) => styles.has(index) ? `${styles.get(index)}${char}${reset}` : char).join('')
@@ -244,18 +307,19 @@ function padStyled(value: string, width: number, visibleWidth: (value: string) =
   return `${value}${spaces(Math.max(0, width - visibleWidth(value)))}`
 }
 
-function stylePanelLine(value: string, width: number, visibleWidth: (value: string) => number, accent = true): string {
-  const innerWidth = Math.max(1, width - 2)
-  const normalized = value.replaceAll(reset, `${reset}${panel}${text}`)
-  const padded = padStyled(normalized, innerWidth, visibleWidth)
-  return `${accent ? `${orange}▌${reset}` : ' '}${panel} ${text}${padded}${reset}`
-}
-
 function renderHintLine(width: number): string {
-  const hint = `${bold}/${reset} ${textSoft}命令${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}shift+enter${reset} ${textSoft}换行${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-  const plain = '/ 命令    ↑↓ 历史    shift+enter 换行    ctrl+c 中止'
+  const hint = `${bold}/${reset} ${textSoft}命令${reset}    ${bold}ctrl+p${reset} ${textSoft}命令面板${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}shift+enter${reset} ${textSoft}换行${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+  const plain = '/ 命令    ctrl+p 命令面板    ↑↓ 历史    shift+enter 换行    ctrl+c 中止'
   const left = Math.max(0, Math.floor((width - cellWidth(plain)) / 2))
   return `${spaces(left)}${hint}`
+}
+
+export function commandPaletteOptions(): readonly AutocompleteItem[] {
+  return PALETTE_ACTIONS.map(item => ({ ...item }))
+}
+
+export function toggleTerminalVisual(settings: TerminalUiSettings): TerminalUiSettings {
+  return { ...settings, visual: settings.visual === 'vivid' ? 'minimal' : 'vivid' }
 }
 
 export function workspaceRisk(workspace: string): WorkspaceRisk {
@@ -456,6 +520,7 @@ async function loadPiTui(): Promise<PiTuiToolkit> {
 class XiaoyuSurface {
   private _focused = false
   readonly editor: any
+  private readonly promptBox: any
   private readonly transcript: TranscriptItem[] = []
   private notice = ''
   private busy = false
@@ -463,14 +528,19 @@ class XiaoyuSurface {
   private approval: ApprovalWaiter | undefined
   private exitResolve: (() => void) | undefined
   private animationTimer: ReturnType<typeof setInterval> | undefined
+  private starPhase = 0
+  private settings: TerminalUiSettings = { ...DEFAULT_TERMINAL_UI_SETTINGS }
+  private overlayOpen = false
 
   constructor(
     private readonly toolkit: PiTuiToolkit,
     private readonly tui: any,
     private readonly terminal: any,
     private readonly backend: TerminalBackend,
+    initialSettings: TerminalUiSettings,
   ) {
-    const mutedBorder = (value: string): string => `${panel}${textFaint}${value.replaceAll('─', ' ')}${reset}`
+    this.settings = { ...initialSettings }
+    const mutedBorder = (value: string): string => `${textFaint}${value.replaceAll('─', ' ')}${reset}`
     const selectList = {
       selectedPrefix: (value: string) => `${orange}${value}${reset}`,
       selectedText: (value: string) => `${text}${bold}${value}${reset}`,
@@ -482,6 +552,24 @@ class XiaoyuSurface {
     this.editor.setAutocompleteProvider?.(new SlashAutocompleteProvider())
     this.editor.onChange = () => this.tui.requestRender()
     this.editor.onSubmit = (value: string) => { void this.submit(value) }
+
+    // Prompt 只让 Pi TUI Editor 自己处理光标/IME；不再叠加手写 ANSI 背景，避免 Windows Terminal 反色泄漏。
+    this.promptBox = new toolkit.Box(1, 0)
+    this.promptBox.addChild({
+      render: (width: number) => this.editor.getText?.()
+        ? []
+        : [`${textFaint}${truncateCells('输入消息…（输入 / 唤起命令）', width)}${reset}`],
+    })
+    this.promptBox.addChild(this.editor)
+    this.promptBox.addChild({
+      render: (width: number) => [this.renderPromptStatus(width)],
+    })
+
+    this.animationTimer = setInterval(() => {
+      if (this.settings.visual !== 'vivid' && !this.busy) return
+      this.starPhase = (this.starPhase + 1) % 10_000
+      this.tui.requestRender()
+    }, 420)
   }
 
   setExitResolver(resolve: () => void): void {
@@ -537,74 +625,235 @@ class XiaoyuSurface {
     const rows = Math.max(20, this.terminal.rows ?? 24)
     const cardWidth = Math.max(48, Math.min(76, columns - 8))
     const indent = spaces(Math.max(0, Math.floor((columns - cardWidth) / 2)))
-    const body: string[] = []
+    const screen = Array.from({ length: rows }, () => '')
 
-    body.push(renderStars(columns, 0), '')
-    body.push(...renderLogo(columns), '')
-    body.push(centerPlain('Model is replaceable. Agent is ours.', columns).replace('Model is replaceable. Agent is ours.', `${textFaint}Model is replaceable. Agent is ours.${reset}`), '')
+    const place = (row: number, lines: readonly string[]): void => {
+      for (let index = 0; index < lines.length; index += 1) {
+        const target = row + index
+        if (target >= 0 && target < rows - 1) screen[target] = lines[index] ?? ''
+      }
+    }
 
-    const recent = this.transcript.slice(-4)
-    if (recent.length > 0) {
+    const boxWidth = Math.max(40, cardWidth - 1)
+    const promptLines = (this.promptBox.render(boxWidth) as string[]).map(line => `${indent}${orange}▌${reset}${line}`)
+    const hintLine = renderHintLine(columns)
+
+    if (this.transcript.length === 0) {
+      const logo = renderLogo(columns, this.settings.logo)
+      const logoTop = Math.max(2, Math.min(6, Math.floor(rows * 0.12)))
+      if (this.settings.visual === 'vivid') screen[Math.max(1, logoTop - 2)] = renderStars(columns, this.starPhase)
+      place(logoTop, logo)
+      const sloganRow = Math.min(rows - 10, logoTop + logo.length + 1)
+      screen[sloganRow] = centerPlain('Model is replaceable. Agent is ours.', columns)
+        .replace('Model is replaceable. Agent is ours.', `${textFaint}Model is replaceable. Agent is ours.${reset}`)
+
+      // Home 的 Prompt 使用固定底锚点；自动补全只向上展开，Logo/底栏不会随内容高度移动。
+      const hintRow = Math.min(rows - 5, Math.max(sloganRow + 7, Math.floor(rows * 0.70)))
+      const promptEnd = hintRow - 1
+      place(promptEnd - promptLines.length + 1, promptLines)
+      screen[hintRow] = hintLine
+      if (this.settings.tips && hintRow + 2 < rows - 1) {
+        const spinner = SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!
+        const tip = this.notice || (this.busy ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止` : 'Ctrl+P 打开命令面板；输入 / 查看快捷命令')
+        screen[hintRow + 2] = centerPlain(`●  提示  ${tip}`, columns)
+          .replace('●  提示', `${orange}●  提示${reset}`)
+          .replace(tip, `${textSoft}${tip}${reset}`)
+      }
+    } else {
+      // 对话态使用固定底部 Prompt Dock；上方内容变化不会推动输入区。
+      const hintRow = rows - 2
+      const promptEnd = hintRow - 1
+      const promptStart = Math.max(2, promptEnd - promptLines.length + 1)
+      place(promptStart, promptLines)
+      screen[hintRow] = hintLine
+
       const transcriptLines: string[] = []
-      for (const item of recent) {
+      for (const item of this.transcript.slice(-10)) {
         const label = item.role === 'user' ? `${orange}${bold}You${reset}` : item.role === 'assistant' ? `${orange}${bold}Xiaoyu${reset}` : `${yellow}${bold}Info${reset}`
         const raw = item.text || (item.role === 'assistant' && this.busy ? '思考中…' : '')
-        const wrapped = wrapPlain(raw, cardWidth - 12, 3)
+        const wrapped = wrapPlain(raw, Math.max(24, cardWidth - 12), 5)
         wrapped.forEach((line, index) => transcriptLines.push(`${indent}${index === 0 ? label : spaces(6)}${textFaint}  ${line}${reset}`))
+        transcriptLines.push('')
       }
-      body.push(...transcriptLines.slice(-7), '')
+      const available = Math.max(1, promptStart - 3)
+      const visible = transcriptLines.slice(-available)
+      place(Math.max(1, promptStart - 2 - visible.length), visible)
     }
-
-    const editorWidth = Math.max(20, cardWidth - 2)
-    let editorLines: string[] = this.editor.render(editorWidth)
-    if (!this.editor.getText?.()) {
-      const placeholder = `${textFaint}输入消息…（输入 / 唤起命令）${reset}`
-      const cursor = `${CURSOR_MARKER}\u001b[7m \u001b[0m`
-      editorLines = editorLines.map(line => line.replace(cursor, `${CURSOR_MARKER}${placeholder}`))
-    }
-    for (const line of editorLines) body.push(`${indent}${stylePanelLine(line, cardWidth, this.toolkit.visibleWidth, true)}`)
-
-    const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
-    const provider = this.backend.providerReady ? this.backend.providerLabel : 'Brain 未配置'
-    const status = `${orange}${bold}Build${reset}${panel}${text} · ${this.backend.agentLabel}${reset}${panel}   ${providerDot}${panel}${textSoft} ${truncateCells(provider, 30)}${reset}`
-    body.push(`${indent}${stylePanelLine(status, cardWidth, this.toolkit.visibleWidth, true)}`)
-    body.push(renderHintLine(columns))
 
     if (this.approval) {
-      body.push('')
-      body.push(centerPlain('◆  Tool Approval', columns).replace('◆  Tool Approval', `${yellow}${bold}◆  Tool Approval${reset}`))
-      body.push(centerPlain(`${this.approval.request.toolName} · ${this.approval.request.effect}`, columns).replace(`${this.approval.request.toolName} · ${this.approval.request.effect}`, `${text}${this.approval.request.toolName}${reset}${textFaint} · ${this.approval.request.effect}${reset}`))
-      for (const line of this.approval.request.summary.slice(0, 3)) body.push(centerPlain(line, columns).replace(line, `${textSoft}${line}${reset}`))
-      body.push(centerPlain('[1] 拒绝    [2] 仅本次允许    [3] 当前 Session 允许', columns).replace('[1] 拒绝    [2] 仅本次允许    [3] 当前 Session 允许', `${textFaint}[1] 拒绝    ${text}[2] 仅本次允许${reset}${textFaint}    ${text}[3] 当前 Session 允许${reset}`))
-    } else {
-      body.push('')
-      const spinner = SPINNER[Math.floor(Date.now() / 140) % SPINNER.length]!
-      const tip = this.notice || (this.busy ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止` : '输入 / 查看快捷命令；/doctor 检查当前运行环境')
-      body.push(centerPlain(`●  提示  ${tip}`, columns).replace('●  提示', `${orange}●  提示${reset}`).replace(tip, `${textSoft}${tip}${reset}`))
+      const summary = [
+        `${yellow}${bold}◆ Tool Approval${reset}`,
+        `${text}${this.approval.request.toolName}${reset}${textFaint} · ${this.approval.request.effect}${reset}`,
+        ...this.approval.request.summary.slice(0, 2).map(line => `${textSoft}${line}${reset}`),
+        `${textFaint}[1] 拒绝   ${text}[2] 仅本次允许${reset}${textFaint}   ${text}[3] 当前 Session 允许${reset}`,
+      ]
+      const top = Math.max(2, Math.floor((rows - summary.length) / 2))
+      summary.forEach((line, index) => {
+        screen[top + index] = centerPlain(line.replace(/\u001b\[[0-9;]*m/g, ''), columns)
+          .replace(line.replace(/\u001b\[[0-9;]*m/g, ''), line)
+      })
     }
 
     const footerWorkspace = truncateCells(this.backend.workspace, Math.max(10, columns - this.backend.version.length - 4))
-    const footer = `${textFaint}${footerWorkspace}${reset}`
-    const version = `${textFaint}${this.backend.version}${reset}`
-    const footerVisible = cellWidth(footerWorkspace) + this.backend.version.length
-    const footerLine = `${footer}${spaces(Math.max(2, columns - footerVisible))}${version}`
-
-    const desiredTop = Math.max(1, Math.floor((rows - body.length - 2) / 2))
-    const lines = [...Array.from({ length: desiredTop }, () => ''), ...body]
-    while (lines.length < rows - 1) lines.push('')
-    lines.push(footerLine)
-    return lines.slice(0, rows)
+    screen[rows - 1] = `${textFaint}${footerWorkspace}${reset}${spaces(Math.max(2, columns - cellWidth(footerWorkspace) - this.backend.version.length))}${textFaint}${this.backend.version}${reset}`
+    return screen
   }
 
-  private startAnimation(): void {
-    if (this.animationTimer) return
-    this.animationTimer = setInterval(() => this.tui.requestRender(), 140)
+  private renderPromptStatus(width: number): string {
+    const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
+    const provider = this.backend.providerReady ? this.backend.providerLabel : 'Brain 未配置'
+    const plainAgent = truncateCells(this.backend.agentLabel, 24)
+    const plainProvider = truncateCells(provider, Math.max(8, width - cellWidth(plainAgent) - 16))
+    const styled = `${orange}${bold}Build${reset}${text} · ${plainAgent}${reset}   ${providerDot}${textSoft} ${plainProvider}${reset}`
+    const visible = 8 + cellWidth(plainAgent) + 4 + 1 + cellWidth(plainProvider)
+    return `${styled}${spaces(Math.max(0, width - visible))}`
   }
 
-  private stopAnimation(): void {
-    if (!this.animationTimer) return
-    clearInterval(this.animationTimer)
-    this.animationTimer = undefined
+  openCommandPalette(): void {
+    if (this.overlayOpen || this.approval) return
+    this.showListOverlay('命令', commandPaletteOptions(), value => {
+      void this.runPaletteAction(value)
+    })
+  }
+
+  private openSettings(): void {
+    if (this.overlayOpen) return
+    const visual = this.settings.visual === 'vivid' ? '丰富' : '简洁'
+    const tips = this.settings.tips ? '开启' : '关闭'
+    const logo = this.settings.logo === 'auto' ? '自动' : '紧凑'
+    this.showListOverlay('终端设置', [
+      { value: 'visual', label: '丰富显示', description: `当前：${visual} · 动态星点，不改变主布局` },
+      { value: 'tips', label: '提示信息', description: `当前：${tips}` },
+      { value: 'logo', label: 'Logo 模式', description: `当前：${logo}` },
+      { value: 'back', label: '返回命令面板', description: 'Esc 也可以关闭' },
+    ], value => {
+      if (value === 'visual') {
+        this.settings = toggleTerminalVisual(this.settings)
+        saveTerminalUiSettings(this.settings)
+        this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
+        this.tui.requestRender()
+        this.openSettings()
+        return
+      }
+      if (value === 'tips') {
+        this.settings = { ...this.settings, tips: !this.settings.tips }
+        saveTerminalUiSettings(this.settings)
+        this.notice = `终端提示 · ${this.settings.tips ? '开启' : '关闭'}`
+        this.tui.requestRender()
+        this.openSettings()
+        return
+      }
+      if (value === 'logo') {
+        this.settings = { ...this.settings, logo: this.settings.logo === 'auto' ? 'compact' : 'auto' }
+        saveTerminalUiSettings(this.settings)
+        this.notice = `Logo · ${this.settings.logo === 'auto' ? '自动' : '紧凑'}`
+        this.tui.requestRender()
+        this.openSettings()
+        return
+      }
+      this.openCommandPalette()
+    })
+  }
+
+  private showListOverlay(
+    title: string,
+    items: readonly AutocompleteItem[],
+    onSelect: (value: string) => void,
+  ): void {
+    if (this.overlayOpen) return
+    this.overlayOpen = true
+    const theme = {
+      selectedPrefix: (value: string) => `${orange}${bold}${value}${reset}`,
+      selectedText: (value: string) => `${orange}${bold}${value}${reset}`,
+      description: (value: string) => `${textSoft}${value}${reset}`,
+      scrollInfo: (value: string) => `${textFaint}${value}${reset}`,
+      noMatch: (value: string) => `${textFaint}${value}${reset}`,
+    }
+    const list = new this.toolkit.SelectList(items, Math.min(10, Math.max(4, items.length)), theme)
+    let handle: any
+    const close = (): void => {
+      if (!this.overlayOpen) return
+      this.overlayOpen = false
+      try { handle?.hide?.() } catch { /* best effort */ }
+      this.tui.setFocus(this)
+      this.tui.requestRender()
+    }
+    list.onSelect = (item: AutocompleteItem) => {
+      close()
+      onSelect(item.value)
+    }
+    list.onCancel = close
+    const frame = {
+      render: (width: number): string[] => {
+        const inner = Math.max(28, width - 4)
+        const heading = `${bold}${text}${title}${reset}${spaces(Math.max(1, inner - cellWidth(title) - 3))}${textFaint}esc${reset}`
+        return [heading, '', ...list.render(inner)]
+      },
+      handleInput: (data: string): void => {
+        if (this.toolkit.matchesKey(data, 'escape') || data === '\u001b') {
+          close()
+          return
+        }
+        list.handleInput?.(data)
+      },
+      invalidate: () => list.invalidate?.(),
+    }
+    handle = this.tui.showOverlay(frame, {
+      width: 62,
+      maxHeight: Math.min(18, Math.max(8, items.length + 4)),
+      anchor: 'center',
+      margin: 2,
+    })
+  }
+
+  private async runPaletteAction(value: string): Promise<void> {
+    if (value === 'settings') {
+      this.openSettings()
+      return
+    }
+    if (value === 'visual') {
+      this.settings = toggleTerminalVisual(this.settings)
+      saveTerminalUiSettings(this.settings)
+      this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
+      this.tui.requestRender()
+      return
+    }
+    await this.runTerminalCommand(value)
+  }
+
+  private async runTerminalCommand(command: string): Promise<boolean> {
+    if (command === 'exit' || command === 'quit') {
+      this.requestExit()
+      return true
+    }
+    if (command === 'clear') {
+      this.transcript.length = 0
+      this.notice = '会话显示已清空'
+      this.tui.requestRender()
+      return true
+    }
+    if (command === 'workspace') {
+      this.notice = `Workspace · ${this.backend.workspace}`
+      this.tui.requestRender()
+      return true
+    }
+    if (command === 'provider') {
+      this.notice = `Brain · ${this.backend.providerLabel}`
+      this.tui.requestRender()
+      return true
+    }
+    if (command === 'agent') {
+      this.notice = `Agent · ${this.backend.agentLabel}`
+      this.tui.requestRender()
+      return true
+    }
+    if (command === 'doctor') {
+      const items = await this.backend.doctor()
+      this.notice = items.map(item => `${item.ok ? '●' : '○'} ${item.label}: ${item.detail}`).join('  ·  ')
+      this.tui.requestRender()
+      return true
+    }
+    return false
   }
 
   private async submit(raw: string): Promise<void> {
@@ -615,41 +864,22 @@ class XiaoyuSurface {
     this.notice = ''
 
     if (line === '/' || line === '/help') {
-      this.notice = '/doctor 检查 · /workspace 路径 · /provider Brain · /agent Agent · /clear 清空 · /exit 退出'
+      this.notice = '/settings 终端设置 · /vivid 视觉 · /doctor 检查 · /workspace · /provider · /agent · /clear · /exit'
       this.tui.requestRender()
       return
     }
-    if (line === '/exit' || line === '/quit') {
-      this.requestExit()
+    if (line === '/settings') {
+      this.openSettings()
       return
     }
-    if (line === '/clear') {
-      this.transcript.length = 0
-      this.notice = '会话显示已清空'
+    if (line === '/vivid') {
+      this.settings = toggleTerminalVisual(this.settings)
+      saveTerminalUiSettings(this.settings)
+      this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
       this.tui.requestRender()
       return
     }
-    if (line === '/workspace') {
-      this.notice = `Workspace · ${this.backend.workspace}`
-      this.tui.requestRender()
-      return
-    }
-    if (line === '/provider') {
-      this.notice = `Brain · ${this.backend.providerLabel}`
-      this.tui.requestRender()
-      return
-    }
-    if (line === '/agent') {
-      this.notice = `Agent · ${this.backend.agentLabel}`
-      this.tui.requestRender()
-      return
-    }
-    if (line === '/doctor') {
-      const items = await this.backend.doctor()
-      this.notice = items.map(item => `${item.ok ? '●' : '○'} ${item.label}: ${item.detail}`).join('  ·  ')
-      this.tui.requestRender()
-      return
-    }
+    if (line.startsWith('/') && await this.runTerminalCommand(line.slice(1))) return
     if (line.startsWith('/')) {
       this.notice = `未知命令 ${line} · 输入 /help 查看可用命令`
       this.tui.requestRender()
@@ -666,7 +896,6 @@ class XiaoyuSurface {
     this.busy = true
     this.editor.disableSubmit = true
     this.activeController = new AbortController()
-    this.startAnimation()
     this.tui.requestRender()
     try {
       await this.backend.sendMessage(
@@ -684,7 +913,6 @@ class XiaoyuSurface {
       assistant.text = `请求失败 · ${error instanceof Error ? error.message : String(error)}`
       this.notice = this.activeController.signal.aborted ? '已中止当前响应' : '请求失败'
     } finally {
-      this.stopAnimation()
       this.busy = false
       this.editor.disableSubmit = false
       this.activeController = undefined
@@ -717,7 +945,10 @@ class XiaoyuSurface {
   }
 
   dispose(): void {
-    this.stopAnimation()
+    if (this.animationTimer) {
+      clearInterval(this.animationTimer)
+      this.animationTimer = undefined
+    }
     if (this.approval) this.resolveApproval('deny')
     this.activeController?.abort()
   }
@@ -731,7 +962,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
   const toolkit = await loadPiTui()
   const terminal = new toolkit.ProcessTerminal()
   const tui = new toolkit.TUI(terminal, true)
-  const surface = new XiaoyuSurface(toolkit, tui, terminal, backend)
+  const surface = new XiaoyuSurface(toolkit, tui, terminal, backend, loadTerminalUiSettings())
   let stopped = false
 
   try {
@@ -740,7 +971,12 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
     tui.setFocus(surface)
     tui.addInputListener((data: string) => {
       const ctrlC = toolkit.matchesKey(data, 'ctrl+c') || data === '\u0003'
+      const ctrlP = toolkit.matchesKey(data, 'ctrl+p') || data === '\u0010'
       const escape = toolkit.matchesKey(data, 'escape') || data === '\u001b'
+      if (ctrlP) {
+        surface.openCommandPalette()
+        return { consume: true }
+      }
       if (ctrlC) {
         if (surface.cancel()) return { consume: true }
         surface.requestExit()

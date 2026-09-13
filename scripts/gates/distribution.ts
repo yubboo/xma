@@ -40,9 +40,10 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SlashAutocompleteProvider', 'setAutocompleteProvider', "matchesKey(data, 'ctrl+c')", 'Tool Approval', '当前 Session 允许', '/doctor', '/exit']) {
+for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SlashAutocompleteProvider', 'setAutocompleteProvider', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', '终端设置', 'new toolkit.Box(1, 0)', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
 }
+if (tui.includes('CURSOR_MARKER') || tui.includes("\\u001b[7m")) throw new Error('XMA TUI must not reintroduce a hand-written reverse-video cursor around the Pi Editor; this caused Windows white-screen leakage.')
 
 const stage = text('scripts/release/cli.ts')
 for (const marker of [

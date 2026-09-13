@@ -2,7 +2,25 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import { approvalDecision, renderHome, renderWorkspaceTrustWarning, slashCommandSuggestions, workspaceRisk } from '../src/tui.ts'
+import {
+  approvalDecision,
+  commandPaletteOptions,
+  DEFAULT_TERMINAL_UI_SETTINGS,
+  renderHome,
+  renderWorkspaceTrustWarning,
+  slashCommandSuggestions,
+  toggleTerminalVisual,
+  workspaceRisk,
+} from '../src/tui.ts'
+import { parseArgs } from '../src/main.ts'
+
+
+test('CLI ignores the pnpm/npm -- separator before a workspace argument', () => {
+  const workspace = path.join(process.cwd(), 'fixture-workspace')
+  const parsed = parseArgs(['--', workspace])
+  assert.equal(parsed.command, 'tui')
+  assert.equal(parsed.workspace, path.resolve(workspace))
+})
 
 test('TUI warns for the user home and filesystem root but not a normal project directory', () => {
   assert.equal(workspaceRisk(homedir()).level, 'home')
@@ -58,9 +76,24 @@ test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
 
 test('TUI slash command suggestions expose only implemented terminal commands', () => {
   const all = slashCommandSuggestions('/')
-  assert.deepEqual(all.map(item => item.value), ['help', 'doctor', 'workspace', 'provider', 'agent', 'clear', 'exit'])
+  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'agent', 'clear', 'exit'])
   assert.deepEqual(slashCommandSuggestions('/pro').map(item => item.value), ['provider'])
   assert.equal(slashCommandSuggestions('/missing').length, 0)
+})
+
+test('TUI command palette exposes only functional terminal actions', () => {
+  const values = commandPaletteOptions().map(item => item.value)
+  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'agent', 'clear', 'exit'])
+  assert.equal(values.includes('model-switch'), false)
+})
+
+test('TUI visual setting toggles vivid/minimal without changing other terminal settings', () => {
+  const minimal = toggleTerminalVisual({ ...DEFAULT_TERMINAL_UI_SETTINGS })
+  assert.equal(minimal.visual, 'minimal')
+  assert.equal(minimal.tips, true)
+  assert.equal(minimal.logo, 'auto')
+  const vivid = toggleTerminalVisual(minimal)
+  assert.equal(vivid.visual, 'vivid')
 })
 
 test('TUI trust warning defaults to exit and can render the one-time trust selection', () => {

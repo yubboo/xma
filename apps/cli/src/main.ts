@@ -32,7 +32,7 @@ import { confirmWorkspaceTrust, runTui, type DoctorItem, type TerminalBackend } 
 const AGENT_ID = 'xiaoyu.code'
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 
-interface ParsedArgs {
+export interface ParsedArgs {
   command: 'tui' | 'doctor' | 'server' | 'web' | 'help' | 'version'
   workspace: string
 }
@@ -69,11 +69,12 @@ function helpText(currentVersion: string): string {
   ].join('\n')
 }
 
-function parseArgs(argv: readonly string[]): ParsedArgs {
-  const first = argv[0]
+export function parseArgs(argv: readonly string[]): ParsedArgs {
+  const normalized = argv[0] === '--' ? argv.slice(1) : argv
+  const first = normalized[0]
   if (first === '--help' || first === '-h' || first === 'help') return { command: 'help', workspace: process.cwd() }
   if (first === '--version' || first === '-v' || first === 'version') return { command: 'version', workspace: process.cwd() }
-  if (first === 'doctor') return { command: 'doctor', workspace: path.resolve(argv[1] ?? process.cwd()) }
+  if (first === 'doctor') return { command: 'doctor', workspace: path.resolve(normalized[1] ?? process.cwd()) }
   if (first === 'server') return { command: 'server', workspace: process.cwd() }
   if (first === 'web') return { command: 'web', workspace: process.cwd() }
   return { command: 'tui', workspace: path.resolve(first ?? process.cwd()) }
@@ -292,10 +293,14 @@ async function main(): Promise<number> {
   return 0
 }
 
-main().then(
-  code => { process.exitCode = code },
-  error => {
-    process.stderr.write(`[xiaoyu] ${error instanceof Error ? error.message : String(error)}\n`)
-    process.exitCode = 1
-  },
-)
+const isDirectEntry = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+
+if (isDirectEntry) {
+  main().then(
+    code => { process.exitCode = code },
+    error => {
+      process.stderr.write(`[xiaoyu] ${error instanceof Error ? error.message : String(error)}\n`)
+      process.exitCode = 1
+    },
+  )
+}
