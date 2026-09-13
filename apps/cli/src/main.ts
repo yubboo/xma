@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * 文件作用：XMA 命令行/TUI 的第一入口，提供产品化终端欢迎界面。
  * 关联模块：core、未来 Session/Agent Runtime、各 agents/*。

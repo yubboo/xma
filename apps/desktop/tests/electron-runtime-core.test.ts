@@ -11,7 +11,7 @@ import { existsSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { installElectronRuntimeArchive, type ElectronArchiveExtractor } from '../scripts/electron-runtime-core.ts'
+import { installElectronRuntimeArchive, resolveElectronCacheRoot, type ElectronArchiveExtractor } from '../scripts/electron-runtime-core.ts'
 
 async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'xma-electron-test-'))
@@ -71,7 +71,6 @@ test('Electron Runtime extraction failure leaves no fake installed state', async
   })
 })
 
-
 test('Electron Runtime replaces a stale partial dist only after staging passes validation', async () => {
   await withTempDir(async electronDir => {
     const staleDist = path.join(electronDir, 'dist')
@@ -109,5 +108,13 @@ test('Electron Runtime rejects a ZIP with the wrong version', async () => {
 
     assert.equal(existsSync(path.join(electronDir, 'dist')), false)
     assert.equal(existsSync(path.join(electronDir, 'path.txt')), false)
+  })
+})
+
+test('Electron download cache defaults to the XMA project instead of the user profile', async () => {
+  await withTempDir(async projectRoot => {
+    assert.equal(resolveElectronCacheRoot(projectRoot), path.join(projectRoot, '.cache', 'electron'))
+    assert.equal(resolveElectronCacheRoot(projectRoot, 'runtime-cache'), path.join(projectRoot, 'runtime-cache'))
+    assert.equal(resolveElectronCacheRoot(projectRoot, path.join(projectRoot, 'custom-cache')), path.join(projectRoot, 'custom-cache'))
   })
 })

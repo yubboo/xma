@@ -20,6 +20,8 @@ $requiredCommands = @('node.exe','pnpm.cmd','cargo.exe')
 $requiredFiles = @(
   (Join-Path $Root 'node_modules\.bin\tsx.cmd'),
   (Join-Path $Root 'node_modules\.bin\vite.cmd'),
+  (Join-Path $Root 'node_modules\.bin\tsc.cmd'),
+  (Join-Path $Root 'node_modules\.bin\tsup.cmd'),
   (Join-Path $Root 'apps\desktop\node_modules\electron\package.json')
 )
 $needsPrepare = $false
@@ -30,13 +32,10 @@ foreach ($file in $requiredFiles) {
   if (-not (Test-Path $file)) { $needsPrepare = $true }
 }
 if ($needsPrepare) {
-  Write-Host '[准备] 构建所需开发环境或通用依赖不完整，先执行 XMA 一键准备开发环境。' -ForegroundColor Yellow
-  & (Join-Path $PSScriptRoot 'xma-prepare.ps1')
-  if ($LASTEXITCODE -ne 0) { throw 'XMA 开发环境准备失败。' }
+  throw '构建所需开发环境或通用 Workspace 依赖不完整。请先运行 XMA.bat → [1] 一键准备开发环境；构建流程不会重复安装 Workspace 依赖。'
 }
 
-Write-Host '[同步] 构建前正在校验 Workspace 依赖图与当前 package.json/override 是否一致（不会触发 Electron postinstall）...' -ForegroundColor DarkCyan
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
+Write-Host '[依赖] 正在复用 [1] 已准备的 Workspace JavaScript / Rust 依赖；构建流程不会再次执行 pnpm install。' -ForegroundColor DarkCyan
 Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override。' -ForegroundColor DarkGray
 
 if ($DesktopRuntime -in @('electron','both')) {

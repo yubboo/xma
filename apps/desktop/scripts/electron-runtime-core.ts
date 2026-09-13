@@ -11,6 +11,16 @@ import path from 'node:path'
 
 export type ElectronArchiveExtractor = (zipPath: string, options: { dir: string }) => Promise<void>
 
+/**
+ * 默认把 Electron 下载缓存放在 XMA 项目自己的 .cache/electron 下，避免写入用户 C 盘配置目录。
+ * 用户显式设置 electron_config_cache 时仍允许覆盖；相对路径按项目根目录解析。
+ */
+export function resolveElectronCacheRoot(projectRoot: string, configuredCache?: string): string {
+  const configured = configuredCache?.trim()
+  if (!configured) return path.join(projectRoot, '.cache', 'electron')
+  return path.isAbsolute(configured) ? configured : path.resolve(projectRoot, configured)
+}
+
 export interface ElectronRuntimeInstallOptions {
   zipPath: string
   electronDir: string

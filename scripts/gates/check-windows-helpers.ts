@@ -183,6 +183,8 @@ for (const marker of [
   "void main().catch",
   "xma-expand-archive.ps1",
   "PowerShell Expand-Archive",
+  "resolveElectronCacheRoot",
+  "electronCacheRoot",
   "Node 24.16",
 ]) {
   if (!electronInstallerSource.includes(marker)) throw new Error(`Electron runtime downloader contract missing: ${marker}`)
@@ -209,11 +211,14 @@ for (const marker of ['Expand-Archive', '-LiteralPath', "$ErrorActionPreference 
 }
 const buildReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
 for (const marker of [
-  "@('install','--ignore-scripts')",
+  '构建流程不会再次执行 pnpm install',
   'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'apps/desktop/scripts/install-electron-runtime.ts',
 ]) {
   if (!buildReleaseSource.includes(marker)) throw new Error(`Build release dependency/runtime contract missing: ${marker}`)
+}
+if (buildReleaseSource.includes("@('install','--ignore-scripts')")) {
+  throw new Error('Build release must reuse [1] prepared Workspace dependencies instead of reinstalling them')
 }
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
@@ -259,6 +264,7 @@ for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', '
 }
 const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 if (!syncSource.includes('H:\\一键部署\\xma')) throw new Error('XMA sync target contract missing')
+if (!syncSource.includes("'node_modules','.cache'")) throw new Error('XMA sync must preserve project-local .cache downloads')
 if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync must exclude only root runtime, not native/runtime source')
 if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
 if (!syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must preserve locally generated lockfiles when the source package omits them')

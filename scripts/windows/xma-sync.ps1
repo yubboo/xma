@@ -35,7 +35,7 @@ foreach ($lockName in @('pnpm-lock.yaml','Cargo.lock')) {
   }
 }
 
-$excludeDirs = @('.git','node_modules','dist','build','.xma','target','release',(Join-Path $Source 'runtime'))
+$excludeDirs = @('.git','node_modules','.cache','dist','build','.xma','target','release',(Join-Path $Source 'runtime'))
 $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP','/XD') + $excludeDirs
 & robocopy.exe @robocopyArgs
 $rc = $LASTEXITCODE
@@ -65,6 +65,6 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
   Write-Host '[提示] 当前系统还没有 Git；源码已同步，XMA-GitHub.bat 只负责 Git 推送且不会安装环境；请先通过 XMA.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
 }
 
-Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / 本地依赖缓存。' -ForegroundColor Green
+Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / node_modules / .cache 本地依赖与下载缓存。' -ForegroundColor Green
 Write-Host '[锁文件] 若版本包暂未携带 lockfile，则保留本机已生成的 pnpm-lock.yaml / Cargo.lock；若源码包携带，则以源码包版本为准。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

@@ -23,6 +23,7 @@ Electron 是 XMA 默认 Desktop Runtime。项目将版本**精确锁定为 `41.2
 - Web / CLI 不下载 Electron；
 - 只有用户明确进入 `Desktop -> Electron` 或构建 Electron 发布包时，才执行 Electron postinstall 下载 Chromium Runtime；
 - XMA 使用 Electron 官方 `@electron/get` 下载并显示实时进度，直接使用其返回的、已经 checksum 校验的 ZIP 路径；
+- `@electron/get` 下载 ZIP 默认缓存到 XMA 项目根 `.cache/electron/`，避免占用 Windows 用户 C 盘 `%LOCALAPPDATA%`；缓存不进入 Git/源码包，并在源码同步时保留；
 - 下载与安装必须完整等待并验证：`@electron/get` 负责下载和 checksum；Windows 使用系统 PowerShell `Expand-Archive` 解压到 staging，先校验 `dist/version` 与平台可执行文件，再原子替换正式 `dist` 并写 `path.txt`；非 Windows 可使用 Electron package 的 `extract-zip`，并受 `yauzl >= 3.3.1` workspace override 保护；
 - 禁止再采用“先 `@electron/get` 下载、再另起 `electron/install.js` 子进程”的双阶段安装。该方式曾出现子进程返回 0 但 `dist/path.txt` 未落地的假成功，且难以证明安装真正完成；
 - `electron` 不进入 pnpm `allowBuilds`，避免任何普通 `pnpm install` 意外触发 Chromium 下载；

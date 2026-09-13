@@ -11,7 +11,7 @@ import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { installElectronRuntimeArchive, type ElectronArchiveExtractor } from './electron-runtime-core.ts'
+import { installElectronRuntimeArchive, resolveElectronCacheRoot, type ElectronArchiveExtractor } from './electron-runtime-core.ts'
 
 interface DownloadProgress {
   transferred?: number
@@ -42,6 +42,7 @@ const executable = path.join(distDir, platformPath)
 const versionFile = path.join(distDir, 'version')
 const pathFile = path.join(electronDir, 'path.txt')
 const extractArchive = createArchiveExtractor()
+const electronCacheRoot = resolveElectronCacheRoot(root, process.env.electron_config_cache)
 
 void main().catch((error: unknown) => {
   const message = error instanceof Error ? error.stack ?? error.message : String(error)
@@ -64,6 +65,8 @@ async function main(): Promise<void> {
     process.env.ELECTRON_GET_USE_PROXY = '1'
     console.log('[代理] 检测到系统代理环境变量，Electron 下载器将使用现有代理。')
   }
+
+  console.log(`[缓存] Electron 下载缓存目录：${electronCacheRoot}`)
 
   const configuredMirror = process.env.ELECTRON_MIRROR?.trim()
   const attempts: Array<{ name: string; mirror?: string }> = configuredMirror
@@ -132,7 +135,7 @@ function createArchiveExtractor(): ElectronArchiveExtractor {
   }
 
   // 非 Windows 暂时复用 Electron 41.2.0 自带 extract-zip。
-  // 根 package.json 对 yauzl >=3.3.1 做全局 override，避免 Node 24.16+/26.1+ 的旧流实现问题。
+  // Windows 不依赖 Node 24.16+ 的 ZIP 流实现；pnpm-workspace.yaml 的 yauzl >= 3.3.1 override 只保护非 Windows Electron ZIP 链。
   return electronRequire('extract-zip') as ElectronArchiveExtractor
 }
 
@@ -179,7 +182,7 @@ async function downloadOnce(sourceName: string, mirror?: string): Promise<string
       version,
       artifactName: 'electron',
       force: process.env.force_no_cache === 'true',
-      cacheRoot: process.env.electron_config_cache,
+      cacheRoot: electronCacheRoot,
       checksums: process.env.electron_use_remote_checksums || process.env.npm_config_electron_use_remote_checksums ? undefined : checksums,
       platform,
       arch,

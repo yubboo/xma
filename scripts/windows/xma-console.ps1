@@ -60,13 +60,13 @@ function Ensure-ElectronDesktopRuntime {
   Assert-DesktopJsDependencies
   $electronRoot = Join-Path $Root 'apps\desktop\node_modules\electron'
   if (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion) {
-    Write-Host "[通过] Electron $ElectronVersion 主桌面运行时已缓存并通过文件状态校验。" -ForegroundColor Green
+    Write-Host "[通过] Electron $ElectronVersion 主桌面运行时已安装在 XMA 项目依赖目录并通过文件状态校验。" -ForegroundColor Green
     return
   }
 
   Write-Host ''
   Write-Host "[Desktop] 你已明确选择 Electron 主桌面端，现在才允许下载 Electron $ElectronVersion Runtime。" -ForegroundColor Cyan
-  Write-Host '[下载] Electron 包含 Chromium，体积较大；首次下载时间取决于网络，之后会使用本地缓存。' -ForegroundColor Yellow
+  Write-Host '[下载] Electron 包含 Chromium，体积较大；首次下载时间取决于网络，之后会复用 XMA 项目内 .cache\electron 缓存。' -ForegroundColor Yellow
   Write-Host '[进度] XMA 使用 Electron 官方 @electron/get 显示实时百分比/MB；Windows 解压使用系统 PowerShell Expand-Archive。' -ForegroundColor DarkYellow
   Write-Host '[容错] 官方源 45 秒没有任何新数据会主动中止并切换备用镜像；ZIP 继续使用 Electron 官方 checksums.json 校验。' -ForegroundColor DarkYellow
   Write-Host '[代理] 如果系统设置了 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY，下载器会使用现有代理。' -ForegroundColor DarkGray

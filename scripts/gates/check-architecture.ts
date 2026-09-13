@@ -24,4 +24,25 @@ if (!agents.includes('provider.stream') || !agents.includes('tools.execute')) th
 const compat = readFileSync('plugins/compat/deepseek-harness/index.ts', 'utf8')
 for (const marker of ['inject', 'apply(context']) if (!compat.includes(marker)) throw new Error(`DeepSeek Harness compatibility marker missing: ${marker}`)
 
+const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> }
+const webBuild = rootPackage.scripts?.['build:web'] ?? ''
+if (!webBuild.includes('--emptyOutDir')) throw new Error('XMA Web build must explicitly empty the external dist/web output directory')
+const cliBuild = rootPackage.scripts?.['build:cli'] ?? ''
+if (cliBuild.includes('--banner')) throw new Error('XMA CLI build must not use unsupported tsup --banner CLI flags')
+const cliSource = readFileSync('apps/cli/src/main.ts', 'utf8')
+if (!cliSource.startsWith('#!/usr/bin/env node')) throw new Error('XMA CLI entry must carry its own Node hashbang')
+
+const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as { scripts?: Record<string, string> }
+const desktopWebBuild = desktopPackage.scripts?.['web:build'] ?? ''
+if (!desktopWebBuild.includes('--emptyOutDir')) throw new Error('XMA Desktop web build must explicitly empty apps/desktop/web')
+const desktopWebDev = desktopPackage.scripts?.['web:dev'] ?? ''
+if (!desktopWebDev.includes('exec vite apps/web --host 127.0.0.1 --port 1420 --strictPort')) {
+  throw new Error('XMA Desktop web:dev must bind Vite to 127.0.0.1:1420 without forwarding a literal -- argument')
+}
+if (desktopWebDev.includes(' -- --host')) throw new Error('XMA Desktop web:dev must not pass a literal -- to Vite')
+const desktopLauncher = readFileSync('apps/desktop/scripts/dev-electron.ts', 'utf8')
+if (desktopLauncher.includes('shell: true') || desktopLauncher.includes("shell: process.platform === 'win32'")) {
+  throw new Error('XMA Desktop launcher must not use shell:true with child-process arguments (Node DEP0190)')
+}
+
 console.log('XMA Architecture Gate PASS (TypeScript Agent + Rust Native + plugin compatibility)')

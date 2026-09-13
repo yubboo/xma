@@ -7,11 +7,14 @@
 
 import { spawn, type ChildProcess } from 'node:child_process'
 
-const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const devUrl = 'http://127.0.0.1:1420'
 
 function run(args: string[], env = process.env): ChildProcess {
-  const child = spawn(pnpm, args, { stdio: 'inherit', env, shell: process.platform === 'win32' })
+  // Node 24+ 会对 shell:true + 参数数组发出 DEP0190，并提示参数拼接存在注入风险。
+  // Windows 显式调用 cmd.exe 执行 pnpm.cmd；其他平台直接执行 pnpm，不使用 shell:true。
+  const file = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'pnpm'
+  const commandArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'pnpm.cmd', ...args] : args
+  const child = spawn(file, commandArgs, { stdio: 'inherit', env, windowsHide: true })
   child.on('error', error => {
     console.error('[XMA Desktop] 子进程启动失败：', error)
   })
