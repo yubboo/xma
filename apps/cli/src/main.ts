@@ -498,7 +498,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         message: result.ready ? `${profile.displayName} · ${profile.model} 已就绪` : `${result.error?.code ?? 'unknown'} · ${result.error?.message ?? 'Brain Ready 失败'}`,
       }
     },
-    async sendMessage(message, mode: TerminalAgentMode, write, signal, approve) {
+    async sendMessage(message, mode: TerminalAgentMode, onEvent, signal, approve) {
       const profile = requireActiveProfile()
       if (!model || !await ensureCredentialReady(profile)) throw new Error(`Brain 未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
       const probeKey = `${profile.id}\u0000${profile.model}`
@@ -510,7 +510,28 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         }
       }
       const listener = (event: RuntimeLiveEvent): void => {
-        if (event.type === 'model/text-delta' && event.sessionId === session.id) write(event.text)
+        if (event.type === 'model/text-delta' && event.sessionId === session.id) {
+          onEvent({ type: 'text-delta', stepId: event.stepId, text: event.text })
+          return
+        }
+        if (event.type === 'model/reasoning-delta' && event.sessionId === session.id) {
+          onEvent({ type: 'reasoning-delta', stepId: event.stepId, text: event.text })
+          return
+        }
+        if (event.type !== 'session/event' || event.event.sessionId !== session.id) return
+        if (event.event.type === 'assistant/message') {
+          for (const call of event.event.toolCalls) onEvent({ type: 'tool-call', stepId: event.event.stepId, name: call.name })
+          return
+        }
+        if (event.event.type === 'tool/result') {
+          onEvent({
+            type: 'tool-result',
+            stepId: event.event.stepId,
+            name: event.event.name,
+            ok: event.event.ok,
+            content: event.event.content,
+          })
+        }
       }
       const approvals: ToolApprovalProvider = { request: approve }
       const dispose = runtime.subscribe(listener)

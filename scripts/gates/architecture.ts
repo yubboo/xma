@@ -85,7 +85,7 @@ for (const marker of ['AgentDefinition', 'AgentBrainCapability', 'AgentDelegatio
   if (!agentContract.includes(marker)) throw new Error(`XMA Agent Platform core marker missing: ${marker}`)
 }
 const skillRegistry = readFileSync('core/src/skill/registry.ts', 'utf8')
-for (const marker of ['class SkillRegistry', 'resolveForAgent', 'createAgentSkillContextSource', "id: 'agent/skills'"]) {
+for (const marker of ['class SkillRegistry', 'resolveForAgent', 'createAgentSkillContextSource', "id: 'agent/skills'", 'Canonical Chinese self-name: 小鱼']) {
   if (!skillRegistry.includes(marker)) throw new Error(`XMA Skill Platform core marker missing: ${marker}`)
 }
 const delegationSource = readFileSync('core/src/agent/delegation.ts', 'utf8')
@@ -143,11 +143,11 @@ for (const marker of ['DefaultToolPolicy', 'ToolSecurityGuard', 'ToolApprovalPro
   if (!policySource.includes(marker)) throw new Error(`XMA Tool Policy architecture marker missing: ${marker}`)
 }
 const cliMainSource = readFileSync('apps/cli/src/main.ts', 'utf8')
-for (const marker of ['assertCliNativeRuntimeStatus', 'credential.status', 'Provider 已写入但没有成为当前 Brain']) {
+for (const marker of ['assertCliNativeRuntimeStatus', 'credential.status', 'Provider 已写入但没有成为当前 Brain', 'model/reasoning-delta', "type: 'tool-call'", "type: 'tool-result'"]) {
   if (!cliMainSource.includes(marker)) throw new Error(`XMA CLI Provider/Native readiness marker missing: ${marker}`)
 }
 const cliTuiSource = readFileSync('apps/cli/src/tui.ts', 'utf8')
-for (const marker of ['Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。', '模型列表读取失败', 'Provider 已保存并设为当前 Brain', '选择推理强度', 'cycleTerminalAgentMode', '命令执行失败']) {
+for (const marker of ['Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。', '模型列表读取失败', 'Provider 已保存并设为当前 Brain', '选择推理强度', 'cycleTerminalAgentMode', '命令执行失败', 'applyTerminalRunEvent', 'requestLiveRender', 'requestRender(true)']) {
   if (!cliTuiSource.includes(marker)) throw new Error(`XMA CLI Provider failure-containment marker missing: ${marker}`)
 }
 

@@ -136,6 +136,7 @@ Provider 返回归一化流事件：
 - response started；
 - text delta；
 - reasoning delta / summary（Provider 支持时）；
+- 上述 text/reasoning delta 必须保持真实增量语义进入 Runtime live event，Host/TUI 在收到后即可渲染，不能等完整响应结束后批量回放；
 - tool call start/args delta/complete；
 - usage；
 - finish reason；

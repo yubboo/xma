@@ -106,6 +106,14 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Multi-Agent 委派使用稳定 `AgentTask` / Delegation Policy；后续 durable Task Store 也必须保留 requester/assigned Agent/Workspace/objective/result/verification。
 - Codex、Claude Code、DeepSeek Harness、Zcode 等属于外部 Host；Host Adapter 不得污染 Core Agent 定义。
 
+### 小鱼身份与 Terminal 实时事件硬规则
+
+- 中文 canonical identity 只有“**小鱼 / 小鱼管理智能体**”；Agent Context 必须显式告诉真实模型这一身份，不能只提供 `Xiaoyu` 拼音让模型自行音译。中文回复不得出现“小禹 / 小宇 / 晓雨”等替代名。
+- Provider 的 SSE text/reasoning delta 必须保持增量语义穿过 `Provider → RuntimeLiveEvent → Host Renderer`；Tool Call/Result 通过同一 Runtime 事件面投影。不得在 TUI 层等完整 Turn 结束后再一次性显示。
+- `reasoning` 只能展示 Provider 实际公开返回的增量/摘要；不得本地伪造“思考过程”。
+- TUI 渲染器如果因为差分缓存导致流式区域漏刷，必须在 Host 层做有节流的强制 repaint 或等价修复，并补回归测试；不能把“内存里已收到 chunk”冒充“用户已经实时看到”。
+
+
 ## 5. Provider 开发规则
 
 - Provider 不能只实现 `stream()`；必须逐步拥有 capability、auth、model catalog、usage/error normalization 和 Brain Ready Probe。

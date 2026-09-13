@@ -70,6 +70,9 @@ test('Agent Skill Context Source makes identity and professional Skills model-vi
   })
 
   assert.match(assembled.content, /Xiaoyu Code/)
+  assert.match(assembled.content, /Chinese product name: 小鱼管理智能体/)
+  assert.match(assembled.content, /Canonical Chinese self-name: 小鱼/)
+  assert.match(assembled.content, /Never rename or transliterate Xiaoyu as 小禹、小宇、晓雨/)
   assert.match(assembled.content, /Skill: Bug Fixing/)
   assert.match(assembled.content, /Skill: Code Testing/)
   assert.match(assembled.content, /必须提供可核验的完成证据/)

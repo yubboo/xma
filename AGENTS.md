@@ -10,6 +10,7 @@
 - GitHub：`https://github.com/yubboo/xma.git`
 - CLI 主命令：`xiaoyu`（`xma` 只保留兼容别名）
 - 核心理念：**Model is replaceable. Agent is ours. / 模型可以更换，小鱼始终属于用户。**
+- 中文产品名与自称锁死为 **“小鱼 / 小鱼管理智能体”**；模型在中文回复中不得把 Xiaoyu 音译、误写或改名为“小禹 / 小宇 / 晓雨”等其他名称。Agent Context 必须显式注入这一 canonical identity，不能只依赖模型猜拼音。
 
 XMA 不是某一家大模型的外壳，也不是 Minecraft 专用工具。XMA 是用户拥有的 Agent 平台。GPT、Claude、Gemini、DeepSeek、MiMo 以及未来模型都只是可替换的外部 Brain Provider。
 
@@ -214,6 +215,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - portable Terminal bundle 第一批内置 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel；未来可评估 Node SEA，但不能因此破坏可验证升级和安全边界。
 - Terminal 打开 Home/文件系统根目录必须显式警告，默认退出，只允许用户“仅本次信任”；不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
 - Terminal Home/Prompt Dock 必须按终端高度保留可操作留白；命令/设置/Provider/模型等 Overlay 打开时必须进入 modal focus，背景输入区只保留紧凑状态 Dock，并隐藏无关快捷键/提示，禁止 Overlay 与 Prompt 在常见 Windows Terminal 高度下视觉挤压。对话区、输入 Dock、快捷键与提示区之间必须保留稳定空行，不能把所有组件堆在底部。Terminal 模式固定支持 `Build → Plan → Compose (legacy)`，Tab / Shift+Tab 循环切换：Build 使用完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具；三者继续使用用户当前选择的同一个真实 Provider/Model，禁止把 Plan 实现成隐藏 Planner。Prompt Dock 必须持续显示 Mode + Provider/Model + Reasoning，并用稳定颜色区分状态。品牌 Provider 首次配置流程优先固定为 API Key → 真实模型 → 推理强度 → Brain Ready，避免无关表单打断主路径。
+- **Terminal 实时输出锁死：** Provider SSE 的 `reasoning/text delta` 必须先进入 Runtime live event，再由 TUI 在生成过程中持续投影；Tool Call / Tool Result 也必须在执行链推进时可见。禁止把整轮文本缓存到 `sendMessage()` 完成后才一次性显示。UI 只展示 Provider 实际返回、允许展示的 reasoning；Provider 不返回时不得伪造思维链。当前固定 `@earendil-works/pi-tui@0.74.0` 存在差分聊天区域漏刷风险，Host 必须采用受控的强制 repaint/等价机制保证流式增量真实上屏，且要限制刷新频率避免每 token 全屏清屏。
 - 发行 staging 属于 `.cache/release/`；正式下载资产属于 `dist/release/`；两者都不得提交 Git。
 
 详细合同见 `docs/architecture/DISTRIBUTION.md`。

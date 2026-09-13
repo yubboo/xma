@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import {
+  applyTerminalRunEvent,
   approvalDecision,
   commandPaletteOptions,
   cycleTerminalAgentMode,
@@ -14,6 +15,7 @@ import {
   toggleTerminalVisual,
   terminalHomeLayout,
   workspaceRisk,
+  type TerminalTranscriptItem,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs } from '../src/main.ts'
 
@@ -144,6 +146,26 @@ test('TUI Tab mode cycle is Build -> Plan -> Compose and Shift+Tab reverses it',
   assert.equal(cycleTerminalAgentMode('plan'), 'compose')
   assert.equal(cycleTerminalAgentMode('compose'), 'build')
   assert.equal(cycleTerminalAgentMode('build', -1), 'compose')
+})
+
+
+test('TUI live event projection streams reasoning, text and tool activity incrementally', () => {
+  const transcript: TerminalTranscriptItem[] = [
+    { role: 'user', text: '读取 package.json' },
+    { role: 'assistant', text: '', placeholder: true },
+  ]
+
+  applyTerminalRunEvent(transcript, { type: 'reasoning-delta', stepId: 'step-1', text: '先检查项目' })
+  applyTerminalRunEvent(transcript, { type: 'reasoning-delta', stepId: 'step-1', text: '规则。' })
+  applyTerminalRunEvent(transcript, { type: 'tool-call', stepId: 'step-1', name: 'native.fs.read_text' })
+  applyTerminalRunEvent(transcript, { type: 'tool-result', stepId: 'step-1', name: 'native.fs.read_text', ok: true, content: '{"name":"xma"}' })
+  applyTerminalRunEvent(transcript, { type: 'text-delta', stepId: 'step-2', text: '项目名是 ' })
+  applyTerminalRunEvent(transcript, { type: 'text-delta', stepId: 'step-2', text: 'xma。' })
+
+  assert.equal(transcript.some(item => item.placeholder), false)
+  assert.equal(transcript.find(item => item.role === 'reasoning')?.text, '先检查项目规则。')
+  assert.match(transcript.find(item => item.role === 'tool' && item.text.includes('读取文件'))?.text ?? '', /native\.fs\.read_text/)
+  assert.equal(transcript.find(item => item.role === 'assistant')?.text, '项目名是 xma。')
 })
 
 test('TUI visual setting toggles vivid/minimal without changing other terminal settings', () => {

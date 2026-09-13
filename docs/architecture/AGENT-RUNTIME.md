@@ -85,6 +85,7 @@ Provider Route + ToolPlan freeze
   ↓
 Model Step (stream)
   ├─ text/reasoning live events
+  ├─ Host/TUI immediate projection（不得等 Turn 完成后批量显示）
   └─ tool calls
   ↓
 Tool Pipeline
@@ -131,6 +132,8 @@ XMA 事件必须明确分两类。
 - pending approval UI request。
 
 Live event 可以丢失而不破坏 Session 的逻辑可恢复性。最终结算结果仍必须形成 durable fact。
+
+Terminal/Host 对 `model/text-delta` 与 Provider 允许公开的 `model/reasoning-delta` 必须即时订阅并持续重绘；Tool Call/Result 使用 durable `assistant/message` / `tool/result` 事件投影。UI 不得把 live chunk 缓冲成最终整段后才显示。
 
 ## 5. Context Assembly
 

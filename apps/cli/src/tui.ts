@@ -134,6 +134,56 @@ export interface BrainProbeView {
 export type TerminalAgentMode = 'build' | 'plan' | 'compose'
 export type TerminalReasoningEffort = 'default' | 'low' | 'high' | 'max'
 
+export type TerminalRunEvent =
+  | { type: 'text-delta'; stepId: string; text: string }
+  | { type: 'reasoning-delta'; stepId: string; text: string }
+  | { type: 'tool-call'; stepId: string; name: string }
+  | { type: 'tool-result'; stepId: string; name: string; ok: boolean; content: string }
+
+export interface TerminalTranscriptItem {
+  role: 'user' | 'assistant' | 'reasoning' | 'tool' | 'system'
+  text: string
+  stepId?: string
+  placeholder?: boolean
+}
+
+function toolAction(name: string): string {
+  if (name === 'native.fs.read_text') return '读取文件'
+  if (name === 'native.fs.write_text') return '写入文件'
+  if (name === 'native.process.run') return '运行程序'
+  return '调用工具'
+}
+
+/**
+ * 中文说明：把 Runtime live/durable 事件投影成纯 UI transcript。
+ * 这里不保存 Session 事实；只负责让 reasoning/text/tool 在 TUI 中即时出现。
+ */
+export function applyTerminalRunEvent(transcript: TerminalTranscriptItem[], event: TerminalRunEvent): void {
+  const placeholder = transcript[transcript.length - 1]
+  if (placeholder?.placeholder === true && placeholder.role === 'assistant' && placeholder.text.length === 0) transcript.pop()
+
+  if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
+    const role = event.type === 'text-delta' ? 'assistant' : 'reasoning'
+    const last = transcript[transcript.length - 1]
+    if (last?.role === role && last.stepId === event.stepId) last.text += event.text
+    else transcript.push({ role, stepId: event.stepId, text: event.text })
+    return
+  }
+
+  if (event.type === 'tool-call') {
+    transcript.push({ role: 'tool', stepId: event.stepId, text: `⏺ ${toolAction(event.name)} · ${event.name}` })
+    return
+  }
+
+  const compact = event.content.replace(/\s+/g, ' ').trim()
+  const summary = compact.length > 160 ? `${compact.slice(0, 157)}…` : compact
+  transcript.push({
+    role: 'tool',
+    stepId: event.stepId,
+    text: `${event.ok ? '⎿ ✓' : '⎿ ✗'} ${event.name}${summary ? ` · ${summary}` : ''}`,
+  })
+}
+
 export function cycleTerminalAgentMode(current: TerminalAgentMode, direction: 1 | -1 = 1): TerminalAgentMode {
   const order: readonly TerminalAgentMode[] = ['build', 'plan', 'compose']
   const index = order.indexOf(current)
@@ -196,7 +246,7 @@ export interface TerminalBackend {
   sendMessage(
     input: string,
     mode: TerminalAgentMode,
-    write: (chunk: string) => void,
+    onEvent: (event: TerminalRunEvent) => void,
     signal: AbortSignal,
     approve: (request: ToolApprovalRequest, signal: AbortSignal) => Promise<ToolApprovalDecision>,
   ): Promise<void>
@@ -229,11 +279,6 @@ interface PiTuiToolkit {
   SelectList: new (items: readonly AutocompleteItem[], maxVisible: number, theme: unknown) => any
   visibleWidth(value: string): number
   matchesKey(data: string, key: string): boolean
-}
-
-interface TranscriptItem {
-  role: 'user' | 'assistant' | 'system'
-  text: string
 }
 
 interface ApprovalWaiter {
@@ -311,6 +356,32 @@ function wrapPlain(value: string, maxWidth: number, maxLines: number): string[] 
     if (lines.length >= maxLines) break
   }
   return lines.slice(0, maxLines)
+}
+
+/** 流式消息显示最新尾部，避免长回复超过固定行数后视觉上“卡住”。 */
+function wrapTailPlain(value: string, maxWidth: number, maxLines: number): string[] {
+  const source = value.length > 6000 ? value.slice(-6000) : value
+  const normalized = source.replace(/\r/g, '')
+  const lines: string[] = []
+  for (const sourceLine of normalized.split('\n')) {
+    let remaining = sourceLine
+    if (!remaining) {
+      lines.push('')
+      continue
+    }
+    while (remaining) {
+      const part = truncateCells(remaining, maxWidth)
+      if (part.endsWith('…') && cellWidth(remaining) > maxWidth) {
+        const withoutEllipsis = part.slice(0, -1)
+        lines.push(withoutEllipsis)
+        remaining = remaining.slice(withoutEllipsis.length)
+      } else {
+        lines.push(part)
+        remaining = ''
+      }
+    }
+  }
+  return lines.slice(-maxLines)
 }
 
 function spaces(count: number): string {
@@ -892,7 +963,7 @@ async function loadPiTui(): Promise<PiTuiToolkit> {
 class XiaoyuSurface {
   private _focused = false
   readonly editor: SafePromptInput
-  private readonly transcript: TranscriptItem[] = []
+  private readonly transcript: TerminalTranscriptItem[] = []
   private notice = ''
   private busy = false
   private activeController: AbortController | undefined
@@ -903,6 +974,8 @@ class XiaoyuSurface {
   private settings: TerminalUiSettings = { ...DEFAULT_TERMINAL_UI_SETTINGS }
   private overlayOpen = false
   private agentMode: TerminalAgentMode = 'build'
+  private forcedStreamRenderTimer: ReturnType<typeof setTimeout> | undefined
+  private lastForcedStreamRenderAt = 0
 
   constructor(
     private readonly toolkit: PiTuiToolkit,
@@ -942,6 +1015,28 @@ class XiaoyuSurface {
   set focused(value: boolean) {
     this._focused = value
     this.editor.focused = value
+  }
+
+  /**
+   * pi-tui 0.74.0 的差分渲染在“只追加聊天区域”的流式场景中可能出现漏刷。
+   * 每个增量仍请求普通 render，并最多每 80ms 强制一次 full repaint；既保证实时性，也避免每个 token 都清屏。
+   */
+  private requestLiveRender(): void {
+    this.tui.requestRender()
+    const now = Date.now()
+    const intervalMs = 80
+    const elapsed = now - this.lastForcedStreamRenderAt
+    if (elapsed >= intervalMs) {
+      this.lastForcedStreamRenderAt = now
+      this.tui.requestRender(true)
+      return
+    }
+    if (this.forcedStreamRenderTimer) return
+    this.forcedStreamRenderTimer = setTimeout(() => {
+      this.forcedStreamRenderTimer = undefined
+      this.lastForcedStreamRenderAt = Date.now()
+      this.tui.requestRender(true)
+    }, Math.max(1, intervalMs - elapsed))
   }
 
   handleInput(data: string): void {
@@ -1029,11 +1124,24 @@ class XiaoyuSurface {
       if (hintRow !== undefined) screen[hintRow] = hintLine
 
       const transcriptLines: string[] = []
-      for (const item of this.transcript.slice(-10)) {
-        const label = item.role === 'user' ? `${orange}${bold}You${reset}` : item.role === 'assistant' ? `${orange}${bold}Xiaoyu${reset}` : `${yellow}${bold}Info${reset}`
-        const raw = item.text || (item.role === 'assistant' && this.busy ? '思考中…' : '')
-        const wrapped = wrapPlain(raw, Math.max(24, cardWidth - 12), 5)
-        wrapped.forEach((line, index) => transcriptLines.push(`${indent}${index === 0 ? label : spaces(6)}${textFaint}  ${line}${reset}`))
+      for (const item of this.transcript.slice(-12)) {
+        const label = item.role === 'user'
+          ? `${orange}${bold}You${reset}`
+          : item.role === 'assistant'
+            ? `${orange}${bold}Xiaoyu${reset}`
+            : item.role === 'reasoning'
+              ? `${yellow}${bold}Think${reset}`
+              : item.role === 'tool'
+                ? `${blue}${bold}Tool${reset}`
+                : `${yellow}${bold}Info${reset}`
+        const raw = item.text || (item.role === 'assistant' && item.placeholder && this.busy ? '等待模型首个增量…' : '')
+        const maxLines = item.role === 'reasoning' ? 4 : item.role === 'tool' ? 3 : 5
+        const live = this.busy && (item.role === 'assistant' || item.role === 'reasoning')
+        const wrapped = live
+          ? wrapTailPlain(raw, Math.max(24, cardWidth - 12), maxLines)
+          : wrapPlain(raw, Math.max(24, cardWidth - 12), maxLines)
+        const bodyStyle = item.role === 'assistant' ? text : item.role === 'tool' ? textSoft : textFaint
+        wrapped.forEach((line, index) => transcriptLines.push(`${indent}${index === 0 ? label : spaces(6)}${bodyStyle}  ${line}${reset}`))
         transcriptLines.push('')
       }
       const transcriptBottomGap = rows >= 30 ? 4 : 2
@@ -1576,33 +1684,40 @@ class XiaoyuSurface {
       return
     }
 
-    this.transcript.push({ role: 'user', text: line }, { role: 'assistant', text: '' })
-    const assistant = this.transcript[this.transcript.length - 1]!
+    const placeholder: TerminalTranscriptItem = { role: 'assistant', text: '', placeholder: true }
+    this.transcript.push({ role: 'user', text: line }, placeholder)
     this.busy = true
     this.editor.disableSubmit = true
     this.activeController = new AbortController()
-    this.tui.requestRender()
+    this.requestLiveRender()
     try {
       await this.backend.sendMessage(
         line,
         this.agentMode,
-        chunk => {
-          assistant.text += chunk
-          this.tui.requestRender()
+        event => {
+          applyTerminalRunEvent(this.transcript, event)
+          this.requestLiveRender()
         },
         this.activeController.signal,
         (request, signal) => this.requestApproval(request, signal),
       )
-      if (!assistant.text.trim()) assistant.text = '(没有文本输出)'
+      if (placeholder.placeholder && this.transcript.includes(placeholder)) placeholder.text = '(没有文本输出)'
       this.notice = '完成'
     } catch (error) {
-      assistant.text = `请求失败 · ${error instanceof Error ? error.message : String(error)}`
+      const message = `请求失败 · ${error instanceof Error ? error.message : String(error)}`
+      if (placeholder.placeholder && this.transcript.includes(placeholder)) placeholder.text = message
+      else this.transcript.push({ role: 'assistant', text: message })
       this.notice = this.activeController.signal.aborted ? '已中止当前响应' : '请求失败'
     } finally {
       this.busy = false
       this.editor.disableSubmit = false
       this.activeController = undefined
-      this.tui.requestRender()
+      if (this.forcedStreamRenderTimer) {
+        clearTimeout(this.forcedStreamRenderTimer)
+        this.forcedStreamRenderTimer = undefined
+      }
+      this.lastForcedStreamRenderAt = Date.now()
+      this.tui.requestRender(true)
     }
   }
 
@@ -1634,6 +1749,10 @@ class XiaoyuSurface {
     if (this.animationTimer) {
       clearInterval(this.animationTimer)
       this.animationTimer = undefined
+    }
+    if (this.forcedStreamRenderTimer) {
+      clearTimeout(this.forcedStreamRenderTimer)
+      this.forcedStreamRenderTimer = undefined
     }
     if (this.approval) this.resolveApproval('deny')
     this.activeController?.abort()
