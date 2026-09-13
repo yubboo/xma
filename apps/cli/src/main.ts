@@ -42,7 +42,7 @@ export function assertCliNativeRuntimeStatus(status: NativeRuntimeStatus): void 
   const requiredCapabilities = ['credential.status', 'credential.read', 'credential.write', 'credential.delete'] as const
   const missingCapabilities = requiredCapabilities.filter(capability => !status.capabilities.includes(capability))
   if (missingCapabilities.length > 0) {
-    throw new Error(`XMA Native Runtime 与当前源码不匹配，缺少能力：${missingCapabilities.join(', ')}。请通过 XMA.bat → [4] 重新启动，启动器会先执行 Cargo 离线增量构建。`)
+    throw new Error(`XMA Native Runtime 与当前源码不匹配，缺少能力：${missingCapabilities.join(', ')}。请通过 xma-dev.bat → [4] 重新启动，启动器会先执行 Cargo 离线增量构建。`)
   }
 }
 

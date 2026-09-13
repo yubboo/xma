@@ -22,6 +22,8 @@ xma/
 ├─ .agents/               # 开发 XMA 的 AI 编程 Skill 镜像
 ├─ .claude/
 ├─ .codex/
+├─ xma-dev.bat           # Windows 源码开发入口
+├─ xma-dev               # Linux/macOS 源码开发入口
 ├─ CODEMAP.md
 └─ AGENTS.md
 ```
@@ -36,6 +38,14 @@ xma/
 ```
 
 `core/` 只是一条迁移期兼容桥，不是第五个平台实现层。
+
+### 2.2 入口命名规则
+
+- 源码开发入口必须带 `-dev`：Windows `xma-dev.bat`，Linux/macOS `xma-dev`；
+- 普通用户安装器固定为 `xma-install.ps1` / `xma-install.sh`；
+- 安装后的正式产品命令固定为 `xiaoyu`（主）与 `xma`（兼容别名）；Windows portable 内部使用 `xiaoyu.cmd / xma.cmd`；
+- 禁止恢复根 `XMA.bat` / `xma.bat` 作为源码开发入口，避免与正式 `xma` 产品命令概念冲突；
+- 维护者专用 `XMA-Sync.bat` / `XMA-GitHub.bat` 保持独立职责，不属于普通用户启动链。
 
 ## 3. 稳定 Platform Package
 

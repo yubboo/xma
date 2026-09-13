@@ -1,6 +1,6 @@
 /**
  * 文件作用：防止 XMA Windows 固定工作流脚本在后续开发中被删坏或体验回退。
- * 关联模块：XMA.bat、XMA-Sync.bat、XMA-GitHub.bat、scripts/windows/*.ps1。
+ * 关联模块：xma-dev.bat、XMA-Sync.bat、XMA-GitHub.bat、scripts/windows/*.ps1。
  * 当前实现：检查文件存在、PS1 UTF-8 BOM + CRLF、菜单推荐项、仓库/目标目录和窗口保留提示。
  * 职责边界：这里只检查静态约定，真实 Windows 行为仍必须由 Windows CI/用户环境验证。
  */
@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 
 const required = [
-  'XMA.bat', 'XMA-Sync.bat', 'XMA-GitHub.bat',
+  'xma-dev.bat', 'XMA-Sync.bat', 'XMA-GitHub.bat',
   'scripts/windows/xma-common.ps1',
   'scripts/windows/xma-console.ps1',
   'scripts/windows/xma-sync.ps1',
@@ -41,6 +41,17 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
+const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
+for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1']) {
+  if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
+}
+if (/H:\\|H:\//i.test(devLauncherSource)) {
+  throw new Error('xma-dev.bat must not hardcode maintainer drive paths.')
+}
+if (existsSync('XMA.bat') || existsSync('xma.bat')) {
+  throw new Error('Source-development launcher must be xma-dev.bat; xma.bat/XMA.bat would collide conceptually with the installed xma product command.')
+}
+
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')",
@@ -128,9 +139,19 @@ for (const marker of [
   '源码包目录只负责 Source Sync',
   'git.exe ls-files --cached --others --exclude-standard',
   "git.exe' -ArgumentList @('add','-A')",
+  "git.exe' -ArgumentList @('update-index','--add','--chmod=+x'",
   "git.exe' -ArgumentList @('push','-u','origin','main')",
 ]) {
   if (!githubSource.includes(marker)) throw new Error(`GitHub helper pure-Git contract regression: missing ${marker}`)
+}
+
+const readmeSource = readFileSync('README.md', 'utf8')
+for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`']) {
+  if (!readmeSource.includes(marker)) throw new Error(`README public source quick-start contract missing: ${marker}`)
+}
+const windowsWorkflowSource = readFileSync('docs/development/WINDOWS-WORKFLOW.md', 'utf8')
+for (const marker of ['公共源码快速开始', '任意目录 / 任意盘符', 'XMA_TARGET_ROOT', '维护者 Source Manifest 同步工作流']) {
+  if (!windowsWorkflowSource.includes(marker)) throw new Error(`Windows workflow portability contract missing: ${marker}`)
 }
 
 const agentRulesSource = readFileSync('AGENTS.md', 'utf8')

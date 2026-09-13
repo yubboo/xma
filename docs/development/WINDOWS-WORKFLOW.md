@@ -1,14 +1,38 @@
-# Windows 固定开发工作流
+# Windows 开发与源码快速开始工作流
 
-## 目录
+## 公共源码快速开始：任意目录 / 任意盘符
 
-源码包示例：`H:\一键部署\xma-0.1.0`
+公共 GitHub 用户、贡献者或维护者换新电脑后，可以把仓库 clone 到任意本地目录；源码开发**不依赖 `H:` 盘或固定目录**：
 
-Git 工作目录固定：`H:\一键部署\xma`
+```powershell
+git clone https://github.com/yubboo/xma.git
+cd xma
+.\xma-dev.bat
+```
+
+`xma-dev.bat` 是 **Windows 源码开发控制台**，不是安装后的正式 `xma` 产品命令。它使用 `%~dp0` 定位当前仓库，然后委托 `scripts/windows/xma-console.ps1`；首次机器在菜单选择 `[1] 一键准备开发环境`，之后可选择 Web / Desktop / Xiaoyu CLI / 全量检查。
+
+正式产品安装后的命令是 `xiaoyu`（主）与 `xma`（兼容别名）；Windows portable 内部文件为 `xiaoyu.cmd / xma.cmd`。源码开发入口固定叫 `xma-dev.bat`，两者不得混用。
+
+Git clone 工作区**不需要** `XMA-Sync.bat`。如需提交自己的改动，使用常规 Git 流程；`XMA-GitHub.bat` 是维护者辅助工具，不是运行项目的前置条件。
+
+## 维护者 Source Manifest 同步工作流
+
+当前维护者源码包示例：`H:\一键部署\xma-0.1.0`
+
+当前维护者默认 Git 工作目录：`H:\一键部署\xma`
 
 GitHub：`https://github.com/yubboo/xma.git`
 
-## 固定流程
+`H:\一键部署\xma` 只是维护者默认值，不是产品路径合同。换电脑或目录时先设置：
+
+```powershell
+$env:XMA_TARGET_ROOT = 'D:\Dev\xma'
+```
+
+`XMA-Sync.bat` 与 `XMA-GitHub.bat` 已读取 `XMA_TARGET_ROOT`；公共源码开发入口 `xma-dev.bat` 完全不需要这个变量。
+
+### 固定同步流程
 
 ```text
 解压 xma-0.1.0.zip
@@ -22,13 +46,13 @@ GitHub：`https://github.com/yubboo/xma.git`
 选择 1. 一键推送（纯 Git，不安装/下载任何依赖）
 ```
 
-## 三个 Windows 入口的职责边界
+## Windows 入口的职责边界
 
 - `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 `.xma/source-sync-last.txt`，避免只显示 Manifest 总文件数造成“是否真的同步成功”不明确。
-- `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。
-- `XMA.bat`：负责本地基础环境、项目运行、检查和构建。
+- `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。由于 Windows 文件系统没有 Unix executable bit，暂存后必须用纯 Git `update-index --chmod=+x` 保证 `xma-dev`、`scripts/unix/xma-console.sh`、`scripts/install/xma-install.sh` 在 Linux/macOS clone 后可执行。
+- `xma-dev.bat`：负责本地基础环境、项目运行、检查和构建。
 
-## XMA.bat 的依赖准备规则
+## xma-dev.bat 的依赖准备规则
 
 `[1] 一键准备开发环境` 是首次运行的推荐入口，必须一次完成：
 
@@ -56,7 +80,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 
 固定要求：
 
-- `XMA.bat -> [4]` 每次启动前运行 Cargo `--offline` 增量构建当前 `xma-native-runtime`；
+- `xma-dev.bat -> [4]` 每次启动前运行 Cargo `--offline` 增量构建当前 `xma-native-runtime`；
 - 不下载 crates；缺依赖时明确要求先运行 `[1]`，不得静默联网；
 - CLI 建立 stdio Native Client 后继续校验必需 capability；缺能力时 fail loud，禁止进入“能打开 TUI、但 API Key 永远保存不了”的半工作状态；
 - Provider/Model 配置异常只在 TUI 内提示，不得因为未配置 Brain、模型发现失败或 Probe 失败把整个 Xiaoyu 进程退出。

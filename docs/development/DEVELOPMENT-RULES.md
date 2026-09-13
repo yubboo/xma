@@ -263,9 +263,9 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 - 新增 Git、pnpm、cargo、rustup、winget 等外部命令时必须用命名参数 `-FilePath` 与 `-ArgumentList`。
 - PowerShell 5.1 读取 UTF-8 JSON/中文文本时必须显式 `-Encoding UTF8`。
 
-## 14. pnpm / Windows 项目依赖准备规则
+## 14. 源码开发项目依赖准备规则
 
-- `XMA.bat -> [1] 一键准备开发环境` 是首次运行唯一推荐入口，一次准备系统工具、Workspace JS metadata、esbuild Native Binary 与 XMA Native Rust crates。
+- Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
 - `[1]` 使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime。
 - Web / CLI 已准备后直接运行，不再次安装依赖。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。
@@ -302,7 +302,7 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 - Electron/Tauri 准备；
 - winget 或任何环境安装。
 
-Git 不存在时只能提示用户先运行 `XMA.bat → [1]`。
+Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitHub Helper 本身不得安装环境。
 
 ### 仓库内容
 
@@ -323,8 +323,16 @@ Git 不存在时只能提示用户先运行 `XMA.bat → [1]`。
 
 - 正式终端命令使用 `xiaoyu`；`xma` 只做兼容 alias。
 - Terminal/Desktop/Web/Server 只做 Host，不得复制 Core Agent Runtime。
-- 普通用户 installer 只安装预构建资产，不得 clone 源码或运行 pnpm/cargo/MSVC。
+- 普通用户 installer 固定为 `xma-install.ps1`（Windows）/ `xma-install.sh`（Linux/macOS），只安装预构建资产，不得 clone 源码或运行 pnpm/cargo/MSVC。
 - Windows 使用 `%LOCALAPPDATA%\Programs\Xiaoyu` + User PATH；Unix 使用 `~/.local/share/xiaoyu` + `~/.local/bin`。
 - 安装资产必须 HTTPS + SHA-256 + staging 验证后再替换正式目录；开发缓存、源码、`node_modules` 不得进入用户包。
 - Home/根目录属于高风险 Workspace，Terminal 必须默认拒绝并要求“仅本次信任”。
 - 当前第一批 portable bundle 内置 Node Runtime；Node SEA 只作为未来优化，不得先于安装/升级/回滚合同。
+
+### 源码开发入口与路径可移植性
+
+- 公共 Git clone 必须可以位于任意本地目录；Windows `xma-dev.bat` 与 Linux/macOS `xma-dev` 都不得依赖维护者机器绝对路径。
+- Windows `xma-dev.bat` 只做稳定入口，环境准备实现归属 `scripts/windows/xma-prepare.ps1`；Linux/macOS `xma-dev` 委托 `scripts/unix/xma-console.sh`。
+- 正式安装后的产品命令是 `xiaoyu`（主）与 `xma`（兼容别名）；源码入口必须始终包含 `-dev`，不得产生根 `xma.bat` / `xma` 开发启动器与产品命令撞名。
+- `H:\一键部署\xma` 只属于维护者 Source Manifest 默认工作流；该流程必须允许 `XMA_TARGET_ROOT` 覆盖，不能反向污染产品/源码启动逻辑。
+

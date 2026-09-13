@@ -1,5 +1,5 @@
 ﻿<#
-文件作用：Xiaoyu Windows 独立一键安装/升级/卸载 bootstrap，可通过 `irm .../install.ps1 | iex` 运行。
+文件作用：Xiaoyu Windows 独立一键安装/升级/卸载器；正式 Release 资产名固定为 `xma-install.ps1`。
 关联模块：GitHub Release `release-manifest.json`、scripts/release、portable xiaoyu bundle。
 当前实现：按 CPU 架构选择预构建资产、HTTPS 下载、SHA-256 校验、staging 验证、每用户安装、用户 PATH 更新与卸载。
 职责边界：普通用户安装不得 clone 源码、运行 pnpm/cargo/MSVC；脚本只安装官方预构建发行资产，不保存 Provider Secret。
@@ -105,6 +105,7 @@ try {
   Write-Host "[目录] $InstallDir" -ForegroundColor DarkGray
   Write-Host '[下一步] 新开一个 PowerShell / Windows Terminal，然后在任意项目目录运行：' -ForegroundColor Cyan
   Write-Host '  xiaoyu' -ForegroundColor White
+  Write-Host '[兼容] 也可使用短别名：xma' -ForegroundColor DarkGray
   Write-Host ''
 } finally {
   if (Test-Path $tempRoot) { Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue }

@@ -1,6 +1,6 @@
 /**
  * 文件作用：为 `xiaoyu` 一键安装器生成跨平台 Release Manifest 与 checksums.txt。
- * 关联模块：scripts/release/cli.ts、scripts/install/windows.ps1、scripts/install/unix.sh、GitHub Releases。
+ * 关联模块：scripts/release/cli.ts、scripts/install/xma-install.ps1、scripts/install/xma-install.sh、GitHub Releases。
  * 当前实现：扫描 `dist/release` 的 xiaoyu-<os>-<arch> 归档，计算 SHA-256，并生成统一可下载资产目录。
  * 职责边界：Manifest 只描述已生成资产；不能替代平台签名、公证，也不能把源码包伪装成用户安装包。
  */

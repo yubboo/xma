@@ -35,7 +35,7 @@ foreach ($file in $requiredFiles) {
   if (-not (Test-Path $file)) { $needsPrepare = $true }
 }
 if ($needsPrepare) {
-  throw '构建所需开发环境或通用 Workspace 依赖不完整。请先运行 XMA.bat → [1] 一键准备开发环境；构建流程不会重复安装 Workspace 依赖。'
+  throw '构建所需开发环境或通用 Workspace 依赖不完整。请先运行 xma-dev.bat → [1] 一键准备开发环境；构建流程不会重复安装 Workspace 依赖。'
 }
 
 Write-Host '[依赖] 正在复用 [1] 已准备的 Workspace JavaScript / Rust 依赖；构建流程不会再次执行 pnpm install。' -ForegroundColor DarkCyan
@@ -88,8 +88,8 @@ Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @(
   "--version=$ProjectVersion",
   "--base-url=$releaseBaseUrl"
 )
-Copy-Item (Join-Path $Root 'scripts\install\windows.ps1') (Join-Path $release 'install.ps1') -Force
-Copy-Item (Join-Path $Root 'scripts\install\unix.sh') (Join-Path $release 'install.sh') -Force
+Copy-Item (Join-Path $Root 'scripts\install\xma-install.ps1') (Join-Path $release 'xma-install.ps1') -Force
+Copy-Item (Join-Path $Root 'scripts\install\xma-install.sh') (Join-Path $release 'xma-install.sh') -Force
 Write-Host "[完成] Xiaoyu Terminal 安装资产：$cliArchive" -ForegroundColor Green
 Write-Host '[说明] 普通用户安装包不包含源码/node_modules/Cargo cache，也不要求 pnpm/Rust/MSVC。' -ForegroundColor DarkGray
 

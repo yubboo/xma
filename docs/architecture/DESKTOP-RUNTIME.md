@@ -19,7 +19,7 @@ Electron 是 XMA 默认 Desktop Runtime。项目将版本**精确锁定为 `41.2
 
 代价是 Electron Runtime 较大。因此 XMA 必须遵守**惰性下载**：
 
-- `XMA.bat -> [1] 一键准备开发环境` 不下载 Electron Chromium Runtime；
+- `xma-dev.bat -> [1] 一键准备开发环境` 不下载 Electron Chromium Runtime；
 - Web / CLI 不下载 Electron；
 - 只有用户明确进入 `Desktop -> Electron` 或构建 Electron 发布包时，才执行 Electron postinstall 下载 Chromium Runtime；
 - XMA 使用 Electron 官方 `@electron/get` 下载并显示实时进度，直接使用其返回的、已经 checksum 校验的 ZIP 路径；

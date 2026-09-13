@@ -2,3 +2,7 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.ps1 text eol=crlf
+
+# Unix launchers/installers must keep LF. Executable mode is enforced by the Windows Git helper for canonical Unix entrypoints.
+*.sh text eol=lf
+xma-dev text eol=lf

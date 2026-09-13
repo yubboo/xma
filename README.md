@@ -19,11 +19,63 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 - 产品级 `skills/`：首批 Task Planning / Verification / Bug Fixing / Code Testing；
 - `xiaoyu` Terminal CLI/TUI、Desktop、Web、Server 四种 Shell；
 - Desktop：Electron 41.2.0 主运行时 + Tauri 2 备用运行时；
-- Windows 一键环境、同步、GitHub 推送、构建发布入口；
+- Windows/Linux/macOS 源码开发入口 + Windows 维护者同步/GitHub/构建辅助；
 - Architecture / Naming / Comment / Documentation Gates；
 - 版本规则与开发文档。
 
 > 0.1.0 是平台骨架，不代表 Minecraft、Code、Writer 已经产品完成。
+
+## 快速开始
+
+普通用户不需要 clone 源码，也不需要安装 Node.js、pnpm、Rust、Cargo 或 MSVC。XMA 正式 Release 使用预构建 portable runtime。
+
+### Windows
+
+```powershell
+powershell -ep Bypass -c "irm https://github.com/yubboo/xma/releases/latest/download/xma-install.ps1 | iex"
+```
+
+### Linux / macOS
+
+```bash
+curl -fsSL https://github.com/yubboo/xma/releases/latest/download/xma-install.sh | sh
+```
+
+安装完成后，三个平台统一使用：
+
+```text
+xiaoyu
+```
+
+`xma` 保留为兼容短别名。Windows 发行包内部对应 `xiaoyu.cmd / xma.cmd`，Linux/macOS 对应 `xiaoyu / xma`；它们与源码开发入口完全分开。
+
+> `releases/latest` 只有在真实 GitHub Release 已发布并包含对应资产后才可使用；未发布 Release 时不得把上面的公网命令描述为已可用。
+
+## 源码开发
+
+源码开发入口固定使用 **`xma-dev`** 命名，避免与安装后的正式 `xma` 产品命令混淆。仓库可以 clone 到任意本地目录或盘符，不依赖维护者机器的 `H:`。
+
+Windows：
+
+```powershell
+git clone https://github.com/yubboo/xma.git
+cd xma
+.\xma-dev.bat
+```
+
+首次进入菜单选择 `[1] 一键准备开发环境`，然后 `[4]` 启动 Xiaoyu CLI。
+
+Linux / macOS：
+
+```bash
+git clone https://github.com/yubboo/xma.git
+cd xma
+./xma-dev
+```
+
+Unix 源码控制台支持 `prepare / web / desktop / cli / check`，也可以直接运行例如 `./xma-dev cli`。普通用户安装不走这套源码开发工具链。
+
+> **Git clone 用户不需要运行 `XMA-Sync.bat`。** `XMA-Sync.bat` / `XMA-GitHub.bat` 是维护者 Source Manifest 工作流；`H:\一键部署\xma` 只是当前维护者默认目标，可通过 `XMA_TARGET_ROOT` 覆盖。
 
 ## 目录
 
@@ -35,7 +87,7 @@ plugins/    具体 Provider / Tool / Compatibility / 领域插件（一个插件
 skills/     XMA 产品级专业 Skill
 native/     Rust Native / Security Kernel
 core/       0.1.x Compatibility Facade only
-scripts/    Windows 控制台、同步、GitHub、构建、Gates
+scripts/    开发控制台、安装、同步、GitHub、构建、Gates
 docs/       架构、规则、计划、安全文档
 ```
 
@@ -66,7 +118,9 @@ Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context 
 
 未来 Codex、Claude Code、DeepSeek Harness、Zcode 属于外部 **Host**，Provider 属于模型 **Brain**；二者不会混进 Core Agent 定义。
 
-## Windows 固定流程
+## 维护者源码包同步流程（Windows）
+
+下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。
 
 开发源码包解压后：
 
@@ -83,7 +137,7 @@ XMA-GitHub.bat
 开发运行和构建：
 
 ```text
-XMA.bat
+xma-dev.bat
 ```
 
 菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
@@ -91,7 +145,7 @@ XMA.bat
 
 ## Terminal / Distribution 第一批
 
-XMA 的终端主命令固定为 `xiaoyu`，`xma` 仅保留兼容别名。开发源码继续通过 `XMA.bat` 准备依赖；普通用户发行则使用预构建 portable runtime，不要求安装 Node/pnpm/Rust/MSVC。
+XMA 的终端主命令固定为 `xiaoyu`，`xma` 仅保留兼容别名。源码开发使用 Windows `xma-dev.bat` 或 Linux/macOS `./xma-dev`；普通用户安装使用 `xma-install.ps1 / xma-install.sh` 获取预构建 portable runtime，不要求安装 Node/pnpm/Rust/MSVC。
 
 ```text
 xiaoyu [workspace]   持续 Terminal Workbench

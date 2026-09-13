@@ -29,6 +29,12 @@
 
 | 我要找什么 | 主要位置 |
 | --- | --- |
+| Windows 源码开发控制台 | `xma-dev.bat` → `scripts/windows/xma-console.ps1` |
+| Linux/macOS 源码开发控制台 | `xma-dev` → `scripts/unix/xma-console.sh` |
+| Windows 普通用户安装器 | `scripts/install/xma-install.ps1` |
+| Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |
+| Windows 维护者 Source Sync | `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1` |
+| Windows 维护者 GitHub Helper | `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1` |
 | CLI / TUI | `apps/cli/` |
 | Desktop | `apps/desktop/` |
 | Web | `apps/web/` |

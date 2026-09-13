@@ -303,7 +303,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
     }
   }
 } else {
-  Write-Host '[提示] 当前系统还没有 Git；源码已同步，请先通过 XMA.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
+  Write-Host '[提示] 当前系统还没有 Git；源码已同步，请先通过 xma-dev.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
 }
 
 Write-Host '[完成] XMA 新源码已同步；.git / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green

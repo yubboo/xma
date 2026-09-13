@@ -117,7 +117,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - 普通文件名/目录名优先 **1～3 个核心词**，不得靠堆词描述整句职责；路径已经表达领域时，文件名禁止重复父目录，例如 `session/store.ts`，不要 `session/session-store.ts`；
 - **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
 - 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
-- 顶层固定启动器 `XMA.bat`、`XMA-GitHub.bat`、`XMA-Sync.bat` 以及 Windows `xma-*.ps1` 属于稳定外部入口，保留既有产品前缀，不按父目录去重；
+- 顶层源码开发入口 `xma-dev.bat`（Windows）/ `xma-dev`（Linux/macOS）、维护者入口 `XMA-GitHub.bat` / `XMA-Sync.bat` 以及平台脚本属于稳定外部入口；命名必须明确区分源码开发与正式产品命令。
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
 当前平台主要 ownership 已迁到：`packages/xma-agent-loop/`、`packages/xma-ai/`、`packages/xma-plugin/`、`packages/xma-tools/`、`packages/xma-session/`、`packages/xma-context/`、`packages/xma-native/`；插件按本体聚合在 `plugins/deepseek/`、`plugins/native-tools/`、`plugins/dsh-compat/`。`core/` 只允许 Compatibility Facade 与尚未迁出的薄层。
@@ -192,7 +192,11 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - 禁止包名：`hotfix`、`fixed`、`final`、`v2`、`new` 等临时后缀。
 - 交付文件固定：`xma-<version>.zip` 与 `xma-<version>.sha256.txt`。
 
-## 10. Windows 固定开发流程（锁死）
+## 10. Windows 开发与源码引导流程（锁死）
+
+公共 Git clone / 源码开发入口必须与机器路径无关：Windows 使用根 `xma-dev.bat`，Linux/macOS 使用根 `xma-dev`；二者只能从自身位置解析仓库根，禁止硬编码 `H:`、用户目录或任意开发者机器绝对路径。源码开发入口必须带 `-dev`，不得占用安装后正式产品命令 `xma`。
+
+`H:\一键部署\xma` 仅是当前维护者 Source Manifest 工作流默认目录；换机可通过 `XMA_TARGET_ROOT` 覆盖。Git clone 用户不需要运行 `XMA-Sync.bat`。
 
 源码包解压示例：
 
@@ -202,11 +206,12 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 
 `XMA-Sync.bat` → 同步到 `H:\一键部署\xma` → `XMA-GitHub.bat` → `1. 一键推送`
 
-开发/构建使用 `XMA.bat`。
+源码开发/构建：Windows 使用 `xma-dev.bat`；Linux/macOS 使用 `./xma-dev`。正式安装后的产品命令仍是 `xiaoyu` 主命令与 `xma` 兼容别名。
 
 所有 BAT 只负责稳定启动；复杂逻辑必须放到配套 PowerShell：
 
-- `XMA.bat` → `scripts/windows/xma-console.ps1`
+- `xma-dev.bat` → `scripts/windows/xma-console.ps1`
+- `xma-dev` → `scripts/unix/xma-console.sh`
 - `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1`
 - `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1`
 - 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。同步结果必须区分本次“新增 / 更新 / 删除 / 未变化”，Manifest 总文件数不得冒充本次实际变更数；完整变更清单保存到目标工作目录 `.xma/source-sync-last.txt`。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。
@@ -224,9 +229,9 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `XMA-GitHub.bat` / `xma-github.ps1` 是**纯 Git 工具**，只允许执行 Git 仓库初始化/状态、安全扫描、远端同步、暂存、提交、Push。
 - `XMA-GitHub.bat` / `xma-github.ps1` 必须拒绝包含 `.xma-package/source-manifest.json` 的正式源码包/解压目录；首次 `git init` 只允许发生在已经由 `XMA-Sync.bat` 建立 `.xma/source-sync.json` 的长期工作目录。禁止在 `xma-<version>` 源码包目录静默创建第二个 Git 仓库。
 - GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron/Tauri 依赖准备、winget 安装或任何环境准备。
-- 依赖下载和环境安装只允许由 `XMA.bat` 的“一键准备环境”、开发运行或构建发布流程触发。
-- GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备开发环境`，不得擅自安装。
-- Git 提交必须同时受 `.gitignore` 与 GitHub Safety 二次校验保护；即使文件被误暂存，禁止路径也必须拒绝提交。
+- 依赖下载和环境安装只允许由显式源码开发准备入口（Windows `xma-dev.bat → [1]`、Linux/macOS `./xma-dev prepare`）、开发运行或构建发布流程触发；普通用户 `xma-install.*` 只允许安装预构建发行资产，不得转成源码构建。
+- GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `xma-dev.bat → [1] 一键准备开发环境`，不得擅自安装。
+- Git 提交必须同时受 `.gitignore` 与 GitHub Safety 二次校验保护；即使文件被误暂存，禁止路径也必须拒绝提交。Windows Git Helper 暂存 Unix 公共入口时必须通过 `git update-index --chmod=+x` 保留 `xma-dev` / Unix shell 脚本 executable bit。
 - 必须提交用于可复现构建的源码锁文件，例如 `pnpm-lock.yaml`、`Cargo.lock`；不得提交依赖目录、构建产物、运行数据、用户工作区、Secret、安装包和本地缓存。
 
 ## 10.1 Distribution / Terminal 产品入口（锁死）
@@ -235,7 +240,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - CLI/TUI、Desktop、Server、Web 都是同一 Core/App Protocol 的 Host，禁止各自复制 Agent Loop。
 - 普通用户安装必须使用**预构建发行资产**；禁止要求用户 clone 源码、执行 `pnpm install`、`cargo build`、安装 MSVC 或把 `node_modules/.cache/target` 打进安装包。
 - Windows 默认每用户安装到 `%LOCALAPPDATA%\Programs\Xiaoyu`，只修改 User PATH；Linux/macOS 默认使用 `~/.local/bin` + `~/.local/share/xiaoyu`，不默认要求 root。
-- `scripts/install/windows.ps1` 与 `scripts/install/unix.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。
+- `scripts/install/xma-install.ps1` 与 `scripts/install/xma-install.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。
 - portable Terminal bundle 第一批内置 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel；未来可评估 Node SEA，但不能因此破坏可验证升级和安全边界。
 - Terminal 打开 Home/文件系统根目录必须显式警告，默认退出，只允许用户“仅本次信任”；不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
 - Terminal Home/Prompt Dock 必须按终端高度保留可操作留白；命令/设置/Provider/模型等 Overlay 打开时必须进入 modal focus，背景输入区只保留紧凑状态 Dock，并隐藏无关快捷键/提示，禁止 Overlay 与 Prompt 在常见 Windows Terminal 高度下视觉挤压。对话区、输入 Dock、快捷键与提示区之间必须保留稳定空行，不能把所有组件堆在底部。Terminal 模式固定支持 `Build → Plan → Compose (legacy)`，Tab / Shift+Tab 循环切换：Build 使用完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具；三者继续使用用户当前选择的同一个真实 Provider/Model，禁止把 Plan 实现成隐藏 Planner。Prompt Dock 必须持续显示 Mode + Provider/Model + Reasoning，并用稳定颜色区分状态。品牌 Provider 首次配置流程优先固定为 API Key → 真实模型 → 推理强度 → Brain Ready，避免无关表单打断主路径。
@@ -266,7 +271,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 
 ## Windows 依赖准备硬规则
 
-- `XMA.bat -> [1] 一键准备开发环境` 是首次运行的唯一推荐入口：一次准备系统工具、全部 Workspace JavaScript 依赖元数据、esbuild Native Binary 与 XMA Native Rust crates。
+- Windows 源码开发首次运行推荐 `xma-dev.bat -> [1] 一键准备开发环境`；Linux/macOS 使用 `./xma-dev prepare`。两者只服务源码开发，不能与正式 `xma` 产品命令混淆。
 - `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
 - Web / CLI 在 `[1]` 成功后不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。`[4] Xiaoyu Terminal` 例外必须在启动前执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建：Source Sync 会保留 `.cache/`，因此严禁直接信任缓存中可能来自上一版源码的 Native 可执行文件。Windows CLI 构建必须使用 `.cache/cargo-target/cli/` 独立 target，并把构建结果复制到 `.cache/native-runtime/runs/` 的唯一 staging exe 后再启动，禁止直接运行/覆盖 Cargo target 中可能被旧进程锁定的 exe。该构建只使用 `[1]` 已预取 crates，不允许偷偷联网下载。
 - TypeScript Host 启动 Native Runtime 后必须核对当前产品依赖的 capability 集；缓存/portable Native 缺少 `credential.*` 等必需能力时必须 fail loud 并给出重建/升级提示，禁止降级成“OS Credentials 不可用”后让用户在配置流程里无提示失败。
@@ -282,7 +287,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - XMA Desktop 固定采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**。
 - Electron 必须精确锁定 `41.2.0`，不得用 `^` 自动漂移；升级必须经过显式任务和验证。
 - Electron / electron-builder 只能存在于 `apps/desktop/`，禁止放到根 `package.json` 让 Web/CLI/Core 被迫下载桌面运行时。
-- `XMA.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime；`electron` 不进入 pnpm `allowBuilds`，并禁止用 `pnpm rebuild electron` 触发隐式下载。
+- `xma-dev.bat -> [1] 一键准备开发环境` 可以安装 Electron package 元数据但严禁执行 Electron postinstall；只有 Desktop -> Electron 或 Electron 构建才下载 Chromium Runtime；`electron` 不进入 pnpm `allowBuilds`，并禁止用 `pnpm rebuild electron` 触发隐式下载。
 - Electron 发布包通过 `file://` 加载打包 staging 中的 `web/`；Desktop staging 固定在 `.cache/desktop/electron/app/`，其中 Web 构建必须使用相对资源基址 `--base ./`。禁止重新生成 `apps/desktop/web/` 或 `/assets/...` 绝对路径，否则安装后会出现只有原生窗口、Web UI 空白的故障。
 - Electron Runtime 安装采用确定性链路：`@electron/get` 返回已校验 ZIP 路径后，Windows 必须使用系统 PowerShell `Expand-Archive` 解压到 staging，经版本/可执行文件校验后再原子替换 `dist` 并写 `path.txt`。Windows 固定使用系统解压链，避免把 Runtime 安装成功与 Node ZIP 流实现绑定；项目同时固定 `pnpm-workspace.yaml -> overrides.yauzl >= 3.3.1` 保护 Electron Builder 与非 Windows 构建链。
 - Electron 下载 ZIP 默认缓存到 XMA 项目根 `.cache/electron/`，不得默认写入 Windows 用户 `%LOCALAPPDATA%`；`.cache/` 属于本地缓存，不进入源码包/Git，同步新版本源码时必须保留。用户显式设置 `electron_config_cache` 时允许覆盖。

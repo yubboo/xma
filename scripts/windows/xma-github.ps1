@@ -48,7 +48,7 @@ function Assert-GitWorkDirectory {
 function Assert-GitAvailable {
   Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
   if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) {
-    throw '未检测到 Git。GitHub 推送助手不会自动安装环境，请先运行 XMA.bat → [1] 一键准备环境。'
+    throw '未检测到 Git。GitHub 推送助手不会自动安装环境，请先运行 xma-dev.bat → [1] 一键准备环境。'
   }
   Write-Host "[通过] $(& git.exe --version)" -ForegroundColor Green
 }
@@ -156,6 +156,14 @@ function Push-All {
 
   Write-Host '[暂存] 正在根据 .gitignore 规则暂存源码变更...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('add','-A')
+
+  # 中文说明：Windows 文件系统没有 Unix executable bit；这些公开 Unix 入口必须在 Git index 中显式标记 +x，
+  # 否则 Linux/macOS clone 后 `./xma-dev` 会因为 100644 权限失败。这里仍然只执行纯 Git 操作。
+  foreach ($unixExecutable in @('xma-dev','scripts/unix/xma-console.sh','scripts/install/xma-install.sh')) {
+    if (Test-Path -LiteralPath (Join-Path $Root $unixExecutable) -PathType Leaf) {
+      Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('update-index','--add','--chmod=+x','--',$unixExecutable)
+    }
+  }
   Assert-StagedFilesSafe
 
   $staged = & git.exe diff --cached --name-only

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT="$ROOT/scripts/unix/xma-console.sh"
+if [ ! -f "$SCRIPT" ]; then
+  echo "[ERROR] scripts/unix/xma-console.sh not found." >&2
+  exit 1
+fi
+exec sh "$SCRIPT" "$@"

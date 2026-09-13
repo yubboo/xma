@@ -11,9 +11,11 @@ XMA 不是“只有 Desktop 安装包”的应用。正式产品必须保持**�
 - Web：浏览器 Shell，连接本地/远程 Server；
 - 所有入口都复用 Core/App Protocol，不得各自复制 Agent Loop。
 
-## 2. 开发环境与普通用户安装必须分开
+## 2. 源码体验/开发环境与普通用户安装必须分开
 
-开发者使用干净 Git clone 后运行 XMA `[1]`，由 lockfile 恢复 `node_modules`、Cargo crates 与本机 `.cache`。普通用户安装**绝对不能** clone 源码或要求安装 pnpm、Rust、Cargo、MSVC。
+源码体验者、贡献者和开发者可以使用干净 Git clone。源码开发入口固定使用 `xma-dev` 命名：Windows 为根 `xma-dev.bat`，Linux/macOS 为根 `./xma-dev`。两者都必须从自身位置解析仓库根，允许任意本地目录/盘符，不依赖维护者机器路径；`xma-dev` 只属于源码开发，不得与安装后的正式 `xma` 产品命令混用。
+
+普通用户的**正式产品安装合同**仍然不能要求 clone 源码或安装 pnpm、Rust、Cargo、MSVC；源码 Quick Start 是可选的开发/体验路径，不得替代预构建 portable 发行。
 
 普通用户收到的是预构建 portable runtime：
 
@@ -47,12 +49,12 @@ Node 在 0.1.x 第一批作为私有 Runtime 一起分发；未来可以评估 N
 
 只把 `%LOCALAPPDATA%\Programs\Xiaoyu\bin` 加入 **User PATH**。程序文件和用户数据必须分开；Session/状态默认进入 `%LOCALAPPDATA%\Xiaoyu\state`，配置/凭据后续由专门 Config/Credentials Service 管理。
 
-Bootstrap `scripts/install/windows.ps1` 必须执行：Release Manifest → 选择 OS/arch → HTTPS 下载 → SHA-256 校验 → staging 文件验证 → 原子替换 → User PATH。禁止在普通用户安装器里执行 `pnpm install`、`cargo build`、`winget` 开发环境安装。
+Bootstrap `scripts/install/xma-install.ps1` 必须执行：Release Manifest → 选择 OS/arch → HTTPS 下载 → SHA-256 校验 → staging 文件验证 → 原子替换 → User PATH。禁止在普通用户安装器里执行 `pnpm install`、`cargo build`、`winget` 开发环境安装。
 
 最终网站可暴露类似：
 
 ```powershell
-irm https://<xiaoyu-domain>/install.ps1 | iex
+powershell -ep Bypass -c "irm https://<xiaoyu-domain>/xma-install.ps1 | iex"
 ```
 
 在正式域名/Release 资产部署前，文档不得宣称该公网命令已经可用。仓库已经提供 tag-triggered `.github/workflows/release.yml`，冻结版本打 `v<version>` tag 后会在 Windows/Linux/macOS 原生 Runner 构建 portable 资产并发布统一 Manifest。
@@ -60,11 +62,11 @@ irm https://<xiaoyu-domain>/install.ps1 | iex
 在正式 Release 存在后，可先使用 GitHub Release bootstrap 做 E2E：
 
 ```powershell
-irm https://github.com/yubboo/xma/releases/latest/download/install.ps1 | iex
+powershell -ep Bypass -c "irm https://github.com/yubboo/xma/releases/latest/download/xma-install.ps1 | iex"
 ```
 
 ```bash
-curl -fsSL https://github.com/yubboo/xma/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/yubboo/xma/releases/latest/download/xma-install.sh | sh
 ```
 
 后续官方网站只托管/转发同一 bootstrap 合同，不另造安装逻辑。
@@ -81,7 +83,7 @@ curl -fsSL https://github.com/yubboo/xma/releases/latest/download/install.sh | s
 
 Linux 状态目录优先使用 `$XDG_STATE_HOME/xiaoyu`，否则 `~/.local/state/xiaoyu`。macOS 产品状态使用 `~/Library/Application Support/Xiaoyu/state`。
 
-Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `checksums.txt`，必须在解压/替换前完成 SHA-256 校验。若 `~/.local/bin` 不在 PATH，只提示用户加入 shell profile；安装脚本不擅自修改任意 shell 配置文件。
+Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和 `checksums.txt`，必须在解压/替换前完成 SHA-256 校验。若 `~/.local/bin` 不在 PATH，只提示用户加入 shell profile；安装脚本不擅自修改任意 shell 配置文件。
 
 ## 5. Terminal Runtime
 
@@ -124,8 +126,8 @@ dist/release/
 ├─ xiaoyu-macos-*.tar.gz
 ├─ release-manifest.json
 ├─ checksums.txt
-├─ install.ps1
-├─ install.sh
+├─ xma-install.ps1
+├─ xma-install.sh
 ├─ electron/
 └─ tauri/
 ```
@@ -141,4 +143,4 @@ Windows 资产在 Windows 构建，Linux 资产在 Linux 构建，macOS 资产�
 
 ### Windows 源码开发 Native staging
 
-`XMA.bat → [4]` 在源码开发态不得直接运行 Cargo target 中的 `xma-native-runtime.exe`。Windows 会锁定正在运行的 exe，因此 CLI 必须在 `.cache/cargo-target/cli/` 离线增量构建，并复制到 `.cache/native-runtime/runs/` 的唯一运行副本；旧运行副本可延迟清理，不能阻断新版本启动。
+`xma-dev.bat → [4]` 在 Windows 源码开发态不得直接运行 Cargo target 中的 `xma-native-runtime.exe`。Linux/macOS 的 `./xma-dev cli` 可直接使用当前源码对应的 Unix Native build。Windows 会锁定正在运行的 exe，因此 CLI 必须在 `.cache/cargo-target/cli/` 离线增量构建，并复制到 `.cache/native-runtime/runs/` 的唯一运行副本；旧运行副本可延迟清理，不能阻断新版本启动。

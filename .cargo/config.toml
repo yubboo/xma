@@ -1,5 +1,5 @@
 # 文件作用：把 XMA Rust/Cargo 编译缓存收敛到项目本地 .cache，避免仓库根目录出现 target/。
-# 关联模块：scripts/windows/xma-build-release.ps1、XMA.bat [7] Rust 检查、Tauri 2 备用桌面构建。
+# 关联模块：scripts/windows/xma-build-release.ps1、xma-dev.bat [7] Rust 检查、Tauri 2 备用桌面构建。
 # 当前实现：XMA 根 Rust Workspace 使用 .cache/cargo-target；Desktop staging 也统一进入 .cache/desktop。
 # 职责边界：.cache 只存可删除的开发/编译中间状态；所有正式可交付产品统一进入 dist/，不得新增根 build/ 或 target/。
 

@@ -69,15 +69,31 @@ for (const marker of [
   'XIAOYU_SKILLS_HOME',
   "'web'",
   "'bin', 'xiaoyu.cmd'",
+  "'bin', 'xma.cmd'",
   "for (const name of ['xiaoyu', 'xma'])",
 ]) {
   if (!stage.includes(marker)) throw new Error(`XMA portable bundle marker missing: ${marker}`)
 }
 
-const windowsBytes = readFileSync('scripts/install/windows.ps1')
+
+const sourceDevWindows = text('xma-dev.bat')
+for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1']) {
+  if (!sourceDevWindows.includes(marker)) throw new Error(`XMA Windows source-development launcher marker missing: ${marker}`)
+}
+const sourceDevUnix = text('xma-dev')
+for (const marker of ['dirname -- "$0"', 'scripts/unix/xma-console.sh']) {
+  if (!sourceDevUnix.includes(marker)) throw new Error(`XMA Unix source-development launcher marker missing: ${marker}`)
+}
+const unixDevConsole = text('scripts/unix/xma-console.sh')
+for (const marker of ['prepare_environment', 'start_web', 'start_desktop', 'start_cli', 'full_check', './xma-dev [prepare|web|desktop|cli|check]']) {
+  if (!unixDevConsole.includes(marker)) throw new Error(`XMA Unix source-development console marker missing: ${marker}`)
+}
+if (existsSync('XMA.bat') || existsSync('xma.bat')) throw new Error('XMA source-development launcher must not occupy xma.bat/XMA.bat; installed product owns the xma command name.')
+
+const windowsBytes = readFileSync('scripts/install/xma-install.ps1')
 if (!(windowsBytes[0] === 0xef && windowsBytes[1] === 0xbb && windowsBytes[2] === 0xbf)) throw new Error('XMA Windows bootstrap must use UTF-8 BOM for PowerShell 5.1.')
 if (!windowsBytes.toString('utf8').includes('\r\n')) throw new Error('XMA Windows bootstrap must use CRLF.')
-const windows = text('scripts/install/windows.ps1')
+const windows = text('scripts/install/xma-install.ps1')
 for (const marker of [
   "Programs\\Xiaoyu",
   "SetEnvironmentVariable('Path'",
@@ -92,7 +108,7 @@ for (const forbidden of ['pnpm ', 'cargo ', 'winget ', 'git clone']) {
   if (windows.toLowerCase().includes(forbidden)) throw new Error(`XMA Windows end-user installer must not require development dependency: ${forbidden}`)
 }
 
-const unix = text('scripts/install/unix.sh')
+const unix = text('scripts/install/xma-install.sh')
 for (const marker of [
   '$HOME/.local/share',
   '$HOME/.local/bin',
@@ -107,7 +123,7 @@ for (const forbidden of ['pnpm ', 'cargo ', 'git clone']) {
 }
 
 const release = text('scripts/windows/xma-build-release.ps1')
-for (const marker of ['scripts/release/cli.ts', 'scripts/release/manifest.ts', 'install.ps1', 'install.sh']) {
+for (const marker of ['scripts/release/cli.ts', 'scripts/release/manifest.ts', 'xma-install.ps1', 'xma-install.sh']) {
   if (!release.includes(marker)) throw new Error(`XMA Windows release distribution marker missing: ${marker}`)
 }
 const manifestSource = text('scripts/release/manifest.ts')
@@ -117,8 +133,19 @@ for (const marker of ["argument('directory', 'dist/release')", "'release-manifes
 
 
 const workflow = text('.github/workflows/release.yml')
-for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
+for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
   if (!workflow.includes(marker)) throw new Error(`XMA cross-platform release workflow marker missing: ${marker}`)
+}
+
+const readme = text('README.md')
+for (const marker of [
+  'powershell -ep Bypass -c "irm https://github.com/yubboo/xma/releases/latest/download/xma-install.ps1 | iex"',
+  'curl -fsSL https://github.com/yubboo/xma/releases/latest/download/xma-install.sh | sh',
+  '.\\xma-dev.bat',
+  './xma-dev',
+  'xiaoyu.cmd / xma.cmd',
+]) {
+  if (!readme.includes(marker)) throw new Error(`XMA README install/development entrypoint marker missing: ${marker}`)
 }
 
 const architecture = text('docs/architecture/DISTRIBUTION.md')

@@ -89,8 +89,8 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
           pnpm exec tsx scripts/release/manifest.ts --directory=dist/release --version="$version" --base-url="$base"
-          cp scripts/install/windows.ps1 dist/release/install.ps1
-          cp scripts/install/unix.sh dist/release/install.sh
+          cp scripts/install/xma-install.ps1 dist/release/xma-install.ps1
+          cp scripts/install/xma-install.sh dist/release/xma-install.sh
       - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}

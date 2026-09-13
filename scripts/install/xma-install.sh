@@ -1,5 +1,5 @@
 #!/bin/sh
-# 文件作用：Xiaoyu Linux/macOS 独立一键安装/升级 bootstrap，可通过 curl | sh 运行。
+# 文件作用：Xiaoyu Linux/macOS 独立一键安装/升级器；正式 Release 资产名固定为 xma-install.sh。
 # 关联模块：GitHub Releases、scripts/release、portable xiaoyu bundle。
 # 当前实现：检测 OS/CPU、下载预构建 tar.gz 与 checksums、SHA-256 校验、每用户原子安装并创建 ~/.local/bin 命令。
 # 职责边界：普通用户安装不得 clone 源码或要求 pnpm/cargo；macOS/Linux 发行资产必须分别在对应系统构建。
@@ -74,7 +74,7 @@ version="$(cat "$INSTALL_ROOT/VERSION")"
 echo ''
 echo "[完成] Xiaoyu $version 已安装：$INSTALL_ROOT"
 case ":$PATH:" in
-  *":$BIN_HOME:"*) echo '[下一步] 在任意项目目录运行：xiaoyu' ;;
+  *":$BIN_HOME:"*) echo '[下一步] 在任意项目目录运行：xiaoyu（兼容短别名：xma）' ;;
   *)
     echo "[提示] $BIN_HOME 尚未在 PATH。将下面一行加入你的 shell profile 后重新打开终端："
     echo "  export PATH=\"$BIN_HOME:\$PATH\""

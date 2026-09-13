@@ -55,3 +55,18 @@
 - Source Manifest：本批正式源码树共 202 个受管文件；正式 ZIP 只允许包含这 202 个文件 + `.xma-package/source-manifest.json`。
 - 状态：Stage S0（Platform Skeleton v1）收口完成；下一开发阶段正式进入 Stage P1：按固定 Pi commit 做 Agent Engine 行为级研究与 `xma-ai / xma-agent-loop` 吸收。
 - 下一步：先产出 Pi Agent Loop capability/behavior 对照与 XMA migration checklist，再逐项实现 streaming lifecycle、parallel/sequential tools、steering/follow-up、cancellation/error settlement；不进行 flag-day Runtime 重写。
+
+##06 · 公共安装与源码开发入口统一
+
+- 日期：2026-09-13
+- 目的：彻底区分“普通用户安装后的正式产品命令”和“源码开发控制台”，避免开发入口 `XMA.bat` / `xma.bat` 与正式 `xma` 命令混淆，并让 Windows / Linux / macOS 都有清晰入口。
+- 正式产品：主命令固定为 `xiaoyu`，`xma` 仅为兼容短别名；Windows portable 内部为 `xiaoyu.cmd / xma.cmd`，Linux/macOS 为 `xiaoyu / xma`。普通用户不 clone 源码、不安装 pnpm/Rust/MSVC。
+- 一行安装：Windows Release 资产统一命名 `xma-install.ps1`，Linux/macOS 统一命名 `xma-install.sh`；README 使用 `releases/latest/download/xma-install.*`，只有真实 Release 资产存在时才允许宣称公网命令可用。
+- 源码开发：旧 `XMA.bat` 退出，Windows 固定根入口 `xma-dev.bat` → `scripts/windows/xma-console.ps1`；Linux/macOS 新增根 `xma-dev` → `scripts/unix/xma-console.sh`。源码入口必须带 `-dev`，绝不占用正式 `xma` 产品命令。
+- 路径合同：`xma-dev.bat / xma-dev` 都从自身位置解析仓库根，允许任意本地目录/盘符；`H:\一键部署\xma` 仍只属于维护者 Source Manifest 默认目标。Git clone 用户不需要 `XMA-Sync.bat`。Windows Git Helper 会为 canonical Unix 入口写入 Git executable bit，避免跨平台 clone 后 `./xma-dev` 失效。
+- 发行脚本：canonical installer 改为 `scripts/install/xma-install.ps1` / `scripts/install/xma-install.sh`，Release workflow 与 Windows release builder 均发布同名资产；安装器继续使用预构建 portable runtime + SHA-256 校验。
+- 可发现性：`CODEMAP.md` 明确区分产品安装、源码开发、维护者 Sync/GitHub Helper；`README.md` 顶部优先展示普通用户一行安装，源码开发独立成节。
+- 验证：Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9 项 PASS；57 个可离线执行 TypeScript 测试 PASS；修改 Gate 的 targeted `tsc --noEmit` PASS；`xma-dev`、Unix console、`xma-install.sh` 均通过 `sh -n`。
+- Source Manifest：本批 204 个受管源码文件；相对上一个已推送 Skeleton 基线为新增 5、更新 24、删除 3、未变化 175。
+- 未验证边界：当前环境不能替代 Windows/Linux/macOS 三平台真实 Release 安装 E2E；公网 `releases/latest` 只有发布对应 Release 资产后才算可用。
+- 下一步：Stage P1 顺延为 `##07 · Pi Agent Engine 行为研究与迁移设计`，先列行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。

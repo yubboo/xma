@@ -1,6 +1,6 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
-关联模块：XMA.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
+关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
 当前实现：[1] 一次准备通用开发依赖；Web 直接启动；CLI 启动前在独立 Cargo target 离线增量构建 Native，并以唯一 staging exe 启动；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
 职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
