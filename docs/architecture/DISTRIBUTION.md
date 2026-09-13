@@ -86,6 +86,10 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 `xiaoyu [workspace]` 是正式 Terminal Workbench。第一批必须具备：
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
+- Terminal UI 使用固定 `@earendil-works/pi-tui@0.74.0` 提供差分渲染、真实 Editor、CJK/IME 光标与输入历史；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
+- Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
+- `/` 使用真实 Editor autocomplete，只展示已经实现的 Terminal 命令；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$/ctrl+p` 等尚未接线的入口；
+- Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - `xiaoyu --help / --version / doctor`；
 - `xiaoyu server / web` 发行入口；
 - Home / 文件系统根目录风险确认，只允许“退出”或“仅本次信任”；

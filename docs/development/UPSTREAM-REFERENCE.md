@@ -246,3 +246,10 @@ Rust Native/Security Kernel
 吸收：stable Workspace identity、Owner boundary、显式跨 Workspace grant、Session durable audit、Context read scope、Tool/Native 双层 enforcement。
 
 拒绝：把 cwd 当 Workspace identity；允许 Agent 直接创建其他 Agent 的 Owner Session；把 UI Approval 当 Workspace ACL；Context Source 未授权先读后过滤；仅靠 TypeScript path string 判断替代 Rust canonical confinement。
+
+
+## 12. Terminal TUI 视觉参考 · MiMo Code
+
+本批只把 `XiaomiMiMo/MiMo-Code` 作为 **Terminal UI/UX 视觉参考**，固定参考 commit `6fbb1732232c9d0ecefee209798a8586d78cb70d`（MIT）。重点审阅 `packages/opencode/src/cli/cmd/tui/routes/home.tsx`、`component/prompt/index.tsx`、`component/logo.tsx` 与中文 i18n 提示：吸收居中 Home、约 75 列 Prompt、真实输入区、状态/快捷键弱化层级与适度背景装饰。
+
+XMA 不复制 MiMo 品牌、Logo、文案、Agent/Provider/命令体系，也不把 MiMo 的 Bun/OpenTUI Runtime 直接搬入项目。MiMo 当前 TUI 依赖 OpenTUI/Bun，而 XMA 发行基线仍是 Node 22；因此本批选用 Node 兼容并固定的 `@earendil-works/pi-tui@0.74.0` 作为渲染/Editor 基础，只替换 CLI TUI 层，不改变 Core Agent Runtime、Workspace Policy、Tool Approval 或 Rust Native Kernel。

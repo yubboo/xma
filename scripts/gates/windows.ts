@@ -54,6 +54,8 @@ for (const marker of [
   'Electron Chromium Runtime 不会在这里下载',
   'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'package/lockfile/node_modules 是否仍一致',
+  "$cliTuiPackage = Join-Path $Root 'apps\\cli\\node_modules\\@earendil-works\\pi-tui\\package.json'",
+  'Xiaoyu TUI framework 已准备完成',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -65,6 +67,16 @@ if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) {
 }
 if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')")) {
   throw new Error('XMA preparation must not prefetch Tauri Rust crates')
+}
+
+
+const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
+for (const marker of [
+  'function Assert-CliJsDependencies',
+  '@earendil-works\\pi-tui\\package.json',
+  'Assert-CliJsDependencies\r\n  Assert-DesktopJsDependencies',
+]) {
+  if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
 }
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。

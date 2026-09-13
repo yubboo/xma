@@ -155,10 +155,11 @@ $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
 $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
 $tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
 $tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
+$cliTuiPackage = Join-Path $Root 'apps\cli\node_modules\@earendil-works\pi-tui\package.json'
 $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
 $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
 
-$jsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
+$jsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $cliTuiPackage) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
 if ($jsReady) {
   Write-Host '[同步] Workspace 依赖已存在，正在快速校验 package/lockfile/node_modules 是否仍一致...' -ForegroundColor DarkCyan
 } else {
@@ -180,6 +181,11 @@ Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version
 # 中文说明：esbuild 是 Vite/tsx/tsup 的内部依赖，不要求根目录暴露 `esbuild` 可执行文件。
 # 使用 tsx 执行一段最小 TypeScript 来验证 esbuild Native Binary 真正可用，避免 pnpm strict linker 下 `pnpm exec esbuild` 误报找不到命令。
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
+
+if (-not (Test-Path $cliTuiPackage)) { throw 'Xiaoyu TUI package 元数据缺失。' }
+$installedTui = (Get-Content $cliTuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
+if ($installedTui -ne '0.74.0') { throw "Xiaoyu TUI package 版本不一致：期望 0.74.0，实际 $installedTui。" }
+Write-Host "[通过] Xiaoyu TUI framework 已准备完成：@earendil-works/pi-tui $installedTui。" -ForegroundColor Green
 
 if (-not (Test-Path $desktopElectronPackage)) { throw 'Desktop Electron package 元数据缺失。' }
 $installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version

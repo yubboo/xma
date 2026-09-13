@@ -13,9 +13,11 @@ function text(file: string): string {
 }
 
 const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string> }
-const cliPackage = JSON.parse(text('apps/cli/package.json')) as { bin?: Record<string, string> }
+const cliPackage = JSON.parse(text('apps/cli/package.json')) as { bin?: Record<string, string>; dependencies?: Record<string, string> }
 if (cliPackage.bin?.xiaoyu !== '../../dist/cli/main.js') throw new Error('XMA canonical CLI command must be `xiaoyu`.')
 if (cliPackage.bin?.xma !== '../../dist/cli/main.js') throw new Error('XMA must keep `xma` as a compatibility alias.')
+if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Xiaoyu TUI must pin the Node-compatible Pi TUI runtime at 0.74.0.')
+if (!(rootPackage.scripts?.['build:cli'] ?? '').includes('--no-external @earendil-works/pi-tui')) throw new Error('Xiaoyu portable CLI must bundle the TUI runtime instead of depending on global node_modules.')
 if (!(rootPackage.scripts?.test ?? '').includes('apps/cli/tests/*.test.ts')) throw new Error('XMA tests must include apps/cli/tests.')
 if (rootPackage.scripts?.['release:cli-stage'] !== 'tsx scripts/release/cli.ts') throw new Error('XMA portable CLI staging script is missing.')
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm gate:distribution')) throw new Error('pnpm check must include Distribution Gate.')
@@ -38,7 +40,7 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['Workspace 安全确认', '仅本次信任', 'while (true)', 'Tool Approval', '当前 Session 允许', '/doctor', '/exit']) {
+for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SlashAutocompleteProvider', 'setAutocompleteProvider', "matchesKey(data, 'ctrl+c')", 'Tool Approval', '当前 Session 允许', '/doctor', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
 }
 

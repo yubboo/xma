@@ -205,6 +205,7 @@ XMA 长期参考：
 
 - `xiaoyu` canonical command + `xma` compatibility alias；
 - 持续 TUI，而不是欢迎页打印后退出；
+- 固定 Pi TUI 0.74.0 作为 Node 22 兼容终端渲染层：真实 Editor、CJK/IME、差分刷新、历史与已实现命令的 `/` 自动补全；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
 - 第一批环境变量 OpenAI-compatible Brain；

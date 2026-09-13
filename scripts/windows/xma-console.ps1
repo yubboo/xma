@@ -12,6 +12,7 @@ Set-Location $Root
 $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
+$TuiVersion = '0.74.0'
 
 function Write-Header {
   Clear-Host
@@ -42,6 +43,17 @@ function Assert-CoreDependencies {
       throw 'XMA 通用项目依赖尚未准备。请先运行 [1] 一键准备开发环境。'
     }
   }
+}
+
+function Assert-CliJsDependencies {
+  Assert-CoreDependencies
+  $tuiPackage = Join-Path $Root 'apps\cli\node_modules\@earendil-works\pi-tui\package.json'
+  if (-not (Test-Path $tuiPackage)) {
+    throw 'Xiaoyu TUI 依赖尚未准备。源码升级后请先运行 [1] 一键准备开发环境。'
+  }
+  $installedTui = (Get-Content $tuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
+  if ($installedTui -ne $TuiVersion) { throw "Xiaoyu TUI 版本不一致：期望 $TuiVersion，实际 $installedTui。" }
+  Write-Host "[通过] Xiaoyu TUI framework 已就绪（@earendil-works/pi-tui $installedTui）。" -ForegroundColor Green
 }
 
 function Assert-DesktopJsDependencies {
@@ -101,7 +113,7 @@ function Start-Web {
 }
 
 function Start-Cli {
-  Assert-CoreDependencies
+  Assert-CliJsDependencies
   Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
 }
@@ -150,6 +162,7 @@ function Start-Desktop {
 
 function Invoke-FullCheck {
   Assert-CoreDependencies
+  Assert-CliJsDependencies
   Assert-DesktopJsDependencies
   if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。' }
   Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
