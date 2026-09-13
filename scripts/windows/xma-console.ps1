@@ -1,9 +1,15 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖；Web 直接启动；CLI 启动前在独立 Cargo target 离线增量构建 Native，并以唯一 staging exe 启动；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
+当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；Web 直接启动；CLI 支持从任意当前目录直达 Workspace，并在独立 Cargo target 离线增量构建 Native；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
 职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
+
+param(
+  [ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]
+  [string]$Command = 'menu',
+  [string]$Workspace = ''
+)
 
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -157,13 +163,19 @@ function Ensure-CliNativeRuntime {
   return $runExe
 }
 
-function Start-Cli {
+function Start-Cli([string]$WorkspacePath = '') {
   $nativeExe = Ensure-CliNativeRuntime
   $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
   $env:XIAOYU_NATIVE_RUNTIME = $nativeExe
   try {
+    $cliArguments = @('run','dev:cli')
+    if (-not [string]::IsNullOrWhiteSpace($WorkspacePath)) {
+      $resolvedWorkspace = (Resolve-Path -LiteralPath $WorkspacePath).Path
+      $cliArguments += @('--', $resolvedWorkspace)
+      Write-Host "[Workspace] $resolvedWorkspace" -ForegroundColor DarkGray
+    }
     Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
+    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList $cliArguments
   } finally {
     if ($null -eq $previousNativeRuntime) { Remove-Item Env:XIAOYU_NATIVE_RUNTIME -ErrorAction SilentlyContinue } else { $env:XIAOYU_NATIVE_RUNTIME = $previousNativeRuntime }
     try { Remove-Item -LiteralPath $nativeExe -Force -ErrorAction Stop } catch {
@@ -227,6 +239,19 @@ function Invoke-FullCheck {
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('check','--workspace','--offline')
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('test','--workspace','--offline')
   Write-Host '[完成] XMA 全量检查通过。' -ForegroundColor Green
+}
+
+if ($Command -ne 'menu') {
+  switch ($Command) {
+    'prepare' { Prepare-Environment }
+    'web' { Start-Web }
+    'desktop' { Start-Desktop }
+    'cli' { Start-Cli -WorkspacePath $Workspace }
+    'check' { Invoke-FullCheck }
+    'release' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1'); if ($LASTEXITCODE -ne 0) { throw '构建失败' } }
+    'release-windows' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1') -WindowsPackages; if ($LASTEXITCODE -ne 0) { throw 'Windows 发布构建失败' } }
+  }
+  exit 0
 }
 
 while ($true) {

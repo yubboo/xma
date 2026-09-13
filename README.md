@@ -63,7 +63,9 @@ cd xma
 .\xma-dev.bat
 ```
 
-首次进入菜单选择 `[1] 一键准备开发环境`，然后 `[4]` 启动 Xiaoyu CLI。
+首次进入菜单选择 `[1] 一键准备开发环境`。准备完成后会为**当前源码 checkout**生成开发态 `xiaoyu / xma` 命令并写入当前用户 `User PATH`；新开 PowerShell / Windows Terminal 后，可以在任意 Workspace 目录直接输入 `xiaoyu` 或 `xma` 启动这份源码。菜单 `[4]` 仍保留用于从开发控制台启动 CLI。
+
+开发态命令使用仓库内被忽略的 `.xma\dev-bin` shim，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后重新运行 `xma-dev.bat → [1]` 即会刷新。
 
 Linux / macOS：
 
@@ -154,7 +156,7 @@ xiaoyu server        Headless Server（发行包）
 xiaoyu web           本地 Web + Server（发行包）
 ```
 
-Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provider` 可以配置真实 Provider Profile；当前首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留。Secret 默认通过 OS Credentials 稳定别名保存，环境变量路径继续兼容；`brain.json` 只保存引用，不写 Secret。Brain Ready 会做真实 catalog/text/tool round trip Probe。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
+Terminal 已接正式 Workspace/Session Runtime。启动 `xiaoyu` 后先执行 Workspace Trust；**若当前没有任何已配置 Brain/Profile，进入 TUI 后会自动打开首次 Brain / Provider 配置**，完成后后续启动不再重复弹出。`Ctrl+P → Brain / Provider` 始终保留，用于后续新增账号/Profile、切换 Provider/Model、修改推理强度或重新执行 Brain Ready。当前首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留。Secret 默认通过 OS Credentials 稳定别名保存，环境变量路径继续兼容；`brain.json` 只保存引用，不写 Secret。Brain Ready 会做真实 catalog/text/tool round trip Probe。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
 
 发行架构、Windows `%LOCALAPPDATA%\Programs\Xiaoyu`、Linux/macOS `~/.local` 合同与一键安装 bootstrap 见 `docs/architecture/DISTRIBUTION.md`。公网 `irm/curl` 安装命令只有在 Release/域名真实部署后才算可用。
 

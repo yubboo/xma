@@ -150,3 +150,5 @@ Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；
 完整 Workbench UI 仍后置；现有 UI 参考继续由 `DESKTOP-WORKBENCH.md` 保存。
 
 详细分阶段出口见 `DEVELOPMENT-PLAN.md`。
+
+- Terminal 启动流程已增加首次无 Brain 自动引导：Workspace Trust 后仅在没有已配置 Profile 时打开 Provider 配置；Ctrl+P 长期管理不变。Windows 开发环境 `[1]` 会注册当前 checkout 的 `.xma/dev-bin` 到 User PATH，便于在任意 Workspace 直接运行开发态 `xiaoyu / xma`。

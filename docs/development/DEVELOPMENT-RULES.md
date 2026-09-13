@@ -138,6 +138,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
 - “Brain Ready”必须有真实请求证据；fixture/mock 不能改变产品 Ready 状态。
+- Terminal 首次没有已配置 Brain/Profile 时，Workspace Trust 通过后必须自动进入 Provider 配置；已有 Profile 的后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 必须始终可用，首次引导不能替代长期管理入口。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
 - **Provider Truth Contract：** 用户选择的 `providerId + profileId + modelId` 必须对应真实请求目标，禁止隐藏换模、隐藏降级、便宜模型代跑或本地 Planner 接管正常推理。
@@ -266,6 +267,7 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 ## 14. 源码开发项目依赖准备规则
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
+- Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.xma/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
 - `[1]` 使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime。
 - Web / CLI 已准备后直接运行，不再次安装依赖。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。

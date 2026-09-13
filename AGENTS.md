@@ -48,6 +48,7 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - Provider-specific thinking/reasoning/tool/usage 能力必须按真实 API Contract 透传和验证；XMA 不伪造模型没有提供的能力，也不得为了统一接口主动把顶级模型能力裁成最低公分母。若 thinking+tools 协议强制要求隐藏续传状态，必须用 Adapter-owned opaque continuation 保持真实协议语义，不得因为 XMA 的统一消息格式把该能力静默关掉。
 - **Canonical Tool Name ≠ Provider wire function name。** XMA Core/ToolPlan 可使用带 `.` / `:` / `/` 的稳定领域名；若目标 Provider 的 function/tool name 线协议更严格，必须只在 Provider Adapter 边界做稳定可逆映射，并在模型 Tool Call 回流时恢复 canonical 名。禁止为了迎合某一家 API 改坏 Core Tool identity，也禁止把不合法 canonical 名原样发送导致真实模型请求失败。
 - Provider/Profile/Model 配置属于可恢复的产品交互：凭据写入、Profile 保存、模型发现、Probe 任一步失败都必须在当前 Host 内明确提示并保持进程可用；禁止未处理 Promise/异常因为“Brain 未配置/模型目录失败”直接终止 CLI/TUI。Profile 一旦持久化成功，后续模型目录或 Probe 失败不得反向伪装成“Provider 保存失败”或清除已保存 Profile。
+- Terminal 首次没有已配置 Brain/Profile 时，Workspace Trust 通过后必须自动进入真实 Provider 配置；Profile 一旦存在，后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 是长期管理入口，始终保留。
 
 ## 4. Agent / Workspace / Plugin / Skill / Host 边界
 
@@ -118,6 +119,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
 - 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
 - 顶层源码开发入口 `xma-dev.bat`（Windows）/ `xma-dev`（Linux/macOS）、维护者入口 `XMA-GitHub.bat` / `XMA-Sync.bat` 以及平台脚本属于稳定外部入口；命名必须明确区分源码开发与正式产品命令。
+- Windows `xma-dev.bat → [1]` 可以注册开发态 `xiaoyu / xma`，但只允许把仓库内本地状态 `.xma/dev-bin` 加到当前用户 User PATH；禁止把整个仓库或维护脚本目录加入 PATH，禁止写 Machine PATH。
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
 当前平台主要 ownership 已迁到：`packages/xma-agent-loop/`、`packages/xma-ai/`、`packages/xma-plugin/`、`packages/xma-tools/`、`packages/xma-session/`、`packages/xma-context/`、`packages/xma-native/`；插件按本体聚合在 `plugins/deepseek/`、`plugins/native-tools/`、`plugins/dsh-compat/`。`core/` 只允许 Compatibility Facade 与尚未迁出的薄层。

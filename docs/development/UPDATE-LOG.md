@@ -70,3 +70,17 @@
 - Source Manifest：本批 204 个受管源码文件；相对上一个已推送 Skeleton 基线为新增 5、更新 24、删除 3、未变化 175。
 - 未验证边界：当前环境不能替代 Windows/Linux/macOS 三平台真实 Release 安装 E2E；公网 `releases/latest` 只有发布对应 Release 资产后才算可用。
 - 下一步：Stage P1 顺延为 `##07 · Pi Agent Engine 行为研究与迁移设计`，先列行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。
+
+##07 · 首次 Brain 引导与开发态 CLI PATH
+
+- 日期：2026-09-13
+- 目的：让正式/开发 Terminal 的第一次使用更自然，同时让 Windows 开发者在 `[1]` 准备完成后可从任意 Workspace 直接运行当前源码 `xiaoyu / xma`。
+- 首次启动：Workspace Trust 仍发生在进入 TUI 之前；进入 TUI 后仅当当前没有已配置 Brain/Profile 时自动打开“首次配置 Xiaoyu Brain”，沿用现有 API Key → 真实模型目录 → Reasoning → Brain Ready 流程。已有 Profile 的后续启动不再重复弹出。 Workspace 风险识别同时覆盖 Windows 系统目录（例如 `C:\Windows\System32`），默认仍为退出。
+- 长期配置：`Ctrl+P → Brain / Provider` 完整保留，继续负责新增账号/Profile、切换 Provider/Model、修改 Reasoning 与重新 Probe；首次引导不是替代入口。
+- Windows 开发命令：`xma-dev.bat → [1]` 新增第 8 步，在仓库忽略状态 `.xma\dev-bin` 生成 `xiaoyu.cmd / xma.cmd`，并自动写入当前用户 **User PATH**。不修改 Machine PATH，也不把整个 Git 仓库加入 PATH。
+- Workspace 语义：开发 shim 在任意目录调用时把调用者当前目录传给 `xma-dev.bat cli`，因此 `xiaoyu` 从 `D:\Project\foo` 启动就绑定 `D:\Project\foo`，不会被开发控制台切换到 XMA 仓库根。
+- Checkout 切换：同一用户只保留一个激活的 `.xma\dev-bin` PATH entry；在另一份 XMA checkout 重新运行 `[1]` 会替换旧 entry。移动仓库后也只需重跑 `[1]`。
+- 规范：正式 Release `xiaoyu/xma` 与开发 shim 仍是两个发行语义；正式安装器继续使用 `%LOCALAPPDATA%\Programs\Xiaoyu\bin`，开发 shim 只为源码工作流便利。
+- 验证：75 个可离线 TypeScript 测试 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9 项 Gate PASS；本批 CLI/TUI/Windows Gate targeted strict `tsc --noEmit` PASS；`xma-dev`、Unix console、`xma-install.sh` 通过 `sh -n`。完整 root typecheck 仍因当前沙箱缺少 Electron package/types 不能替代 Windows `[7]`；当前环境也不能真实写 Windows User PATH，因此 PATH shim 仍需用户 Windows 实机验收。
+- Source Manifest：204 个受管源码文件；相对当前已推送 `6154e61` 基线预计 Source Sync 为新增 5、更新 29、删除 3、未变化 170，共 37 个实际源码变更。
+- 下一步：Stage P1 顺延为 `##08 · Pi Agent Engine 行为研究与迁移设计`，先列行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。

@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA `xiaoyu` 终端工作台的交互界面、主题、命令分发与 Workspace 风险确认。
  * 关联模块：main.ts、Core Agent Runtime、Workspace、Provider、Tool Approval 与 Native 文件 ToolSet。
- * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、Ctrl+P 命令面板、真实 Provider Catalog/多 Profile/模型切换、终端设置、流式回复与 Tool Approval。
+ * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、首次无 Brain 自动配置、Ctrl+P 长期管理、真实 Provider Catalog/多 Profile/模型切换、终端设置、流式回复与 Tool Approval。
  * 职责边界：TUI 只负责终端视觉和交互；不得复制 Agent Loop、Provider 协议、Workspace Policy 或 Native 安全逻辑。
  */
 
@@ -122,6 +122,10 @@ export interface DoctorItem {
   label: string
   ok: boolean
   detail: string
+}
+
+export function needsInitialBrainSetup(providerConfigured: boolean): boolean {
+  return !providerConfigured
 }
 
 export interface BrainProbeView {
@@ -256,7 +260,7 @@ export interface TerminalBackend {
 
 export interface WorkspaceRisk {
   risky: boolean
-  level: 'normal' | 'home' | 'root'
+  level: 'normal' | 'home' | 'root' | 'system'
   reason?: string
 }
 
@@ -498,6 +502,10 @@ export function workspaceRisk(workspace: string): WorkspaceRisk {
   const normalized = normalizeForCompare(workspace)
   const home = normalizeForCompare(homedir())
   const root = normalizeForCompare(path.parse(path.resolve(workspace)).root)
+  const windowsLike = workspace.replace(/\//g, '\\').replace(/\\+$/g, '')
+  if (/^[A-Za-z]:\\Windows(?:\\|$)/i.test(windowsLike)) {
+    return { risky: true, level: 'system', reason: '当前 Workspace 位于 Windows 系统目录。' }
+  }
   if (normalized === root) {
     return { risky: true, level: 'root', reason: '当前 Workspace 是文件系统根目录，范围过大。' }
   }
@@ -513,7 +521,7 @@ export function renderWorkspaceTrustWarning(
   selected: 'exit' | 'trust' = 'exit',
 ): string {
   if (!risk.risky) return ''
-  const label = risk.level === 'home' ? '用户主目录' : '文件系统根目录'
+  const label = risk.level === 'home' ? '用户主目录' : risk.level === 'system' ? 'Windows 系统目录' : '文件系统根目录'
   const exitMark = selected === 'exit' ? `${green}●${reset}` : `${textFaint}○${reset}`
   const trustMark = selected === 'trust' ? `${green}●${reset}` : `${textFaint}○${reset}`
   return [
@@ -523,7 +531,8 @@ export function renderWorkspaceTrustWarning(
     `${textFaint}│${reset}`,
     `${textFaint}│${reset}  ${text}${workspace}${reset}`,
     `${textFaint}│${reset}`,
-    `${textFaint}│${reset}  ${textSoft}该目录通常包含个人文件、SSH 密钥、凭证或浏览器配置等内容。${reset}`,
+    `${textFaint}│${reset}  ${textSoft}请确认这是你自己创建、维护或明确信任的工作区。${reset}`,
+    `${textFaint}│${reset}  ${textSoft}该目录可能包含个人文件、系统文件、SSH 密钥、凭证或其他敏感内容。${reset}`,
     `${textFaint}│${reset}  ${textSoft}Agent 获得 Workspace Tool 权限后，可能读取或修改该范围内的文件。${reset}`,
     `${textFaint}│${reset}`,
     `${textFaint}│${reset}  ${red}除非你明确需要，否则不要把整个${label}作为 Agent Workspace。${reset}`,
@@ -1210,6 +1219,13 @@ class XiaoyuSurface {
     return `${styled}${spaces(Math.max(0, width - visible))}`
   }
 
+  startInitialBrainSetup(): void {
+    if (!needsInitialBrainSetup(this.backend.providerConfigured) || this.overlayOpen || this.approval) return
+    this.notice = '首次使用 · 请配置 Xiaoyu Brain；以后可随时按 Ctrl+P → Brain / Provider 修改。'
+    this.tui.requestRender()
+    this.openProviderCatalog('首次配置 Xiaoyu Brain')
+  }
+
   openCommandPalette(): void {
     if (this.overlayOpen || this.approval) return
     this.showListOverlay('命令', commandPaletteOptions(), value => {
@@ -1330,9 +1346,9 @@ class XiaoyuSurface {
     }
   }
 
-  private openProviderCatalog(): void {
+  private openProviderCatalog(title = '添加 Provider'): void {
     const catalog = this.backend.listBrainProviderCatalog()
-    this.showListOverlay('添加 Provider', catalog.map(item => ({
+    this.showListOverlay(title, catalog.map(item => ({
       value: `catalog:${item.id}`,
       label: item.displayName,
       description: item.description,
@@ -1791,6 +1807,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
       return undefined
     })
     tui.start()
+    surface.startInitialBrainSetup()
     await new Promise<void>(resolve => surface.setExitResolver(resolve))
   } finally {
     surface.dispose()

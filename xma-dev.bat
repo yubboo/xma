@@ -1,14 +1,27 @@
 @echo off
 setlocal EnableExtensions
+set "CALLER_CWD=%CD%"
 cd /d "%~dp0"
 set "SCRIPT=%~dp0scripts\windows\xma-console.ps1"
 if not exist "%SCRIPT%" (
   echo [ERROR] scripts\windows\xma-console.ps1 not found.
-  pause
+  if "%~1"=="" pause
   exit /b 1
 )
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
+
+if /I "%~1"=="cli" (
+  if "%~2"=="" (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" cli "%CALLER_CWD%"
+  ) else (
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*
+  )
+) else (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*
+)
 set "RC=%ERRORLEVEL%"
+
+if not "%~1"=="" exit /b %RC%
+
 echo.
 if "%RC%"=="0" (
   echo [OK] XMA Development Console finished.

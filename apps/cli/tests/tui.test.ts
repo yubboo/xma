@@ -9,6 +9,7 @@ import {
   cycleTerminalAgentMode,
   DEFAULT_TERMINAL_UI_SETTINGS,
   renderHome,
+  needsInitialBrainSetup,
   renderWorkspaceTrustWarning,
   SafePromptInput,
   slashCommandSuggestions,
@@ -56,9 +57,15 @@ test('CLI ignores the pnpm/npm -- separator before a workspace argument', () => 
   assert.equal(parsed.workspace, path.resolve(workspace))
 })
 
-test('TUI warns for the user home and filesystem root but not a normal project directory', () => {
+test('TUI opens Brain setup only when no Provider profile has been configured', () => {
+  assert.equal(needsInitialBrainSetup(false), true)
+  assert.equal(needsInitialBrainSetup(true), false)
+})
+
+test('TUI warns for home, filesystem root and Windows system directories but not a normal project directory', () => {
   assert.equal(workspaceRisk(homedir()).level, 'home')
   assert.equal(workspaceRisk(path.parse(path.resolve(process.cwd())).root).level, 'root')
+  assert.equal(workspaceRisk('C:\\Windows\\System32').level, 'system')
   const normal = path.join(homedir(), 'xma-project')
   assert.equal(workspaceRisk(normal).risky, false)
 })

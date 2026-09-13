@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates。
-职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载。
+当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +33,55 @@ function Ensure-XmaWinget {
   }
 }
 
+
+function Get-XmaPathEntries([string]$Value) {
+  if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
+  return @($Value.Split(';') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Get-XmaNormalizedPath([string]$Value) {
+  try { $candidate = [IO.Path]::GetFullPath($Value) } catch { $candidate = $Value }
+  return $candidate.TrimEnd([char[]]@('\','/'))
+}
+
+function Install-XmaDevelopmentCommands {
+  # 中文说明：不把整个 Git 仓库加入 PATH，避免把维护脚本/其他文件都暴露为全局命令。
+  # 只生成忽略提交的 .xma\dev-bin shim；它们始终回到当前 checkout 的 xma-dev.bat，并保留用户调用命令时的 Workspace。
+  $devBin = Join-Path $Root '.xma\dev-bin'
+  New-Item -ItemType Directory -Force -Path $devBin | Out-Null
+  $launcher = @'
+@echo off
+setlocal EnableExtensions
+for %%I in ("%~dp0..\..") do set "XMA_DEV_ROOT=%%~fI"
+call "%XMA_DEV_ROOT%\xma-dev.bat" cli "%CD%"
+exit /b %ERRORLEVEL%
+'@
+  foreach ($name in @('xiaoyu.cmd','xma.cmd')) {
+    [IO.File]::WriteAllText((Join-Path $devBin $name), ($launcher -replace "`r?`n", "`r`n"), ([Text.UTF8Encoding]::new($false)))
+  }
+  [IO.File]::WriteAllText((Join-Path $devBin 'source-root.txt'), "$Root`r`n", ([Text.UTF8Encoding]::new($false)))
+
+  $normalizedDevBin = Get-XmaNormalizedPath $devBin
+  $userEntries = @(Get-XmaPathEntries ([Environment]::GetEnvironmentVariable('Path','User')))
+  $nextUserEntries = @($devBin)
+  foreach ($entry in $userEntries) {
+    $normalized = Get-XmaNormalizedPath $entry
+    if ($normalized -ieq $normalizedDevBin) { continue }
+    # 一个开发账号只激活一个 XMA checkout 的 xiaoyu/xma 开发 shim；旧 checkout 的 dev-bin 自动退出 PATH，避免命令指向错误仓库。
+    if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
+    $nextUserEntries += $entry
+  }
+  [Environment]::SetEnvironmentVariable('Path', ($nextUserEntries -join ';'), 'User')
+
+  $processEntries = @(Get-XmaPathEntries $env:Path)
+  if (-not ($processEntries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedDevBin })) {
+    $env:Path = "$devBin;$env:Path"
+  }
+  Write-Host "[通过] 开发态命令已注册到当前用户 PATH：xiaoyu / xma" -ForegroundColor Green
+  Write-Host "[位置] $devBin" -ForegroundColor DarkGray
+  Write-Host '[说明] 这是当前源码 checkout 的开发 shim；移动仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
+}
+
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
@@ -41,7 +90,7 @@ Write-Host '说明：会安装 Workspace JavaScript 依赖、esbuild Native Bina
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
 
-Write-Host '[1/7] Git' -ForegroundColor Cyan
+Write-Host '[1/8] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
 if (Get-Command git.exe -ErrorAction SilentlyContinue) {
   Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green
@@ -57,7 +106,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
 }
 
 Write-Host ''
-Write-Host '[2/7] Node.js 22+' -ForegroundColor Cyan
+Write-Host '[2/8] Node.js 22+' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js。' -ForegroundColor Yellow
@@ -84,7 +133,7 @@ if ($major -lt 22) {
 Write-Host "[通过] Node.js $nodeVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[3/7] pnpm 11.17.0' -ForegroundColor Cyan
+Write-Host '[3/8] pnpm 11.17.0' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 pnpm 版本...' -ForegroundColor DarkCyan
 $pnpmVersion = if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) { (& pnpm.cmd --version).Trim() } else { '' }
 if ($pnpmVersion -ne '11.17.0') {
@@ -99,7 +148,7 @@ if ($pnpmVersion -ne '11.17.0') { throw "pnpm 版本校验失败：期望 11.17.
 Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[4/7] Rust / Cargo' -ForegroundColor Cyan
+Write-Host '[4/8] Rust / Cargo' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
 $hasCargo = [bool](Get-Command cargo.exe -ErrorAction SilentlyContinue)
 $hasRustc = [bool](Get-Command rustc.exe -ErrorAction SilentlyContinue)
@@ -125,7 +174,7 @@ Write-Host "[通过] $(& rustc.exe --version)" -ForegroundColor Green
 Write-Host "[通过] $(& cargo.exe --version)" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[5/7] MSVC C++ Build Tools' -ForegroundColor Cyan
+Write-Host '[5/8] MSVC C++ Build Tools' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Windows C++ 编译与链接工具...' -ForegroundColor DarkCyan
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $msvcReady = $false
@@ -149,7 +198,7 @@ if ($msvcReady) {
 }
 
 Write-Host ''
-Write-Host '[6/7] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
+Write-Host '[6/8] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 XMA Workspace JavaScript 依赖...' -ForegroundColor DarkCyan
 $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
 $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
@@ -194,15 +243,21 @@ if (-not (Test-Path $desktopTauriCmd)) { throw 'Tauri 2 CLI package 未安装完
 Write-Host "[通过] Workspace JavaScript 依赖已准备完成；Electron package 锁定 $ElectronVersion，未要求下载 Chromium Runtime。" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[7/7] XMA Native Rust crates' -ForegroundColor Cyan
+Write-Host '[7/8] XMA Native Rust crates' -ForegroundColor Cyan
 Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
 Write-Host '[同步] 正在预取 XMA Native Runtime 所需 Rust crates...' -ForegroundColor Yellow
 Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')
 Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green
 
 Write-Host ''
+Write-Host '[8/8] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
+Write-Host '[PATH] 正在生成当前源码 checkout 的 xiaoyu/xma 开发命令并写入当前用户 PATH...' -ForegroundColor DarkCyan
+Install-XmaDevelopmentCommands
+
+Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 开发环境与通用项目依赖已准备完成。' -ForegroundColor Green
-Write-Host '[可直接运行] Web / XiaoYu CLI / 全量检查不再重复安装依赖。' -ForegroundColor Cyan
+Write-Host '[可直接运行] Web / Xiaoyu CLI / 全量检查不再重复安装依赖。' -ForegroundColor Cyan
+Write-Host '[开发命令] 新开 PowerShell / Windows Terminal 后，可在任意 Workspace 直接输入 xiaoyu 或 xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host "[Desktop] Electron $ElectronVersion Chromium Runtime 仍只在你明确选择 Electron 时下载；Tauri 2 Rust crates 仍只在选择 Tauri 时预取。" -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan

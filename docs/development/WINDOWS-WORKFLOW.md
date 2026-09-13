@@ -72,6 +72,8 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
 - `[5]/[6] 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行构建；不得再次执行 `pnpm install`。
 
+`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，再委托 `xma-dev.bat cli` 启动；不会因为 `xma-console.ps1` 自己切回仓库根而丢失用户 Workspace。一个用户只保留一个激活的 `.xma\dev-bin` PATH entry；切换 checkout 后重新运行 `[1]`。
+
 `esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
 
 ## Source Sync 后的 Native 一致性

@@ -42,7 +42,7 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
-for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1']) {
+for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', '-File "%SCRIPT%" %*']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
 }
 if (/H:\\|H:\//i.test(devLauncherSource)) {
@@ -67,8 +67,16 @@ for (const marker of [
   'package/lockfile/node_modules 是否仍一致',
   "$cliTuiPackage = Join-Path $Root 'apps\\cli\\node_modules\\@earendil-works\\pi-tui\\package.json'",
   'Xiaoyu TUI framework 已准备完成',
+  'function Install-XmaDevelopmentCommands',
+  "$devBin = Join-Path $Root '.xma\\dev-bin'",
+  "@('xiaoyu.cmd','xma.cmd')",
+  "[Environment]::SetEnvironmentVariable('Path', ($nextUserEntries -join ';'), 'User')",
+  '[8/8] 开发态 Xiaoyu 命令',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
+}
+if (/SetEnvironmentVariable\([^)]*['"]Machine['"][^)]*\)/i.test(prepareSource)) {
+  throw new Error('XMA development preparation must not modify Machine PATH; use current-user PATH only')
 }
 if (prepareSource.includes("@('exec','esbuild','--version')")) {
   throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
@@ -86,6 +94,9 @@ for (const marker of [
   'function Assert-CliJsDependencies',
   '@earendil-works\\pi-tui\\package.json',
   'Assert-CliJsDependencies\r\n  Assert-DesktopJsDependencies',
+  "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]",
+  "'cli' { Start-Cli -WorkspacePath $Workspace }",
+  "$cliArguments += @('--', $resolvedWorkspace)",
 ]) {
   if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
 }
@@ -146,7 +157,7 @@ for (const marker of [
 }
 
 const readmeSource = readFileSync('README.md', 'utf8')
-for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`']) {
+for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`', '.xma\\dev-bin', 'User PATH', '首次 Brain / Provider 配置']) {
   if (!readmeSource.includes(marker)) throw new Error(`README public source quick-start contract missing: ${marker}`)
 }
 const windowsWorkflowSource = readFileSync('docs/development/WINDOWS-WORKFLOW.md', 'utf8')

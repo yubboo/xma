@@ -30,6 +30,7 @@
 | 我要找什么 | 主要位置 |
 | --- | --- |
 | Windows 源码开发控制台 | `xma-dev.bat` → `scripts/windows/xma-console.ps1` |
+| Windows 开发态 `xiaoyu / xma` PATH shim | `scripts/windows/xma-prepare.ps1` → `.xma/dev-bin/`（本地生成，不提交） |
 | Linux/macOS 源码开发控制台 | `xma-dev` → `scripts/unix/xma-console.sh` |
 | Windows 普通用户安装器 | `scripts/install/xma-install.ps1` |
 | Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |

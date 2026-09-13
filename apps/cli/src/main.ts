@@ -2,7 +2,7 @@
 /**
  * 文件作用：XMA `xiaoyu` 命令的产品入口，解析参数并把 Terminal Shell 接到正式 Agent Runtime。
  * 关联模块：tui.ts、core Runtime/Workspace/Session、OpenAI-compatible Provider、Server/Web 发行入口。
- * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、Xiaoyu Code Agent/Skill Context、真实 Provider Catalog/多 Profile/OS Credentials/Brain Ready、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
+ * 当前实现：xiaoyu TUI、Workspace 安全确认、首次无 Brain 自动配置、持久 Session、Xiaoyu Code Agent/Skill Context、真实 Provider Catalog/多 Profile/OS Credentials/Brain Ready、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
  * 职责边界：本文件只做 Product Launcher；Agent 推理、Tool 安全、Provider 协议和 Native 权限必须继续由 Core/Plugin/Rust 层实现。
  */
 
@@ -75,7 +75,7 @@ function helpText(currentVersion: string): string {
     '  xiaoyu --help',
     '',
     'Brain：',
-    '  在 Terminal 内按 Ctrl+P → Brain / Provider 添加真实 Provider Profile（首批：DeepSeek 官方 API）。',
+    '  首次启动且尚未配置 Brain 时会自动进入 Provider 配置；之后可随时按 Ctrl+P → Brain / Provider 修改。',
     '  使用 /model 可从当前 Provider 的真实模型目录切换模型。',
     '  默认把 API Key 安全保存到 OS Credentials；Profile 只保存引用，不保存 Secret。',
     '  自定义 API Key 环境变量仍作为兼容配置方式保留。',
@@ -321,7 +321,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   const activeView = () => brainStore.list(osCredentialReadiness).find(profile => profile.id === activeProfile?.id)
   const activeProbeKey = () => activeProfile ? `${activeProfile.id}\u0000${activeProfile.model}` : undefined
   const requireActiveProfile = (): TerminalBrainProfile => {
-    if (!activeProfile) throw new Error('Brain 未配置。请在 Ctrl+P → Brain / Provider 中添加 Provider。')
+    if (!activeProfile) throw new Error('Brain 未配置。首次启动会自动引导；也可随时在 Ctrl+P → Brain / Provider 中添加 Provider。')
     return activeProfile
   }
   const credentialMissingMessage = (profile: TerminalBrainProfile): string => {
