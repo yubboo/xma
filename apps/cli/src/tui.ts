@@ -17,6 +17,7 @@ import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-me
 const ESC = '\u001b['
 const reset = `${ESC}0m`
 const bold = `${ESC}1m`
+const blink = `${ESC}5m`
 const underline = `${ESC}4m`
 const orange = `${ESC}38;2;255;126;63m`
 const text = `${ESC}38;2;226;226;226m`
@@ -333,6 +334,20 @@ function cellWidth(value: string): number {
   return width
 }
 
+
+function stripAnsi(value: string): string {
+  return value.replace(/\[[0-9;?]*[ -/]*[@-~]/g, '')
+}
+
+function visibleCellWidth(value: string): number {
+  return cellWidth(stripAnsi(value))
+}
+
+function centeredBlockIndent(columns: number, lines: readonly string[], minPadding = 2): string {
+  const widest = lines.reduce((max, line) => Math.max(max, visibleCellWidth(line)), 0)
+  return spaces(Math.max(minPadding, Math.floor((columns - widest) / 2)))
+}
+
 function truncateCells(value: string, maxWidth: number): string {
   if (maxWidth <= 0) return ''
   let width = 0
@@ -415,8 +430,10 @@ function viewport(): Viewport {
   }
 }
 
-function contentWidth(columns: number): number {
-  return Math.max(48, Math.min(64, columns - 12))
+export function terminalContentWidth(columns: number): number {
+  const safeColumns = Math.max(40, columns)
+  const sidePadding = safeColumns >= 72 ? 20 : 8
+  return Math.max(40, Math.min(132, safeColumns - sidePadding))
 }
 
 export interface TerminalHomeLayout {
@@ -449,6 +466,24 @@ export function terminalHomeLayout(rows: number, overlayOpen = false, tips = tru
     ...(tipRow === undefined ? {} : { tipRow }),
   }
 }
+
+export interface TerminalChatLayout {
+  promptEnd: number
+  hintRow?: number
+}
+
+/** 对话态底部 Dock 整体上移一行，为固定 footer 留出独立呼吸行。 */
+export function terminalChatLayout(rows: number, overlayOpen = false): TerminalChatLayout {
+  const safeRows = Math.max(20, rows)
+  if (overlayOpen) return { promptEnd: safeRows - 3 }
+  const hintRow = safeRows - 3
+  return { promptEnd: hintRow - 2, hintRow }
+}
+
+export function shouldReturnChatToHome(transcriptCount: number, busy: boolean, overlayOpen: boolean): boolean {
+  return transcriptCount > 0 && !busy && !overlayOpen
+}
+
 
 function renderLogo(columns: number, mode: TerminalUiSettings['logo'] = 'auto'): string[] {
   if (mode === 'compact' || columns < 82) {
@@ -491,16 +526,66 @@ function padStyled(value: string, width: number, visibleWidth: (value: string) =
   return `${value}${spaces(Math.max(0, width - visibleWidth(value)))}`
 }
 
-function renderHintLine(width: number): string {
-  const compact = width < 72
-  const plain = compact
-    ? 'tab 模式  ctrl+p 命令  ctrl+k 搜索  ctrl+c 中止'
-    : 'tab / shift+tab 切换模式    ctrl+p 命令    ctrl+k 搜索    / 快捷命令    ctrl+c 中止'
-  const styled = compact
-    ? `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}命令${reset}  ${bold}ctrl+k${reset} ${textSoft}搜索${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-    : `${bold}tab / shift+tab${reset} ${textSoft}切换模式${reset}    ${bold}ctrl+p${reset} ${textSoft}命令${reset}    ${bold}ctrl+k${reset} ${textSoft}搜索${reset}    ${bold}/${reset} ${textSoft}快捷命令${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-  if (cellWidth(plain) <= width) return styled
-  return `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}命令${reset}  ${bold}ctrl+k${reset} ${textSoft}搜索${reset}`
+interface TerminalHintSegment {
+  plain: string
+  styled: string
+}
+
+function distributeHintSegments(width: number, segments: readonly TerminalHintSegment[]): string {
+  if (segments.length === 0) return ''
+  const total = segments.reduce((sum, segment) => sum + cellWidth(segment.plain), 0)
+  if (segments.length === 1) {
+    const outer = Math.max(0, width - total)
+    const left = Math.floor(outer / 2)
+    return `${spaces(left)}${segments[0]!.styled}${spaces(outer - left)}`
+  }
+  const available = Math.max(segments.length - 1, width - total)
+  const gap = Math.max(1, Math.floor(available / (segments.length - 1)))
+  const used = total + gap * (segments.length - 1)
+  const outer = Math.max(0, width - used)
+  const left = Math.floor(outer / 2)
+  let output = spaces(left)
+  segments.forEach((segment, index) => {
+    output += segment.styled
+    if (index < segments.length - 1) output += spaces(gap)
+  })
+  return `${output}${spaces(outer - left)}`
+}
+
+function terminalHintSegments(showEsc: boolean): readonly (readonly TerminalHintSegment[])[] {
+  const tabFull = { plain: 'tab / shift+tab 切换模式', styled: `${bold}tab / shift+tab${reset} ${textSoft}切换模式${reset}` }
+  const tabCompact = { plain: 'tab 模式', styled: `${bold}tab${reset} ${textSoft}模式${reset}` }
+  const command = { plain: 'ctrl+p 命令', styled: `${bold}ctrl+p${reset} ${textSoft}命令${reset}` }
+  const search = { plain: 'ctrl+k 搜索', styled: `${bold}ctrl+k${reset} ${textSoft}搜索${reset}` }
+  const slash = { plain: '/ 快捷命令', styled: `${bold}/${reset} ${textSoft}快捷命令${reset}` }
+  const cancel = { plain: 'ctrl+c 中止', styled: `${bold}ctrl+c${reset} ${textSoft}中止${reset}` }
+  const back = { plain: 'esc 返回', styled: `${bold}esc${reset} ${textSoft}返回${reset}` }
+  const withBack = (segments: readonly TerminalHintSegment[]) => showEsc ? [...segments, back] : segments
+  return [
+    withBack([tabFull, command, search, slash, cancel]),
+    withBack([tabCompact, command, search, slash, cancel]),
+    withBack([command, search, slash, cancel]),
+    withBack([command, search, cancel]),
+    withBack([command]),
+    ...(showEsc ? [[back] as const] : []),
+  ]
+}
+
+function chooseTerminalHintSegments(width: number, showEsc: boolean): readonly TerminalHintSegment[] {
+  for (const segments of terminalHintSegments(showEsc)) {
+    const total = segments.reduce((sum, segment) => sum + cellWidth(segment.plain), 0)
+    if (total + Math.max(0, segments.length - 1) * 2 <= width) return segments
+  }
+  return terminalHintSegments(showEsc).at(-1) ?? []
+}
+
+export function terminalHintPlainLine(width: number, showEsc = false): string {
+  const segments = chooseTerminalHintSegments(width, showEsc)
+  return distributeHintSegments(width, segments.map(segment => ({ ...segment, styled: segment.plain })))
+}
+
+function renderHintLine(width: number, showEsc = false): string {
+  return distributeHintSegments(width, chooseTerminalHintSegments(width, showEsc))
 }
 
 export function commandPaletteOptions(): readonly TuiMenuItem[] {
@@ -589,7 +674,7 @@ export function renderHome(
   backend: Pick<TerminalBackend, 'version' | 'workspace' | 'agentLabel' | 'providerLabel' | 'providerReady'>,
   size: Viewport = viewport(),
 ): string {
-  const width = contentWidth(size.columns)
+  const width = terminalContentWidth(size.columns)
   const left = Math.max(0, Math.floor((size.columns - width) / 2))
   const indent = spaces(left)
   const provider = backend.providerLabel
@@ -1139,6 +1224,15 @@ class XiaoyuSurface {
     this.editor.handleInput(data)
   }
 
+  back(): boolean {
+    if (!shouldReturnChatToHome(this.transcript.length, Boolean(this.activeController), this.overlayOpen)) return false
+    this.editor.setText('')
+    this.transcript.length = 0
+    this.notice = ''
+    this.tui.requestRender()
+    return true
+  }
+
   cancel(): boolean {
     if (this.approval) {
       this.resolveApproval('deny')
@@ -1160,8 +1254,7 @@ class XiaoyuSurface {
   render(width: number): string[] {
     const columns = Math.max(40, width)
     const rows = Math.max(20, this.terminal.rows ?? 24)
-    const cardWidth = contentWidth(columns)
-    const indent = spaces(Math.max(0, Math.floor((columns - cardWidth) / 2)))
+    const cardWidth = terminalContentWidth(columns)
     const screen = Array.from({ length: rows }, () => '')
 
     const place = (row: number, lines: readonly string[]): void => {
@@ -1171,10 +1264,19 @@ class XiaoyuSurface {
       }
     }
 
-    const fullPromptLines = this.renderPromptCard(cardWidth).map(line => `${indent}${line}`)
-    const compactOverlayDock = [`${indent}${orange}▌${reset} ${this.renderPromptStatus(Math.max(24, cardWidth - 3))}`]
-    const promptLines = this.overlayOpen ? compactOverlayDock : fullPromptLines
-    const hintLine = `${indent}${renderHintLine(cardWidth)}`
+    const fullPromptContent = this.renderPromptCard(cardWidth)
+    const compactOverlayContent = [`${orange}▌${reset} ${this.renderPromptStatus(Math.max(24, cardWidth - 3))}`]
+    const promptContent = this.overlayOpen ? compactOverlayContent : fullPromptContent
+    const hintContent = renderHintLine(cardWidth, this.transcript.length > 0)
+    const homeTip = this.busy
+      ? `${SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!} Xiaoyu 正在工作；Ctrl+C 中止`
+      : this.activeNotice() || terminalHomeTip(this.tipIndex, this.backend.providerConfigured, this.backend.providerReady)
+    const clippedTip = truncateCells(homeTip, Math.max(12, cardWidth - 12))
+    const tipContent = `${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
+    const dockIndent = centeredBlockIndent(columns, [...promptContent, hintContent, tipContent], 2)
+    const promptLines = promptContent.map(line => `${dockIndent}${line}`)
+    const hintLine = `${dockIndent}${hintContent}`
+    const tipLine = `${dockIndent}${tipContent}`
 
     if (this.transcript.length === 0) {
       const layout = terminalHomeLayout(rows, this.overlayOpen, this.settings.tips)
@@ -1191,18 +1293,12 @@ class XiaoyuSurface {
       // Home 使用固定底锚点；Overlay 打开时进入 modal focus，只保留一行状态 Dock，背景 Logo/星点/口号全部隐藏，避免与面板互相穿透。
       place(layout.promptEnd - promptLines.length + 1, promptLines)
       if (layout.hintRow !== undefined) screen[layout.hintRow] = hintLine
-      if (layout.tipRow !== undefined) {
-        const spinner = SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!
-        const tip = this.busy
-          ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止`
-          : this.activeNotice() || terminalHomeTip(this.tipIndex, this.backend.providerConfigured, this.backend.providerReady)
-        const clippedTip = truncateCells(tip, Math.max(12, cardWidth - 12))
-        screen[layout.tipRow] = `${indent}${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
-      }
+      if (layout.tipRow !== undefined) screen[layout.tipRow] = tipLine
     } else {
-      // 对话态继续固定底部 Dock；Overlay 打开时同样进入 modal focus，不显示全局快捷键提示。
-      const hintRow = this.overlayOpen ? undefined : rows - 2
-      const promptEnd = hintRow === undefined ? rows - 3 : hintRow - 2
+      // 对话态底部 Dock 整体上移，为 footer 留出独立呼吸行；Overlay 打开时仍进入 modal focus。
+      const chatLayout = terminalChatLayout(rows, this.overlayOpen)
+      const hintRow = chatLayout.hintRow
+      const promptEnd = chatLayout.promptEnd
       const promptStart = Math.max(2, promptEnd - promptLines.length + 1)
       place(promptStart, promptLines)
       if (hintRow !== undefined) screen[hintRow] = hintLine
@@ -1225,10 +1321,10 @@ class XiaoyuSurface {
           ? wrapTailPlain(raw, Math.max(24, cardWidth - 12), maxLines)
           : wrapPlain(raw, Math.max(24, cardWidth - 12), maxLines)
         const bodyStyle = item.role === 'assistant' ? text : item.role === 'tool' ? textSoft : textFaint
-        wrapped.forEach((line, index) => transcriptLines.push(`${indent}${index === 0 ? label : spaces(6)}${bodyStyle}  ${line}${reset}`))
+        wrapped.forEach((line, index) => transcriptLines.push(`${dockIndent}${index === 0 ? label : spaces(6)}${bodyStyle}  ${line}${reset}`))
         transcriptLines.push('')
       }
-      const transcriptBottomGap = rows >= 30 ? 4 : 2
+      const transcriptBottomGap = rows >= 30 ? 2 : 1
       const available = Math.max(1, promptStart - transcriptBottomGap - 1)
       const visible = transcriptLines.slice(-available)
       place(Math.max(1, promptStart - transcriptBottomGap - visible.length), visible)
@@ -1259,7 +1355,10 @@ class XiaoyuSurface {
     const empty = !this.editor.getText()
     const lines: string[] = []
     const first = inputLines[0] ?? ''
-    lines.push(`${modeColor(this.agentMode)}▌${reset} ${empty ? `${first}${textFaint}输入消息…（输入 / 唤起命令）${reset}` : first}`)
+    const placeholder = this.editor.focused
+      ? `${blink}${bold}${text}输${reset}${textFaint}入消息…（输入 / 唤起命令）${reset}`
+      : `${textFaint}输入消息…（输入 / 唤起命令）${reset}`
+    lines.push(`${modeColor(this.agentMode)}▌${reset} ${empty ? placeholder : first}`)
     for (const line of inputLines.slice(1)) lines.push(`${modeColor(this.agentMode)}▌${reset} ${line}`)
 
     const suggestions = this.editor.suggestions()
@@ -1330,7 +1429,7 @@ class XiaoyuSurface {
     if (this.overlayOpen || this.approval) return
     this.showListOverlay('命令', commandPaletteOptions(), value => {
       void this.runPaletteAction(value)
-    }, { centered: true, width: 82, maxHeight: 18, searchable: true })
+    }, { centered: true, width: 76, maxHeight: 18, searchable: true })
   }
 
   private openSettings(): void {
@@ -1403,7 +1502,7 @@ class XiaoyuSurface {
     }
     this.showListOverlay(title, items, value => {
       void this.runProviderAction(value)
-    }, { centered: true, width: 68, maxHeight: '64%' })
+    }, { centered: true, width: 70, maxHeight: '64%' })
   }
 
   private async runProviderAction(value: string): Promise<void> {
@@ -1468,7 +1567,7 @@ class XiaoyuSurface {
           this.tui.requestRender()
         }
       })
-    }, { centered: true, width: 68, maxHeight: '56%' })
+    }, { centered: true, width: 70, maxHeight: '56%' })
   }
 
   private async openModelSelector(afterSelect?: (profile: TerminalBrainProfileView) => void): Promise<void> {
@@ -1519,7 +1618,7 @@ class XiaoyuSurface {
             this.tui.requestRender()
           }
         })
-      }, { centered: true, width: 72, maxHeight: '64%' })
+      }, { centered: true, width: 74, maxHeight: '64%' })
     } catch (error) {
       const message = `模型列表读取失败 · ${error instanceof Error ? error.message : String(error)}`
       if (this.initialBrainSetupActive) {
@@ -1567,7 +1666,7 @@ class XiaoyuSurface {
           this.tui.requestRender()
         }
       })
-    }, { centered: true, width: 60, maxHeight: '46%' })
+    }, { centered: true, width: 62, maxHeight: '46%' })
   }
 
   private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
@@ -1750,34 +1849,36 @@ class XiaoyuSurface {
 
     const frame = {
       render: (width: number): string[] => {
-        const inner = Math.max(32, width - 4)
-        const heading = `${bold}${text}${title}${reset}${spaces(Math.max(1, inner - cellWidth(title) - 3))}${textFaint}esc${reset}`
-        const projected = projection(inner)
-        const lines: string[] = [heading]
+        const panelInset = 2
+        const contentWidth = Math.max(28, width - 4 - panelInset * 2)
+        const paintLine = (line = ''): string => `${spaces(panelInset)}${line}`
+        const heading = `${bold}${text}${title}${reset}${spaces(Math.max(1, contentWidth - cellWidth(title) - 3))}${textFaint}esc${reset}`
+        const projected = projection(contentWidth)
+        const lines: string[] = ['', paintLine(heading), '']
 
         if (searchable) {
           const searchValue = query
             ? `${text}${query}${reset}${this.toolkit.CURSOR_MARKER}${orange}│${reset}`
             : `${this.toolkit.CURSOR_MARKER}${orange}│${reset}${textFaint} 输入关键词…${reset}`
-          lines.push(`${textFaint}搜索${reset}  ${searchValue}`, '')
-        } else {
-          lines.push('')
+          lines.push(paintLine(`${textFaint}搜索${reset}  ${searchValue}`), '')
         }
 
         if (projected.rows.length === 0) {
-          lines.push(`${textFaint}  没有匹配项${reset}`)
+          lines.push(paintLine(`${textFaint}没有匹配项${reset}`))
         } else {
           for (const row of projected.rows) {
-            const prefix = row.selected ? `${orange}${bold}→${reset}` : `${textFaint} ${reset}`
+            const prefix = row.selected ? `${orange}${bold}→${reset}` : ' '
             const shortcut = row.shortcut ? `${textFaint}${row.shortcut}${reset}  ` : ''
             const label = row.selected ? `${orange}${bold}${row.label}${reset}` : `${text}${row.label}${reset}`
             const description = `${textSoft}${row.description}${reset}`
-            lines.push(`${prefix} ${shortcut}${label}  ${description}`)
+            lines.push(paintLine(`${prefix} ${shortcut}${label}  ${description}`))
           }
         }
 
         if (searchable) {
-          lines.push('', `${textFaint}输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回${reset}`)
+          lines.push('', paintLine(`${textFaint}输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回${reset}`), '')
+        } else {
+          lines.push('')
         }
         return lines
       },
@@ -2047,7 +2148,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
         surface.requestExit()
         return { consume: true }
       }
-      if (escape && surface.cancel()) return { consume: true }
+      if (escape && (surface.back() || surface.cancel())) return { consume: true }
       return undefined
     })
     tui.start()

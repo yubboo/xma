@@ -16,7 +16,11 @@ import {
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
+  terminalContentWidth,
+  terminalChatLayout,
+  terminalHintPlainLine,
   terminalHomeTip,
+  shouldReturnChatToHome,
   terminalMouseCaptureSequence,
   terminalMouseReleaseSequence,
   workspaceRisk,
@@ -165,6 +169,33 @@ test('TUI menu projection keeps command, menu and description columns stable', (
   assert.equal(projected.rows[0]?.shortcut.startsWith('/settings'), true)
   assert.equal(projected.rows[0]?.shortcut.startsWith(' '), false)
   assert.equal(moveTuiMenuSelection(0, projected.filtered.length, -1), projected.filtered.length - 1)
+})
+
+
+test('TUI content width uses most of a normal terminal while keeping balanced side padding', () => {
+  assert.equal(terminalContentWidth(64), 56)
+  assert.equal(terminalContentWidth(112), 92)
+  assert.equal(terminalContentWidth(160), 132)
+})
+
+test('TUI chat dock leaves a breathing row above the footer and keeps Esc as a real back action', () => {
+  const layout = terminalChatLayout(34, false)
+  assert.equal(layout.hintRow, 31)
+  assert.equal(layout.promptEnd, 29)
+  assert.equal(shouldReturnChatToHome(3, false, false), true)
+  assert.equal(shouldReturnChatToHome(3, true, false), false)
+  assert.equal(shouldReturnChatToHome(3, false, true), false)
+  assert.equal(shouldReturnChatToHome(0, false, false), false)
+})
+
+test('TUI chat shortcut row distributes items evenly and aligns Esc to the same centered content width', () => {
+  const line = terminalHintPlainLine(92, true)
+  assert.equal(tuiMenuCellWidth(line), 92)
+  assert.match(line, /^tab \/ shift\+tab 切换模式/)
+  assert.match(line, /esc 返回$/)
+  const gaps = [...line.matchAll(/ {2,}/g)].map(match => match[0].length)
+  assert.ok(gaps.length >= 4)
+  assert.equal(Math.max(...gaps) - Math.min(...gaps), 0)
 })
 
 test('TUI home tips rotate when ready and become provider-aware when setup is incomplete', () => {

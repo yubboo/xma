@@ -134,3 +134,23 @@
 - 动态提示：Home 恢复自动轮换 Ctrl+P / Ctrl+K / Slash / Mode / History 提示；模型未配置或未就绪时显示对应引导；普通操作通知仅短暂展示，Esc 清空输入不再留下“已清空输入”长期占位。
 - 验收边界：本批仍需要 Windows Terminal 实机确认隐藏硬件光标后的 Microsoft IME 候选窗跟随、普通拖动不出现宿主选择白块，以及 64-cell Home Dock 与命令三列的最终视觉。
 - 下一步：实机通过后停止继续扩张 TUI 外观改动，回到 Stage P1 Agent Engine 行为研究与迁移。
+
+##12 · Terminal 响应式正文宽度
+
+- 日期：2026-09-14
+- 目的：修复 Windows Terminal 实机验收中 Home/对话区固定 64-cell 宽度导致左右黑色留白过大、正文过早换行的问题。
+- 横向布局：Home Prompt、对话 transcript、快捷键与底部提示继续共享同一居中内容栅格，但内容宽度改为响应式：窄终端保留最小安全边距，常规终端约保留两侧各 10 cell，超宽终端最多扩展到 132 cell，避免重新变成贴边布局。
+- 对话正文：assistant/reasoning/tool 的 wrap 宽度随同一内容栅格扩大，112 列终端从上一版 64-cell Dock 扩展到 92 cell，正文可用宽度同步增加，减少无意义换行。
+- 验证：新增 `terminalContentWidth()` 纯函数回归，锁定 64/112/160 列下的 56/92/132 cell 行为；继续保持居中、命令三列、软光标、mouse reporting 与动态提示合同不变。
+- 交付：未冻结 `0.1.0` 继续覆盖生成同名 `xma-0.1.0.zip` 与 SHA-256，不创建 fixed/hotfix 临时包。
+
+
+##13 · Terminal 对话底栏节奏与 Esc 返回
+
+- 日期：2026-09-14
+- 目的：修复 Windows Terminal 实机验收中对话态底部快捷栏紧贴固定 footer、视觉拥挤，以及 `esc 返回` 只有文案没有真实返回行为的问题；同时统一快捷项之间的横向间距和左右边界。
+- 对话底栏：对话态快捷栏整体上移一行，固定 footer 上方保留独立呼吸行；Prompt Dock 随同一布局上移，避免快捷栏与左下 Workspace / 右下版本号挤在连续两行。
+- Esc 返回：对话态且当前没有流式执行/Overlay 时，Esc 真实返回 Home 视图并清空当前输入显示；运行中 Esc 仍优先走取消语义，Overlay Esc 继续由各自面板关闭逻辑处理，避免把“返回”误做成摆设或覆盖取消行为。
+- 快捷栏栅格：`tab / shift+tab`、`ctrl+p`、`ctrl+k`、`/`、`ctrl+c`、`esc` 作为同一组快捷项按当前内容宽度等分剩余间距；整行宽度严格等于居中内容栅格，因此左/右黑色留白继续保持对称，Esc 与其他快捷项共享同一基线。
+- 回归：新增纯布局测试，锁定 34 行终端下 `hintRow=31 / promptEnd=29`、footer 前独立空行、Esc 可返回条件，以及 92-cell 快捷栏等距分布/右端 `esc 返回` 对齐合同。
+- 交付：未冻结 `0.1.0` 继续覆盖生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`；Windows Terminal 最终视觉与 Esc 键实机行为仍以用户验收为最终证据。
