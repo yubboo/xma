@@ -46,16 +46,21 @@ XMA 长期参考：
 - 取消时对已发出的 Tool Call 写入 `TOOL_ABORTED` 结果；
 - Step 记录 Provider identity + 冻结 Tool Schema 快照；
 - 原始 reasoning 只走 live event，不默认进入 durable model history；
+- `ContextRegistry` 已实现稳定 Source 注册、order+id 确定性排序、64 KiB 默认硬上限与 SHA-256 snapshot；
+- Runtime 已在每个 Step 前组装 Context，并把变化后的 `context/snapshot + digest` 写入 durable Session；
+- `requestMessagesForStep / requestToolsForStep / requestContextForStep` 可重建历史 Step 的模型可见输入；
+- Session export/redaction Contract 已实现，redacted export 明确标识为不可假定 replay-safe 的安全投影；
+- 相邻单向 `SessionMigrationRegistry` Contract 已实现，但尚未接入 JSONL Store generation 迁移；
 - App Protocol 已建立第一批 command/result/event 类型。
 
-仍未完成：Context Assembly、Session export/redaction/migration、CLI/Server 真正接 Runtime command bus。
+仍未完成：system-message reconciliation/compaction、Session fork/正式 Store generation migration、CLI/Server 真正接 Runtime command bus。
 
 ### 出口标准
 
 - Fake Provider 能完成 `user → model → tool → observation → same model → final` 多 Step； **已覆盖**
 - 进程退出后 resume 同一 Session 继续； **已由 JSONL 恢复测试覆盖**
 - 取消后历史结构合法； **已覆盖 Tool Call aborted settlement**
-- Model-visible 动态内容可从 Session 重建； **当前 user/assistant/tool 已覆盖，Context 仍待接入**
+- Model-visible 动态内容可从 Session 重建； **user/assistant/tool/context + 每 Step Tool Schema 已覆盖第一版**
 - CLI 和测试都走同一 Runtime API。 **测试已切正式 Runtime，CLI 待接 App Protocol**
 
 ## 4. 阶段 B：真实 Model Provider 平台
@@ -75,6 +80,18 @@ XMA 长期参考：
 - usage / latency / retry / error taxonomy；
 - Brain Ready Probe；
 - Provider Conformance Test harness。
+
+### 当前落地（本批次）
+
+- `ProviderRegistry` 已实现 Adapter/Profile 注册与非 Secret Profile 校验；
+- `EnvironmentCredentialResolver / MemoryCredentialResolver / CompositeCredentialResolver` 已实现请求时 Secret 解析；
+- Profile 静态拒绝 `Authorization` / `X-Api-Key` 等 Secret-bearing Header；
+- `ProviderCapabilities / ModelDescriptor / ProviderRequestError / BrainReadyProbeResult` 已进入 Core；
+- `xma.openai-compatible` 已实现真实 HTTP/SSE Chat Completions transport family；
+- 已覆盖 `/models`、stream text、分片 Tool Call arguments、Usage、取消、错误分类与最小 Brain Ready Probe；
+- 本地 HTTP 测试证明协议实现，但不构成任何外部厂商 Ready 证据。
+
+仍未完成：真实外部 Provider E2E、通用 Retry driver、OS Keychain Credentials、Anthropic/Gemini native、通用跨 Adapter Conformance Harness、Cost Catalog。
 
 ### 真实 Adapter 顺序
 

@@ -25,7 +25,7 @@ xma/
 
 ## 3. core/
 
-当前统一承载 Agent、Session、Model、Plugin、Tool、Workspace 等 TypeScript 核心 Contract。目标逻辑模块见 `PROJECT-ARCHITECTURE.md`，但在模块真正长大前不强制每个概念成为独立 package。
+当前统一承载 Agent、Session、Model、Provider Contract、Context、Plugin、Tool、Workspace 等 TypeScript 核心 Contract。0.1.0 当前关键文件包括 `runtime.ts`、`session.ts`、`session-store.ts`、`session-export.ts`、`context.ts`、`provider.ts`、`app-protocol.ts`。目标逻辑模块见 `PROJECT-ARCHITECTURE.md`，但在模块真正长大前不强制每个概念成为独立 package。
 
 ## 4. agents/
 
@@ -41,7 +41,7 @@ xma/
 
 跨 Agent 共用能力和外部生态接入：
 
-- Provider adapters；
+- Provider adapters（当前 `plugins/providers/openai-compatible.ts` 为第一条 transport family）；
 - Git / Browser / Search / MCP / Integration；
 - Tool/Capability providers；
 - `plugins/compat/deepseek-harness/` 兼容层。

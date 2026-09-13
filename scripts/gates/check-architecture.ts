@@ -1,7 +1,7 @@
 /**
  * 文件作用：阻止 XMA 核心架构在后续开发中回退或被业务污染。
  * 关联模块：AGENTS.md、core/、agents/、native/。
- * 当前实现：检查关键目录、语言边界、旧式 Go Core 回流和 DeepSeek Harness 兼容层。
+ * 当前实现：检查关键目录、TypeScript/Rust 边界、Runtime/Context/Provider 分层、Desktop 工程约束和 DeepSeek Harness 兼容层。
  * 职责边界：Gate 只做静态契约检查，不能替代真实测试。
  */
 
@@ -11,6 +11,13 @@ const required = [
   'AGENTS.md',
   'core/src/agent.ts',
   'core/src/plugin.ts',
+  'core/src/runtime.ts',
+  'core/src/session.ts',
+  'core/src/session-export.ts',
+  'core/src/context.ts',
+  'core/src/provider.ts',
+  'plugins/providers/builtin.ts',
+  'plugins/providers/openai-compatible.ts',
   'plugins/compat/deepseek-harness/index.ts',
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
@@ -30,6 +37,36 @@ for (const marker of ['Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'T
 const providerDoc = readFileSync('docs/architecture/MODEL-PROVIDER.md', 'utf8')
 for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests']) {
   if (!providerDoc.includes(marker)) throw new Error(`XMA Model Provider architecture marker missing: ${marker}`)
+}
+
+
+const contextSource = readFileSync('core/src/context.ts', 'utf8')
+for (const marker of ['class ContextRegistry', 'maxCharacters', 'sha256', 'sourceId']) {
+  if (!contextSource.includes(marker)) throw new Error(`XMA Context architecture marker missing: ${marker}`)
+}
+const sessionSource = readFileSync('core/src/session.ts', 'utf8')
+for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep']) {
+  if (!sessionSource.includes(marker)) throw new Error(`XMA Session reconstruction marker missing: ${marker}`)
+}
+const exportSource = readFileSync('core/src/session-export.ts', 'utf8')
+for (const marker of ['SessionExportEnvelope', 'redacted: boolean', 'SessionMigrationRegistry']) {
+  if (!exportSource.includes(marker)) throw new Error(`XMA Session export/migration marker missing: ${marker}`)
+}
+const providerSource = readFileSync('core/src/provider.ts', 'utf8')
+for (const marker of ['ProviderRegistry', 'ProviderCapabilities', 'CredentialReference', 'BrainReadyProbeResult', 'ProviderRequestError']) {
+  if (!providerSource.includes(marker)) throw new Error(`XMA Provider architecture marker missing: ${marker}`)
+}
+const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', 'utf8')
+for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(']) {
+  if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
+}
+const runtimeSource = readFileSync('core/src/runtime.ts', 'utf8')
+if (runtimeSource.includes('chat/completions') || runtimeSource.includes('Authorization')) {
+  throw new Error('XMA Core Runtime must not contain provider-specific HTTP/auth protocol details')
+}
+const modelSource = readFileSync('core/src/model.ts', 'utf8')
+if (modelSource.includes('chat/completions') || modelSource.includes('x-api-key')) {
+  throw new Error('XMA model Contract must remain provider-neutral')
 }
 
 const agents = readFileSync('core/src/agent.ts', 'utf8')

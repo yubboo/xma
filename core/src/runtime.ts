@@ -1,11 +1,12 @@
 /**
  * 文件作用：实现 XMA 正式 Session → Turn → Step Agent Runtime 主驱动。
- * 关联模块：session.ts、session-store.ts、model.ts、tools.ts、未来 Context/Provider Registry/App Protocol。
- * 当前实现：创建/恢复 Session、多 Step Tool Loop、冻结请求快照、durable/live event 分层、取消结算与单 Session 并发保护。
+ * 关联模块：context.ts、session.ts、session-store.ts、model.ts、tools.ts、provider.ts、未来 App Protocol。
+ * 当前实现：创建/恢复 Session、durable Context Assembly、多 Step Tool Loop、冻结请求快照、取消结算与请求延迟记录。
  * 职责边界：Runtime 只编排稳定生命周期；专业 Agent 特例、厂商协议、Approval/Native 安全实现必须走各自扩展层，禁止塞进主循环。
  */
 
 import { randomUUID } from 'node:crypto'
+import { ContextRegistry } from './context.ts'
 import type { ModelEvent, ModelMessage, ModelProvider, ModelToolCall, ModelToolSpec } from './model.ts'
 import { deriveModelMessages, SESSION_FORMAT_VERSION, type SessionEvent, type SessionEventInput, type SessionHeader, type SessionSnapshot } from './session.ts'
 import type { SessionHandle, SessionStore } from './session-store.ts'
@@ -42,6 +43,10 @@ export interface TurnRunResult {
   steps: number
 }
 
+export interface AgentRuntimeOptions {
+  context?: ContextRegistry
+}
+
 function createId(prefix: string): string {
   return `${prefix}-${randomUUID()}`
 }
@@ -67,10 +72,19 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-function normalizeUsage(previous: { inputTokens?: number; outputTokens?: number }, event: Extract<ModelEvent, { type: 'usage' }>): void {
-  // Provider adapter 在 Stage B 负责把“累计/增量”差异归一化；当前 Contract 以最后一个已提供值作为本 Step 的结算快照。
+interface UsageAccumulator {
+  inputTokens?: number
+  outputTokens?: number
+  cachedInputTokens?: number
+  reasoningTokens?: number
+}
+
+function normalizeUsage(previous: UsageAccumulator, event: Extract<ModelEvent, { type: 'usage' }>): void {
+  // Provider adapter 负责把厂商累计/增量语义归一化；Core 只保留该 Step 最后一个已提供的结算值。
   if (event.inputTokens !== undefined) previous.inputTokens = event.inputTokens
   if (event.outputTokens !== undefined) previous.outputTokens = event.outputTokens
+  if (event.cachedInputTokens !== undefined) previous.cachedInputTokens = event.cachedInputTokens
+  if (event.reasoningTokens !== undefined) previous.reasoningTokens = event.reasoningTokens
 }
 
 function toolResultEvent(result: ToolResult, context: { turnId: string; stepId: string; call: ModelToolCall }): SessionEventInput {
@@ -90,6 +104,14 @@ function toolResultEvent(result: ToolResult, context: { turnId: string; stepId: 
   return event
 }
 
+function latestContextEvent(snapshot: SessionSnapshot): Extract<SessionEvent, { type: 'context/snapshot' }> | undefined {
+  for (let index = snapshot.events.length - 1; index >= 0; index -= 1) {
+    const event = snapshot.events[index]
+    if (event?.type === 'context/snapshot') return event
+  }
+  return undefined
+}
+
 export class AgentSession {
   readonly #listeners: Set<RuntimeEventListener>
   #activeTurn = false
@@ -98,6 +120,7 @@ export class AgentSession {
   constructor(
     readonly header: SessionHeader,
     private readonly handle: SessionHandle,
+    private readonly context: ContextRegistry,
     listeners: Set<RuntimeEventListener>,
     private readonly onClose: () => void,
   ) {
@@ -143,6 +166,40 @@ export class AgentSession {
           return { sessionId: this.id, turnId, status: 'cancelled', text: finalText, toolCalls, steps: steps - 1 }
         }
 
+        let contextDigest = ''
+        try {
+          const beforeAssembly = this.handle.snapshot()
+          const assembly = await this.context.assemble({
+            header: structuredClone(this.header),
+            snapshot: beforeAssembly,
+            turnId,
+            stepId,
+            signal: options.signal,
+          })
+          contextDigest = assembly.content.length > 0 ? assembly.digest : ''
+          const previousContext = latestContextEvent(beforeAssembly)
+          const previousDigest = previousContext?.digest ?? ''
+          if (contextDigest !== previousDigest) {
+            await this.#append([{
+              type: 'context/snapshot',
+              turnId,
+              stepId,
+              digest: contextDigest,
+              content: assembly.content,
+              sources: assembly.sections.map(section => ({ sourceId: section.sourceId, digest: section.digest })),
+            }])
+          }
+        } catch (error) {
+          if (isAbortError(error, options.signal)) {
+            await this.#append([{ type: 'turn/end', turnId, outcome: 'cancelled', text: finalText }])
+            await this.handle.flush()
+            return { sessionId: this.id, turnId, status: 'cancelled', text: finalText, toolCalls, steps: steps - 1 }
+          }
+          await this.#append([{ type: 'turn/end', turnId, outcome: 'failed', text: finalText }])
+          await this.handle.flush()
+          throw error
+        }
+
         const messages = freezeMessages(deriveModelMessages(this.handle.snapshot().events))
         const toolSpecs = freezeTools(options.tools.specs())
         await this.#append([{
@@ -152,26 +209,32 @@ export class AgentSession {
           provider: structuredClone(options.provider.identity),
           tools: structuredClone(toolSpecs),
           messageCount: messages.length,
+          contextDigest,
         }])
 
         let assistantText = ''
         const pendingToolCalls: ModelToolCall[] = []
-        const usage: { inputTokens?: number; outputTokens?: number } = {}
+        const usage: UsageAccumulator = {}
+        const requestStartedAt = performance.now()
+        let firstResponseAt: number | undefined
 
         try {
           for await (const event of options.provider.stream({ messages, tools: toolSpecs, signal: options.signal })) {
             if (options.signal.aborted) throw Object.assign(new Error('XMA model request aborted.'), { name: 'AbortError' })
             if (event.type === 'text') {
+              firstResponseAt ??= performance.now()
               assistantText += event.text
               this.#emit({ type: 'model/text-delta', sessionId: this.id, turnId, stepId, text: event.text })
               continue
             }
             if (event.type === 'reasoning') {
+              firstResponseAt ??= performance.now()
               // 原始 reasoning 默认只作为 live event，不进入 durable history，避免把隐藏推理当成后续模型上下文。
               this.#emit({ type: 'model/reasoning-delta', sessionId: this.id, turnId, stepId, text: event.text })
               continue
             }
             if (event.type === 'tool-call') {
+              firstResponseAt ??= performance.now()
               pendingToolCalls.push({ callId: event.callId, name: event.name, arguments: structuredClone(event.arguments) })
               continue
             }
@@ -212,6 +275,7 @@ export class AgentSession {
           return { sessionId: this.id, turnId, status: 'cancelled', text: assistantText, toolCalls, steps }
         }
 
+        const requestFinishedAt = performance.now()
         await this.#append([{
           type: 'assistant/message',
           turnId,
@@ -222,12 +286,18 @@ export class AgentSession {
         }])
         finalText = assistantText
 
-        if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) {
-          const usageEvent: Extract<SessionEventInput, { type: 'usage' }> = { type: 'usage', turnId, stepId }
-          if (usage.inputTokens !== undefined) usageEvent.inputTokens = usage.inputTokens
-          if (usage.outputTokens !== undefined) usageEvent.outputTokens = usage.outputTokens
-          await this.#append([usageEvent])
+        const usageEvent: Extract<SessionEventInput, { type: 'usage' }> = {
+          type: 'usage',
+          turnId,
+          stepId,
+          totalLatencyMs: Math.max(0, requestFinishedAt - requestStartedAt),
         }
+        if (firstResponseAt !== undefined) usageEvent.firstTokenLatencyMs = Math.max(0, firstResponseAt - requestStartedAt)
+        if (usage.inputTokens !== undefined) usageEvent.inputTokens = usage.inputTokens
+        if (usage.outputTokens !== undefined) usageEvent.outputTokens = usage.outputTokens
+        if (usage.cachedInputTokens !== undefined) usageEvent.cachedInputTokens = usage.cachedInputTokens
+        if (usage.reasoningTokens !== undefined) usageEvent.reasoningTokens = usage.reasoningTokens
+        await this.#append([usageEvent])
 
         if (pendingToolCalls.length === 0) {
           await this.#append([
@@ -312,8 +382,11 @@ export class AgentSession {
 export class AgentRuntime {
   readonly #listeners = new Set<RuntimeEventListener>()
   readonly #sessions = new Map<string, AgentSession>()
+  readonly context: ContextRegistry
 
-  constructor(readonly store: SessionStore) {}
+  constructor(readonly store: SessionStore, options: AgentRuntimeOptions = {}) {
+    this.context = options.context ?? new ContextRegistry()
+  }
 
   subscribe(listener: RuntimeEventListener): Disposer {
     this.#listeners.add(listener)
@@ -353,7 +426,7 @@ export class AgentRuntime {
 
   #attach(handle: SessionHandle): AgentSession {
     const sessionId = handle.header.sessionId
-    const session = new AgentSession(handle.header, handle, this.#listeners, () => {
+    const session = new AgentSession(handle.header, handle, this.context, this.#listeners, () => {
       if (this.#sessions.get(sessionId) === session) this.#sessions.delete(sessionId)
     })
     this.#sessions.set(sessionId, session)

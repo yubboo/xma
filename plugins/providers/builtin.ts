@@ -1,30 +1,34 @@
 /**
- * 文件作用：预留 XMA 官方 Provider Plugin 的注册入口。
- * 关联模块：core/src/model.ts、core/src/plugin.ts。
- * 当前实现：只定义服务键和 Provider Registry 骨架，不伪造任何“已连接模型”。
- * 职责边界：OpenAI/Claude/Gemini/DeepSeek/MiMo 必须后续通过真实 API/订阅适配与 Probe 才能标记 Ready。
+ * 文件作用：注册 XMA 官方 Provider Registry、Credentials Service 与第一条 OpenAI-compatible Adapter。
+ * 关联模块：core/src/provider.ts、core/src/plugin.ts、plugins/providers/openai-compatible.ts。
+ * 当前实现：环境变量 + 进程内凭据解析、Provider Registry 服务和 OpenAI-compatible Adapter 生命周期。
+ * 职责边界：这里只注册能力，不内置任何用户 API Key、不预置“已 Ready”状态；具体 Profile 必须由用户配置并通过真实 Probe。
  */
 
-import type { ModelProvider } from '../../core/src/model.ts'
+import {
+  CompositeCredentialResolver,
+  EnvironmentCredentialResolver,
+  MemoryCredentialResolver,
+  ProviderRegistry,
+} from '../../core/src/provider.ts'
 import type { XmaPlugin } from '../../core/src/plugin.ts'
+import { OpenAiCompatibleAdapter } from './openai-compatible.ts'
 
 export const MODEL_PROVIDER_REGISTRY = 'xma.modelProviders'
-
-export class ModelProviderRegistry {
-  readonly #providers = new Map<string, ModelProvider>()
-
-  register(id: string, provider: ModelProvider): void {
-    this.#providers.set(id, provider)
-  }
-
-  get(id: string): ModelProvider | undefined {
-    return this.#providers.get(id)
-  }
-}
+export const MEMORY_CREDENTIALS = 'xma.memoryCredentials'
 
 export const builtinProviderRegistryPlugin: XmaPlugin = {
   id: 'xma.providers.registry',
   apply(context) {
-    return context.provide(MODEL_PROVIDER_REGISTRY, new ModelProviderRegistry())
+    const memoryCredentials = new MemoryCredentialResolver()
+    const credentials = new CompositeCredentialResolver([
+      memoryCredentials,
+      new EnvironmentCredentialResolver(),
+    ])
+    const registry = new ProviderRegistry(credentials)
+    const disposeAdapter = registry.registerAdapter(new OpenAiCompatibleAdapter())
+    context.provide(MEMORY_CREDENTIALS, memoryCredentials)
+    context.provide(MODEL_PROVIDER_REGISTRY, registry)
+    return disposeAdapter
   },
 }

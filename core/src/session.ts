@@ -1,7 +1,7 @@
 /**
- * 文件作用：定义 XMA Session / Turn / Step 的 durable event Contract，并提供从事实日志重建模型历史的纯函数。
- * 关联模块：session-store.ts、runtime.ts、model.ts、未来 App Protocol/Session Projection。
- * 当前实现：Session Header、durable event 联合类型、Model Message 投影、Session 基础统计。
+ * 文件作用：定义 XMA Session / Turn / Step 的 durable event Contract，并提供从事实日志重建模型请求历史的纯函数。
+ * 关联模块：context.ts、session-store.ts、runtime.ts、model.ts、未来 App Protocol/Session Projection。
+ * 当前实现：Session Header、durable event、Context Snapshot、Model Message 投影、Step 请求重建与 Session 基础统计。
  * 职责边界：本文件只描述可持久事实与投影，不执行模型请求、不做文件 IO，也不保存 Provider Secret。
  */
 
@@ -25,10 +25,23 @@ export interface SessionEventMeta {
   timestamp: string
 }
 
+export interface ContextSnapshotSourceRef {
+  sourceId: string
+  digest: string
+}
+
 export type SessionEventData =
   | { type: 'session/created'; agentId: string; workspaceId?: string }
   | { type: 'turn/start'; turnId: string }
   | { type: 'user/message'; turnId: string; content: string }
+  | {
+      type: 'context/snapshot'
+      turnId: string
+      stepId: string
+      digest: string
+      content: string
+      sources: readonly ContextSnapshotSourceRef[]
+    }
   | {
       type: 'step/start'
       turnId: string
@@ -36,6 +49,7 @@ export type SessionEventData =
       provider: ModelIdentity
       tools: readonly ModelToolSpec[]
       messageCount: number
+      contextDigest?: string
     }
   | {
       type: 'assistant/message'
@@ -62,6 +76,10 @@ export type SessionEventData =
       stepId: string
       inputTokens?: number
       outputTokens?: number
+      cachedInputTokens?: number
+      reasoningTokens?: number
+      firstTokenLatencyMs?: number
+      totalLatencyMs?: number
     }
   | {
       type: 'step/end'
@@ -93,12 +111,23 @@ export interface SessionStat {
   eventCount: number
 }
 
+function latestContext(events: readonly SessionEvent[]): Extract<SessionEvent, { type: 'context/snapshot' }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'context/snapshot') return event
+  }
+  return undefined
+}
+
 /**
  * 从 durable event 还原下一次模型请求的历史。
- * 只有明确标记为模型可见的 user/assistant/tool 三类事实进入请求；Turn/Step/Usage 等控制事件不会泄露给模型。
+ * Context Snapshot 作为当前有效 system message 放在首位；user/assistant/tool 按 durable 顺序进入历史。
  */
 export function deriveModelMessages(events: readonly SessionEvent[]): ModelMessage[] {
   const messages: ModelMessage[] = []
+  const context = latestContext(events)
+  if (context && context.content.length > 0) messages.push({ role: 'system', content: context.content })
+
   for (const event of events) {
     if (event.type === 'user/message') {
       messages.push({ role: 'user', content: event.content })
@@ -117,10 +146,32 @@ export function deriveModelMessages(events: readonly SessionEvent[]): ModelMessa
   return messages
 }
 
+/** 用 Step Start 之前的 durable 事实重建该 Step 当时发给 Provider 的消息历史。 */
+export function requestMessagesForStep(events: readonly SessionEvent[], stepId: string): readonly ModelMessage[] | undefined {
+  const step = events.find(event => event.type === 'step/start' && event.stepId === stepId)
+  if (step?.type !== 'step/start') return undefined
+  return deriveModelMessages(events.filter(event => event.sequence < step.sequence))
+}
+
 /** 返回某个 Step 当时模型看到的 Tool Schema 快照，用于审计与重建。 */
 export function requestToolsForStep(events: readonly SessionEvent[], stepId: string): readonly ModelToolSpec[] | undefined {
   const event = events.find(item => item.type === 'step/start' && item.stepId === stepId)
   return event?.type === 'step/start' ? event.tools : undefined
+}
+
+/** 返回某个 Step 绑定的 Context Snapshot；digest 不匹配时视为历史损坏。 */
+export function requestContextForStep(events: readonly SessionEvent[], stepId: string): Extract<SessionEvent, { type: 'context/snapshot' }> | undefined {
+  const step = events.find(event => event.type === 'step/start' && event.stepId === stepId)
+  if (step?.type !== 'step/start') return undefined
+  for (let index = events.findIndex(event => event.sequence === step.sequence) - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'context/snapshot') continue
+    const expectedDigest = step.contextDigest ?? ''
+    if (event.digest !== expectedDigest) throw new Error(`XMA context digest mismatch for step ${stepId}`)
+    return event
+  }
+  if ((step.contextDigest ?? '') !== '') throw new Error(`XMA context snapshot missing for step ${stepId}`)
+  return undefined
 }
 
 /** 最小 JSON 可序列化检查，Store 在写盘前用于尽早拒绝循环引用/函数等非法 durable payload。 */

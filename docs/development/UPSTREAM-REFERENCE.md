@@ -176,3 +176,24 @@ Rust Native/Security Kernel
 - 是否有真实 Provider / Tool / Native / E2E 证据，而不只是单元测试？
 
 没有这些答案的“大重构”不得直接进入 Core。
+
+
+## 9. 0.1.0 Context / Provider 本批研究记录
+
+本批实现 Context Assembly 与 Provider Contract 时继续固定使用第 2 节的 upstream commit，没有追随 `main/master` 漂移。
+
+### DeepSeek Harness · system-prompt
+
+已核对子系统文件树 `packages/core/system-prompt/`，重点审阅 `README.md`、`src/index.ts`、`src/invariant.ts`，并核对 `tests/invariant.spec.ts`、`tests/scoped.spec.ts`、`tests/system-prompt.spec.ts`、`tests/tool-order.spec.ts` 的测试面。XMA 吸收的是：来源有名、稳定排序、动态 context 与 prompt 指令职责分开、组装 fail-loud、模型可见动态事实需要 durable source。XMA 不复制 Cordis package 粒度，也没有在本批引入 DSH 代码依赖。
+
+### OpenAI Codex · model-provider
+
+已核对 `codex-rs/model-provider/` package tree，并重点审阅 `src/lib.rs`、`src/provider.rs` 对 capability、auth、account/model catalog、runtime provider 与错误恢复职责的切分；同时把 `auth.rs`、`models_endpoint.rs`、`models_identity.rs`、`shared_state.rs` 等列为 Provider 后续深化的同一参考域。XMA 本批吸收的是“Provider 不只是 stream()”和 Secret/Profile/Capability/Catalog 分离；**没有宣称已经逐行复刻整个 Codex provider package**，也不会把 Codex 的 Rust 产品层语言所有权搬入 XMA。
+
+### 本批拒绝项
+
+- 不把 Provider HTTP JSON 放进 `core/src/runtime.ts`；
+- 不依据模型名/品牌猜 capability；
+- 不把 API Key 写入 Provider Profile、Session 或测试 fixture；
+- 不把本地 mock server 测试写成“外部厂商已 Ready”；
+- 不为对齐上游目录而拆出大量 npm workspace。

@@ -16,6 +16,12 @@
 - 多 Step `model → tool → observation → same model` Runtime；
 - Tool Call 取消结算，保证 durable 历史结构合法；
 - 每 Step 冻结 Provider / Tool Schema 请求快照；
+- Context Source Registry + 确定性组装 + 字符硬上限 + durable Context Snapshot/digest；
+- 历史 Step 的 message/tool/context 请求输入重建；
+- Session export + Secret value redaction + 相邻单向 migration Contract；
+- Provider Registry / Profile / Credentials Resolver / Capabilities / Model Catalog / Error taxonomy；
+- OpenAI-compatible Chat Completions HTTP/SSE Adapter 第一版（协议测试，不等于外部厂商 Ready）；
+- Brain Ready Probe 第一版：必须真实发 HTTP 模型请求才可返回 ready；
 - Model Provider 最小 Contract；
 - Tool Registry + 结构化普通错误/取消结果；
 - Workspace Registry；
@@ -37,11 +43,11 @@
 
 以下是当前 0.1.x 真正的开发主线：
 
-- Session export / redaction / format migration（create/open/append/flush/close/list/stat/resume 已有第一版）；
-- Context Assembly / system-message reconciliation / compaction；
-- Provider Registry / Profile / Credentials；
-- Provider capability / Model catalog；
-- Brain Ready Probe；
+- Session Store generation migration / fork（export/redaction/纯 migration Contract 已有第一版）；
+- system-message reconciliation / compaction（Context Assembly/durable snapshot 已有第一版）；
+- OS Keychain/安全 Credential Store（env/memory resolver 已有第一版）；
+- Provider 通用 Retry / Cost Catalog / App Protocol 配置面；
+- 外部真实 Provider E2E 与 Product Ready 证据；
 - 至少两个不同协议族真实 Provider；
 - Tool Definition / frozen ToolPlan / ToolRouter；
 - Policy / Approval / Permission；
@@ -52,8 +58,8 @@
 
 ## 4. 尚未完成，禁止过度宣称
 
-- 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo Provider 产品支持；
-- Provider Brain Ready；
+- 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo **品牌 Provider 产品支持**；当前只有通用 OpenAI-compatible 协议 Adapter；
+- 任何外部 Profile 的 Brain Ready 证据；当前只有 Probe 实现与本地协议测试；
 - 完整 Session/Memory/Context；
 - Rust Workspace Sandbox/Capability/PTY/Process；
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
@@ -90,14 +96,14 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-Stage A 的第一块 Runtime 已经进入代码，下一批继续按底层顺序推进：
+Stage A 的 Context/Session 安全导出与 Stage B Provider transport 第一版已经进入代码。下一批继续按底层顺序推进：
 
-1. Context Assembly + system/context durable source；
-2. Session export/redaction + format/migration Contract；
-3. Provider Registry/Capabilities/Credentials；
-4. 第一个真实 Provider + Brain Ready + tool-call round trip；
-5. ToolPlan/Policy/Approval；
-6. Native FS/Process 最小安全链。
+1. Tool Definition / frozen ToolPlan / ToolRouter；
+2. Policy / Approval / Permission；
+3. Native FS/Process 最小安全链；
+4. CLI/Server App Protocol 真正接 Runtime；
+5. 有真实凭据时执行外部 OpenAI-compatible E2E，并开始 Anthropic native Adapter；
+6. system-message reconciliation / compaction 与 Session Store generation migration。
 
 完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
 

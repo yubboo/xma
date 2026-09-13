@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本文定义 XMA 后续 0.1.x 最重要的底层 Runtime Contract。它不是当前骨架已经完成的能力清单，而是下一阶段必须逐步实现并由测试锁定的目标架构。
+本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；ToolPlan/Approval/Native Capability 等仍按本文继续实现。
 
 参考上，XMA 借鉴 Codex 的 Thread/Turn/ToolRouter/Permission 运行语义、DeepSeek Harness 的 Session/Event/Service/Effect 结构和 Minecraft Host Agent 的 Agent-First/Skill/Tool 实践；实现上仍严格服从 XMA 自己的 **TypeScript Agent Core + Rust Native/Security Kernel** 边界。
 
@@ -129,17 +129,26 @@ Live event 可以丢失而不破坏 Session 的逻辑可恢复性。最终结算
 
 ## 5. Context Assembly
 
-Context 不是把所有 Markdown 一股脑拼进 Prompt。正式 Context Assembly 必须：
+Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `core/src/context.ts` 已落地第一版 `ContextRegistry`：每个 Source 有稳定 `id`、可选 `order`、可释放注册；组装按 `order + id` 确定性排序，默认 64 KiB 字符硬上限，超限直接失败，不静默截断；组装结果生成 SHA-256 digest。Runtime 在每个 Step 前组装 Context，只有有效 digest 变化时才追加 `context/snapshot` durable event；从非空变为空时显式写入空快照清除旧 Context。
 
-1. 有明确 source/type；
+正式 Context Assembly 继续遵守：
+
+1. 有明确 source/type 和稳定来源 ID；
 2. 有 token/字符硬上限；
 3. 稳定排序，减少 Provider prefix cache 无意义失效；
-4. 动态事实优先通过 Tool/Knowledge 查询进入；
-5. Workspace / Agent / Skill instructions 有作用域；
-6. 大输出先持久化，模型只拿必要摘要或引用；
-7. Compaction 必须是可追踪的显式行为，而不是暗中改历史。
+4. 模型可见动态内容必须先形成 durable Snapshot，可按 Step digest 重建；
+5. 动态事实优先通过 Tool/Knowledge 查询进入；
+6. Workspace / Agent / Skill instructions 有作用域；
+7. 大输出先持久化，模型只拿必要摘要或引用；
+8. Compaction 必须是可追踪的显式行为，而不是暗中改历史。
 
-对于代码 Agent，根 `AGENTS.md`、子目录 instructions、`.agents/.codex/.claude` 只是开发者上下文来源的一部分；产品 Runtime 未来也应支持 Workspace 级 instructions，但绝不能无限递归读取。
+当前 Context Snapshot 作为模型历史中的有效 `system` message 投影；后续 system-message reconciliation / compaction 会继续把“Prompt 指令”和“动态 Runtime Context”拆得更细。对于代码 Agent，根 `AGENTS.md`、子目录 instructions、`.agents/.codex/.claude` 只是开发者上下文来源的一部分；产品 Runtime 未来也应支持 Workspace 级 instructions，但绝不能无限递归读取。
+
+## 5.1 Session Export / Redaction / Migration
+
+当前 `core/src/session-export.ts` 已提供第一版安全导出 Contract：`SessionExportEnvelope` 带独立 export version；调用方可把 Credentials Service 已知 Secret 临时交给 `SessionRedactor`，递归清理 user/assistant/tool/context/turn 文本与 JSON 数据，且不修改原 Session。带 redactor 的导出明确标记 `redacted: true`，它是安全分享投影，不承诺保持原始 digest 的可重放一致性。
+
+`SessionMigrationRegistry` 只允许 `vN → vN+1` 相邻单向升级，拒绝 future format 与隐式 downgrade。当前 `SESSION_FORMAT_VERSION = 1` 没有历史已发布格式，因此默认 migration registry 为空；**它尚未接入 JSONL Store generation 发布流程**，不能写成“持久格式迁移已经完成”。
 
 ## 6. Tool Definition / ToolPlan / ToolRouter
 
@@ -280,13 +289,16 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 
 当前第一版已经不再只有 `messages[] + runAgent()`：
 
-- `core/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume 与 Turn/Step driver；
-- `core/src/session.ts`：durable event Contract 和 `deriveModelMessages()`；
+- `core/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume、Context Assembly 与 Turn/Step driver；
+- `core/src/session.ts`：durable event Contract、模型消息投影与历史 Step 请求重建；
 - `core/src/session-store.ts`：Memory / JSONL Store；
+- `core/src/session-export.ts`：安全导出、Secret redaction 与相邻 migration Contract；
+- `core/src/context.ts`：Context Source Registry、确定性组装、硬上限与 digest；
+- `core/src/provider.ts`：Provider Profile/Credential/Capability/Catalog/Registry/Probe Contract；
 - `core/src/app-protocol.ts`：Host command/result/event envelope 第一版；
 - `core/src/tools.ts`：结构化 Tool Result 和普通异常/取消归一化。
 
-第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`step/start`、`assistant/message`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity 与 Tool Schema 快照；模型历史由 user/assistant/tool 三类 durable fact 重新投影。原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
+第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
 
-JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；这仍是 0.1.x baseline，不代表 format migration/export/redaction 已完成。Context Assembly 也尚未接入，所以“Model-visible ⇔ reconstructable”当前只完成对 conversation/tool history 的第一段闭环。
+JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；Session export/redaction 与纯 migration registry 已有第一版，但 migration **尚未接入 JSONL Store generation 发布流程**。Context Assembly 已接入 Runtime，不过 system-message reconciliation、compaction、Workspace instructions discovery 仍未完成。
 

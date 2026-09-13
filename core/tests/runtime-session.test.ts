@@ -87,6 +87,7 @@ test('Runtime persists a reconstructable multi-step tool turn', async () => {
     'user/message',
     'step/start',
     'assistant/message',
+    'usage',
     'tool/result',
     'step/end',
     'step/start',
@@ -101,6 +102,7 @@ test('Runtime persists a reconstructable multi-step tool turn', async () => {
     assert.equal(firstStep.provider.model, 'two-step')
     assert.equal(firstStep.tools[0]?.name, 'demo.inspect')
     assert.equal(firstStep.messageCount, 1)
+    assert.equal(firstStep.contextDigest, '')
   }
   assert.ok(liveTypes.includes('session/event'))
   assert.ok(liveTypes.includes('model/text-delta'))

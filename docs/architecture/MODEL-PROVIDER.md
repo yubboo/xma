@@ -4,7 +4,7 @@
 
 XMA 的核心理念是 **Model is replaceable. Agent is ours.** Provider 层必须让 GPT、Claude、Gemini、DeepSeek、MiMo、本地模型和未来 Provider 可以替换，而不要求 Agent Loop 到处写 `if provider === ...`。
 
-当前 `core/src/model.ts` 只有最小 `identity + stream()` 骨架。0.1.x 下一阶段要把它升级成完整 Runtime Provider Contract。
+当前 0.1.0 已落地第一版 Provider 平台 Contract：`core/src/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`plugins/providers/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family。它通过本地协议测试证明请求、流式文本、Tool Call 拼装、Usage、取消与 Brain Ready Probe 的实现，但**尚未因为 mock 通过就宣称任何外部厂商已经 Product Ready**。外部 Provider Ready 必须由目标 API 的真实 Probe/E2E 证明。
 
 ## 2. Provider 不只是一个 HTTP stream 函数
 
@@ -28,6 +28,21 @@ ProviderDescriptor
 
 这些 Provider-specific 逻辑应该留在 Provider Plugin 内，Agent Loop 只处理 XMA 统一事件。
 
+## 2.1 当前代码落点（0.1.0）
+
+```text
+core/src/model.ts                         统一 ModelRequest / ModelEvent / ModelProvider
+core/src/provider.ts                      Profile / Credential / Capability / Catalog / Registry / Probe
+plugins/providers/openai-compatible.ts    第一条真实 HTTP/SSE transport family
+plugins/providers/builtin.ts              内建 Provider service 装配，不内置任何 Secret
+core/tests/provider-openai-compatible.test.ts
+                                         本地协议级 Conformance 起点
+```
+
+当前已经具备：Profile Secret 边界、环境/内存 Credential Resolver、Provider Adapter Registry、能力声明、模型目录发现、真实 HTTP/SSE 流解析、分片 Tool Call arguments 合并、Usage 归一化、取消与错误分类、最小 Brain Ready Probe。
+
+当前**没有**具备：外部厂商真实 Ready 证据、通用自动 Retry 驱动、Anthropic/Gemini native Adapter、价格/Cost Catalog、远程 compaction、Keychain/OS Credential Store，以及完整的跨 Adapter Conformance Harness。
+
 ## 3. Provider Profile 与 Secret
 
 用户配置的是 Provider Profile，而不是把 key 混在 Agent 定义里。建议 Contract：
@@ -41,7 +56,9 @@ ProviderDescriptor
 - proxy/network settings；
 - provider-specific advanced options。
 
-Secret 交给 Credentials Service，Provider 请求时按 profile scope 获取。Secret 不进入 Session message、Workspace、普通日志或导出；错误对象在对用户可见前做 redaction。
+Secret 交给 Credentials Service，Provider 请求时按 profile scope 获取。当前 `CredentialReference` 支持 `env` 与进程内 `memory` 两类引用；Profile 只保存引用，不保存 Secret 值，并静态拒绝 `Authorization`、`X-Api-Key` 等 Secret-bearing header。后续 OS Keychain/安全存储仍属于待实现能力。
+
+Secret 不进入 Session message、Workspace、普通日志或导出；Provider HTTP 错误在转成用户可见错误前必须 redaction。
 
 ## 4. Provider Capabilities
 
@@ -158,14 +175,14 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 5. 记录 first-token / total latency、capability observation、usage availability；
 6. 返回结构化结果供 CLI/Desktop 展示。
 
-只有真实请求成功才能标记 Brain Ready。假 Provider / fixture 只用于测试，不能改变产品状态。
+只有真实请求成功才能标记 Brain Ready。当前 OpenAI-compatible Adapter 的 `probe()` 已执行真实 HTTP `POST /chat/completions` 并验证返回 JSON；本地测试服务器只验证协议实现，不构成任何外部厂商 Ready 证据。假 Provider / fixture 只用于测试，不能改变产品状态。
 
 ## 11. Provider 实现顺序
 
 0.1.x 不同时写五个半成品 Adapter。顺序固定为：
 
-1. 完成 Provider Registry / Profile / Credential / Capability / Catalog Contract；
-2. 完成一个 **OpenAI-compatible transport family** 的真实 Adapter，打通 streaming text + tool call + usage + cancellation；DeepSeek/MiMo 等只有在其目标 API 实际兼容时才复用，不凭品牌名称假定兼容；
+1. 完成 Provider Registry / Profile / Credential / Capability / Catalog Contract； **第一版已落地**
+2. 完成一个 **OpenAI-compatible transport family** 的真实 Adapter，打通 streaming text + tool call + usage + cancellation； **协议实现与本地 Conformance 已落地，外部 Provider E2E 待真实凭据验证**。DeepSeek/MiMo 等只有在其目标 API 实际兼容时才复用，不凭品牌名称假定兼容；
 3. 完成一个**非 OpenAI 协议族**的真实 Adapter，优先 Anthropic Claude native，证明 Contract 没被 OpenAI JSON 绑死；
 4. Gemini native；
 5. OpenAI first-party/Responses 特有能力、额外云 Provider、本地模型作为独立能力迭代；
@@ -175,7 +192,7 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 
 ## 12. Provider Conformance Tests
 
-同一测试套件验证：
+最终同一测试套件验证：
 
 - Profile 解析；
 - Secret 不泄漏；
@@ -189,3 +206,8 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 - Brain Ready Probe。
 
 真实 API 测试使用环境 Secret，自缺 Key 时可以 skip，但发布“已支持某 Provider”必须有目标 Provider 的真实 E2E 证据。
+
+
+## 13. 当前 0.1.0 验证边界
+
+当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化和真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。

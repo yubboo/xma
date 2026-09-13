@@ -1,8 +1,8 @@
 /**
- * 文件作用：定义 XMA 对外部大模型的统一 Provider Contract，以及 Runtime 可持久重建的规范化消息结构。
- * 关联模块：runtime.ts、session.ts、tools.ts、plugins/providers/。
- * 当前实现：模型身份、消息、Tool Call、流式事件和请求接口；Provider 仍保持最小可执行面，能力/auth/catalog 在后续阶段扩展。
- * 职责边界：XMA 不在这里实现“自己的弱模型”；具体厂商协议和认证必须通过 Provider/Plugin 注入，Core 只消费规范化事件。
+ * 文件作用：定义 XMA 对外部大模型的统一 Model Provider 请求/流事件 Contract，以及 Runtime 可持久重建的规范化消息结构。
+ * 关联模块：runtime.ts、session.ts、provider.ts、tools.ts、plugins/providers/。
+ * 当前实现：模型身份、消息、Tool Call、流式文本/Reasoning/Usage 事件和统一请求接口。
+ * 职责边界：XMA 不在这里实现“自己的弱模型”；厂商 JSON、认证、Catalog、Probe 与错误映射必须通过 Provider Adapter 注入。
  */
 
 import type { JsonObject } from './types.ts'
@@ -40,7 +40,13 @@ export type ModelEvent =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
   | { type: 'tool-call'; callId: string; name: string; arguments: JsonObject }
-  | { type: 'usage'; inputTokens?: number; outputTokens?: number }
+  | {
+      type: 'usage'
+      inputTokens?: number
+      outputTokens?: number
+      cachedInputTokens?: number
+      reasoningTokens?: number
+    }
 
 export interface ModelRequest {
   /** Runtime 在发起 Step 前冻结当前可见历史，Provider 不得就地修改。 */
