@@ -138,7 +138,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
 - “Brain Ready”必须有真实请求证据；fixture/mock 不能改变产品 Ready 状态。
-- Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → Brain / Provider` 必须始终可用，并与首次 Setup 复用同一配置实现。
+- Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → 模型 / 提供方` 必须始终可用，并与首次 Setup 复用同一配置实现。工作区信任选择“否，退出”是正常取消，CLI 必须干净退出，不得向开发包装层返回错误状态。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
 - **Provider Truth Contract：** 用户选择的 `providerId + profileId + modelId` 必须对应真实请求目标，禁止隐藏换模、隐藏降级、便宜模型代跑或本地 Planner 接管正常推理。

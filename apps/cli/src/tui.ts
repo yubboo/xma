@@ -52,10 +52,10 @@ const COMMANDS = [
   { value: 'settings', label: 'settings', description: '打开终端设置' },
   { value: 'vivid', label: 'vivid', description: '切换丰富 / 简洁视觉' },
   { value: 'doctor', label: 'doctor', description: '检查当前运行环境' },
-  { value: 'workspace', label: 'workspace', description: '查看当前 Workspace' },
-  { value: 'provider', label: 'provider', description: '配置 Brain / Provider' },
+  { value: 'workspace', label: 'workspace', description: '查看当前工作区' },
+  { value: 'provider', label: 'provider', description: '配置模型 / 提供方' },
   { value: 'model', label: 'model', description: '切换当前真实模型' },
-  { value: 'agent', label: 'agent', description: '查看当前 Agent' },
+  { value: 'agent', label: 'agent', description: '查看当前智能体' },
   { value: 'clear', label: 'clear', description: '清空当前终端显示' },
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
 ] as const
@@ -64,10 +64,10 @@ const PALETTE_ACTIONS = [
   { value: 'settings', label: '终端设置', description: '视觉、提示与 Logo，仅影响 Terminal' },
   { value: 'visual', label: '切换丰富显示', description: '动态星点 / 简洁模式' },
   { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor' },
-  { value: 'workspace', label: 'Workspace', description: '查看当前工作区' },
-  { value: 'provider', label: 'Brain / Provider', description: '配置、测试和选择模型' },
-  { value: 'model', label: '模型切换', description: '从当前 Provider 的真实模型目录切换' },
-  { value: 'agent', label: 'Agent', description: '查看当前 Agent' },
+  { value: 'workspace', label: '工作区', description: '查看当前工作区' },
+  { value: 'provider', label: '模型 / 提供方', description: '配置、测试和选择模型' },
+  { value: 'model', label: '模型切换', description: '从当前提供方的真实模型目录切换' },
+  { value: 'agent', label: '智能体', description: '查看当前智能体' },
   { value: 'clear', label: '清空显示', description: '清空当前会话的终端显示' },
   { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端' },
 ] as const
@@ -411,6 +411,7 @@ function contentWidth(columns: number): number {
 export interface TerminalHomeLayout {
   logoTop: number
   promptEnd: number
+  showIdentity: boolean
   hintRow?: number
   tipRow?: number
 }
@@ -423,13 +424,14 @@ export function terminalHomeLayout(rows: number, overlayOpen = false, tips = tru
   const safeRows = Math.max(20, rows)
   const logoTop = Math.max(2, Math.min(5, Math.floor(safeRows * 0.10)))
   if (overlayOpen) {
-    return { logoTop, promptEnd: safeRows - 3 }
+    return { logoTop, promptEnd: safeRows - 3, showIdentity: false }
   }
 
   const tipRow = tips && safeRows >= 26 ? safeRows - 4 : undefined
   const hintRow = tipRow === undefined ? safeRows - 3 : tipRow - 3
   return {
     logoTop,
+    showIdentity: true,
     // Prompt 与快捷键、提示区之间保留至少一行空气；高终端再多留一行，避免所有组件堆在底部。
     promptEnd: hintRow - (tipRow === undefined ? 2 : 3),
     hintRow,
@@ -504,13 +506,13 @@ export function workspaceRisk(workspace: string): WorkspaceRisk {
   const root = normalizeForCompare(path.parse(path.resolve(workspace)).root)
   const windowsLike = workspace.replace(/\//g, '\\').replace(/\\+$/g, '')
   if (/^[A-Za-z]:\\Windows(?:\\|$)/i.test(windowsLike)) {
-    return { risky: true, level: 'system', reason: '当前 Workspace 位于 Windows 系统目录。' }
+    return { risky: true, level: 'system', reason: '当前工作区位于 Windows 系统目录。' }
   }
   if (normalized === root) {
-    return { risky: true, level: 'root', reason: '当前 Workspace 是文件系统根目录，范围过大。' }
+    return { risky: true, level: 'root', reason: '当前工作区是文件系统根目录，范围过大。' }
   }
   if (normalized === home) {
-    return { risky: true, level: 'home', reason: '当前 Workspace 是用户主目录。' }
+    return { risky: true, level: 'home', reason: '当前工作区是用户主目录。' }
   }
   return { risky: false, level: 'normal' }
 }
@@ -547,7 +549,7 @@ export function renderWorkspaceTrustPrompt(
     const label = risk.level === 'home' ? '用户主目录' : risk.level === 'system' ? 'Windows 系统目录' : '文件系统根目录'
     lines.push(
       '',
-      `${yellow}${bold}▲  高风险 Workspace：${label}${reset}`,
+      `${yellow}${bold}▲  高风险工作区：${label}${reset}`,
       `${textSoft}${risk.reason ?? '当前目录范围较大或包含敏感系统内容。'}${reset}`,
       `${red}除非你明确需要，否则建议退出并在具体项目目录重新运行 Xiaoyu。${reset}`,
     )
@@ -1124,16 +1126,18 @@ class XiaoyuSurface {
     const hintLine = `${indent}${renderHintLine(cardWidth)}`
 
     if (this.transcript.length === 0) {
-      const logo = renderLogo(columns, this.settings.logo)
       const layout = terminalHomeLayout(rows, this.overlayOpen, this.settings.tips)
       const logoTop = layout.logoTop
-      if (this.settings.visual === 'vivid') screen[Math.max(1, logoTop - 2)] = renderStars(columns, this.starPhase)
-      place(logoTop, logo)
-      const sloganRow = Math.min(rows - 10, logoTop + logo.length + 1)
-      screen[sloganRow] = centerPlain('Model is replaceable. Agent is ours.', columns)
-        .replace('Model is replaceable. Agent is ours.', `${textFaint}Model is replaceable. Agent is ours.${reset}`)
+      if (layout.showIdentity) {
+        const logo = renderLogo(columns, this.settings.logo)
+        if (this.settings.visual === 'vivid') screen[Math.max(1, logoTop - 2)] = renderStars(columns, this.starPhase)
+        place(logoTop, logo)
+        const sloganRow = Math.min(rows - 10, logoTop + logo.length + 1)
+        screen[sloganRow] = centerPlain('Model is replaceable. Agent is ours.', columns)
+          .replace('Model is replaceable. Agent is ours.', `${textFaint}Model is replaceable. Agent is ours.${reset}`)
+      }
 
-      // Home 使用固定底锚点；Overlay 打开时进入 modal focus，只保留一行状态 Dock，避免面板与 Prompt 视觉拥挤。
+      // Home 使用固定底锚点；Overlay 打开时进入 modal focus，只保留一行状态 Dock，背景 Logo/星点/口号全部隐藏，避免与面板互相穿透。
       place(layout.promptEnd - promptLines.length + 1, promptLines)
       if (layout.hintRow !== undefined) screen[layout.hintRow] = hintLine
       if (layout.tipRow !== undefined) {
@@ -1240,9 +1244,9 @@ class XiaoyuSurface {
   startInitialBrainSetup(): void {
     if (!needsInitialBrainSetup(this.backend.providerConfigured) || this.overlayOpen || this.approval) return
     this.initialBrainSetupActive = true
-    this.notice = '首次使用 · 配置 Xiaoyu Brain；完成后以后启动会直接进入工作台，Ctrl+P 可随时修改。'
+    this.notice = '首次使用 · 配置 Xiaoyu 模型；完成后以后启动会直接进入工作台，Ctrl+P 可随时修改。'
     this.tui.requestRender()
-    this.openProviderCatalog('配置 Xiaoyu Brain')
+    this.openProviderCatalog('配置 Xiaoyu 模型')
   }
 
   private brainOverlayPosition(defaultRow: '14%' | '16%'): { anchor?: 'center'; row?: string; col?: string } {
@@ -1251,11 +1255,11 @@ class XiaoyuSurface {
 
   private completeInitialBrainSetup(probe: BrainProbeView): void {
     if (this.initialBrainSetupActive && probe.ready) this.initialBrainSetupActive = false
-    this.notice = `${probe.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+    this.notice = `${probe.ready ? '模型就绪' : '模型未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
     this.tui.requestRender()
     if (this.initialBrainSetupActive && !probe.ready) {
       queueMicrotask(() => {
-        if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu Brain')
+        if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
       })
     }
   }
@@ -1265,7 +1269,7 @@ class XiaoyuSurface {
     this.notice = message
     this.tui.requestRender()
     queueMicrotask(() => {
-      if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderCatalog('配置 Xiaoyu Brain')
+      if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderCatalog('配置 Xiaoyu 模型')
     })
   }
 
@@ -1315,17 +1319,17 @@ class XiaoyuSurface {
     })
   }
 
-  private openProviderManager(title = 'Brain / Provider'): void {
+  private openProviderManager(title = '模型 / 提供方'): void {
     if (this.overlayOpen) return
     const profiles = this.backend.listBrainProfiles()
     const active = profiles.find(profile => profile.active)
     const items: AutocompleteItem[] = [
-      { value: 'catalog', label: '＋ 添加 Provider', description: '选择已真实接入的 Provider；API Key 默认保存到 OS Credentials' },
-      { value: 'add-env', label: '＋ 自定义 Provider · 环境变量兼容', description: '兼容旧环境变量工作流' },
+      { value: 'catalog', label: '＋ 添加提供方', description: '选择已真实接入的提供方；API Key 默认保存到系统凭据' },
+      { value: 'add-env', label: '＋ 自定义提供方 · 环境变量兼容', description: '兼容旧环境变量工作流' },
     ]
     if (active) {
       items.push(
-        { value: 'probe', label: 'Brain Ready 测试', description: `${active.displayName} · ${active.model}` },
+        { value: 'probe', label: '模型就绪测试', description: `${active.displayName} · ${active.model}` },
         { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
         ...(this.backend.reasoningSupported ? [{ value: 'reasoning', label: '推理强度', description: `当前 ${this.backend.reasoningEffort}` }] : []),
       )
@@ -1333,7 +1337,7 @@ class XiaoyuSurface {
     const providerNames = new Map(this.backend.listBrainProviderCatalog().map(item => [item.id, item.displayName]))
     for (const profile of profiles) {
       const credential = profile.credential?.source === 'os'
-        ? profile.credentialReady ? 'Key: OS Credentials' : '缺少 OS Credentials'
+        ? profile.credentialReady ? '密钥：系统凭据' : '缺少系统凭据'
         : profile.credential?.source === 'env'
           ? profile.credentialReady ? `Key: ${profile.credential.key}` : `缺少 ${profile.credential.key}`
           : '无需 API Key'
@@ -1346,7 +1350,7 @@ class XiaoyuSurface {
     }
     this.showListOverlay(title, items, value => {
       void this.runProviderAction(value)
-    })
+    }, { centered: true, width: '78%', maxHeight: '64%' })
   }
 
   private async runProviderAction(value: string): Promise<void> {
@@ -1360,12 +1364,12 @@ class XiaoyuSurface {
         return
       }
       if (value === 'probe') {
-        this.notice = '正在执行 Brain Ready 测试…'
+        this.notice = '正在执行模型就绪测试…'
         this.tui.requestRender()
         const result = await this.backend.probeBrain()
         if (this.initialBrainSetupActive) this.completeInitialBrainSetup(result)
         else {
-          this.notice = `${result.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${result.latencyMs}ms · ${result.message}`
+          this.notice = `${result.ready ? '模型就绪' : '模型未就绪'} · ${result.latencyMs}ms · ${result.message}`
           this.tui.requestRender()
         }
         return
@@ -1380,22 +1384,22 @@ class XiaoyuSurface {
       }
       if (value.startsWith('select:')) {
         const profile = await this.backend.selectBrain(value.slice('select:'.length))
-        this.notice = `Brain 已切换 · ${profile.displayName} · ${profile.model} · 正在验证…`
+        this.notice = `模型配置已切换 · ${profile.displayName} · ${profile.model} · 正在验证…`
         this.tui.requestRender()
         const probe = await this.backend.probeBrain()
         if (this.initialBrainSetupActive) this.completeInitialBrainSetup(probe)
         else {
-          this.notice = `${probe.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+          this.notice = `${probe.ready ? '模型就绪' : '模型未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
           this.tui.requestRender()
         }
       }
     } catch (error) {
-      this.notice = `Brain 操作失败 · ${error instanceof Error ? error.message : String(error)}`
+      this.notice = `模型配置操作失败 · ${error instanceof Error ? error.message : String(error)}`
       this.tui.requestRender()
     }
   }
 
-  private openProviderCatalog(title = '添加 Provider'): void {
+  private openProviderCatalog(title = '添加提供方'): void {
     const catalog = this.backend.listBrainProviderCatalog()
     this.showListOverlay(title, catalog.map(item => ({
       value: `catalog:${item.id}`,
@@ -1404,30 +1408,30 @@ class XiaoyuSurface {
     })), value => {
       if (!value.startsWith('catalog:')) return
       void this.addProviderWizard(value.slice('catalog:'.length), 'os').catch(error => {
-        const message = `Provider 配置失败 · ${error instanceof Error ? error.message : String(error)}`
+        const message = `提供方配置失败 · ${error instanceof Error ? error.message : String(error)}`
         if (this.initialBrainSetupActive) this.resumeInitialBrainSetup(message)
         else {
           this.notice = message
           this.tui.requestRender()
         }
       })
-    })
+    }, { centered: true, width: '72%', maxHeight: '56%' })
   }
 
   private async openModelSelector(afterSelect?: (profile: TerminalBrainProfileView) => void): Promise<void> {
     // Provider/Model 配置属于产品交互，任何失败都必须留在 TUI 内提示，禁止未处理 Promise 直接终止 CLI。
     if (!this.backend.providerConfigured) {
-      this.notice = 'Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。'
+      this.notice = '模型未配置 · 请先在 Ctrl+P → 模型 / 提供方 添加并保存提供方。'
       this.tui.requestRender()
       return
     }
 
-    this.notice = '正在读取 Provider 的真实模型列表…'
+    this.notice = '正在读取提供方的真实模型列表…'
     this.tui.requestRender()
     try {
       const models = await this.backend.listBrainModels()
       if (models.length === 0) {
-        this.notice = 'Provider 没有返回模型列表；当前 Profile 保留已配置的模型 ID。'
+        this.notice = '提供方没有返回模型列表；当前配置保留已设置的模型 ID。'
         this.tui.requestRender()
         if (this.initialBrainSetupActive) {
           if (this.backend.reasoningSupported) this.openReasoningSelector(true)
@@ -1446,7 +1450,7 @@ class XiaoyuSurface {
           const probe = await this.backend.probeBrain()
           if (this.initialBrainSetupActive) this.completeInitialBrainSetup(probe)
           else {
-            this.notice = `${probe.ready ? 'Brain Ready' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+            this.notice = `${probe.ready ? '模型就绪' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
             this.tui.requestRender()
           }
         }).catch(error => {
@@ -1455,21 +1459,21 @@ class XiaoyuSurface {
             this.notice = message
             this.tui.requestRender()
             queueMicrotask(() => {
-              if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu Brain')
+              if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
             })
           } else {
             this.notice = message
             this.tui.requestRender()
           }
         })
-      })
+      }, { centered: true, width: '72%', maxHeight: '64%' })
     } catch (error) {
       const message = `模型列表读取失败 · ${error instanceof Error ? error.message : String(error)}`
       if (this.initialBrainSetupActive) {
         this.notice = message
         this.tui.requestRender()
         queueMicrotask(() => {
-          if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu Brain')
+          if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
         })
       } else {
         this.notice = message
@@ -1480,15 +1484,15 @@ class XiaoyuSurface {
 
   private openReasoningSelector(afterSetup = false): void {
     if (!this.backend.reasoningSupported) {
-      this.notice = '当前 Provider/模型未声明可配置推理强度。'
+      this.notice = '当前提供方 / 模型未声明可配置推理强度。'
       this.tui.requestRender()
       return
     }
     const current = this.backend.reasoningEffort
     const items: AutocompleteItem[] = [
-      { value: 'default', label: `${current === 'default' ? '● ' : ''}Default`, description: '使用 Provider 默认推理强度' },
-      { value: 'high', label: `${current === 'high' ? '● ' : ''}high`, description: '高推理强度' },
-      { value: 'max', label: `${current === 'max' ? '● ' : ''}max`, description: '最大推理强度（Provider 支持时）' },
+      { value: 'default', label: `${current === 'default' ? '● ' : ''}默认`, description: '使用提供方默认推理强度' },
+      { value: 'high', label: `${current === 'high' ? '● ' : ''}高`, description: '高推理强度' },
+      { value: 'max', label: `${current === 'max' ? '● ' : ''}最大`, description: '最大推理强度（提供方支持时）' },
     ]
     this.showListOverlay('选择推理强度', items, value => {
       void this.backend.selectBrainReasoning(value as TerminalReasoningEffort).then(async profile => {
@@ -1503,29 +1507,29 @@ class XiaoyuSurface {
           this.notice = message
           this.tui.requestRender()
           queueMicrotask(() => {
-            if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu Brain')
+            if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
           })
         } else {
           this.notice = message
           this.tui.requestRender()
         }
       })
-    })
+    }, { centered: true, width: '64%', maxHeight: '46%' })
   }
 
   private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
     const catalog = this.backend.listBrainProviderCatalog()
     const provider = catalog.find(item => item.id === providerId)
-    if (!provider) throw new Error(`Provider Catalog 不存在：${providerId}`)
+    if (!provider) throw new Error(`提供方目录不存在：${providerId}`)
     const existingProfiles = this.backend.listBrainProfiles().filter(item => item.providerId === providerId && item.source === 'config')
     const displayName = existingProfiles.length === 0 ? provider.displayName : `${provider.displayName} ${existingProfiles.length + 1}`
     let baseUrl: string | undefined
     let model: string | undefined
     if (provider.customEndpoint) {
       baseUrl = await this.showInputOverlay('Base URL', '例如：https://api.example.com/v1', '')
-      if (baseUrl === undefined) { this.resumeInitialBrainSetup('首次 Brain 配置尚未完成。'); return }
+      if (baseUrl === undefined) { this.resumeInitialBrainSetup('首次模型配置尚未完成。'); return }
       model = await this.showInputOverlay('默认模型 ID', '请输入 endpoint 实际支持的 model ID', '')
-      if (model === undefined) { this.resumeInitialBrainSetup('首次 Brain 配置尚未完成。'); return }
+      if (model === undefined) { this.resumeInitialBrainSetup('首次模型配置尚未完成。'); return }
     }
     // 品牌 Provider 的主流程固定为：API Key → 真实模型 → 推理强度 → Probe，减少无关表单打断。
     const credentialInput = credentialMode === 'os'
@@ -1533,7 +1537,7 @@ class XiaoyuSurface {
           ? '安全写入系统凭据库；输入内容不会回显'
           : '安全写入系统凭据库；留空表示此 endpoint 无需鉴权', '', { secret: true })
       : await this.showInputOverlay('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY')
-    if (credentialInput === undefined) { this.resumeInitialBrainSetup('首次 Brain 配置尚未完成。'); return }
+    if (credentialInput === undefined) { this.resumeInitialBrainSetup('首次模型配置尚未完成。'); return }
     if (credentialMode === 'os' && provider.credentialRequired && !credentialInput.trim()) {
       const message = `${provider.displayName} 官方 API 需要 API Key。`
       if (this.initialBrainSetupActive) this.resumeInitialBrainSetup(message)
@@ -1552,14 +1556,14 @@ class XiaoyuSurface {
         ...(credentialMode === 'env' && credentialInput.trim() ? { credentialEnv: credentialInput.trim() } : {}),
       })
     } catch (error) {
-      const message = `Provider 保存失败 · ${error instanceof Error ? error.message : String(error)}`
+      const message = `提供方保存失败 · ${error instanceof Error ? error.message : String(error)}`
       if (this.initialBrainSetupActive) this.resumeInitialBrainSetup(message)
       else { this.notice = message; this.tui.requestRender() }
       return
     }
 
     // Profile 保存成功即成为当前 Brain。后续远端模型发现失败不能反过来伪装成“保存失败”或清掉已保存配置。
-    this.notice = `Provider 已保存并设为当前 Brain · ${profile.displayName} · 正在读取真实模型…`
+    this.notice = `提供方已保存并设为当前模型配置 · ${profile.displayName} · 正在读取真实模型…`
     this.tui.requestRender()
     await this.openModelSelector(() => {
       if (this.backend.reasoningSupported) {
@@ -1569,16 +1573,16 @@ class XiaoyuSurface {
       void this.backend.probeBrain().then(result => {
         if (this.initialBrainSetupActive) this.completeInitialBrainSetup(result)
         else {
-          this.notice = `${result.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${result.latencyMs}ms · ${result.message}`
+          this.notice = `${result.ready ? '模型就绪' : '模型未就绪'} · ${result.latencyMs}ms · ${result.message}`
           this.tui.requestRender()
         }
       }).catch(error => {
-        const message = `Brain Ready 失败 · ${error instanceof Error ? error.message : String(error)}`
+        const message = `模型就绪测试失败 · ${error instanceof Error ? error.message : String(error)}`
         if (this.initialBrainSetupActive) {
           this.notice = message
           this.tui.requestRender()
           queueMicrotask(() => {
-            if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu Brain')
+            if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
           })
         } else {
           this.notice = message
@@ -1640,9 +1644,9 @@ class XiaoyuSurface {
         },
       }
       handle = this.tui.showOverlay(frame, {
-        width: 68,
+        width: '66%',
         maxHeight: 12,
-        ...this.brainOverlayPosition('16%'),
+        anchor: 'center',
         margin: 3,
       })
     })
@@ -1652,6 +1656,7 @@ class XiaoyuSurface {
     title: string,
     items: readonly AutocompleteItem[],
     onSelect: (value: string) => void,
+    layout: { centered?: boolean; width?: number | string; maxHeight?: number | string } = {},
   ): void {
     if (this.overlayOpen) return
     this.overlayOpen = true
@@ -1677,7 +1682,7 @@ class XiaoyuSurface {
     }
     const cancel = (): void => {
       if (this.initialBrainSetupActive) {
-        this.notice = '首次 Brain 配置尚未完成；完成配置后进入工作台，或按 Ctrl+C 退出 Xiaoyu。'
+        this.notice = '首次模型配置尚未完成；完成配置后进入工作台，或按 Ctrl+C 退出 Xiaoyu。'
         this.tui.requestRender()
         return
       }
@@ -1699,10 +1704,11 @@ class XiaoyuSurface {
       },
       invalidate: () => list.invalidate?.(),
     }
+    const position = layout.centered ? { anchor: 'center' as const } : this.brainOverlayPosition('14%')
     handle = this.tui.showOverlay(frame, {
-      width: 68,
-      maxHeight: Math.min(20, Math.max(10, items.length + 6)),
-      ...this.brainOverlayPosition('14%'),
+      width: layout.width ?? 68,
+      maxHeight: layout.maxHeight ?? Math.min(20, Math.max(10, items.length + 6)),
+      ...position,
       margin: 3,
     })
   }
@@ -1740,7 +1746,7 @@ class XiaoyuSurface {
         return true
       }
       if (command === 'workspace') {
-        this.notice = `Workspace · ${this.backend.workspace}`
+        this.notice = `工作区 · ${this.backend.workspace}`
         this.tui.requestRender()
         return true
       }
@@ -1753,7 +1759,7 @@ class XiaoyuSurface {
         return true
       }
       if (command === 'agent') {
-        this.notice = `Agent · ${this.backend.agentLabel}`
+        this.notice = `智能体 · ${this.backend.agentLabel}`
         this.tui.requestRender()
         return true
       }
@@ -1801,7 +1807,7 @@ class XiaoyuSurface {
       return
     }
     if (!this.backend.providerConfigured) {
-      this.notice = 'Brain 未配置 · 按 Ctrl+P → Brain / Provider 添加真实 Provider'
+      this.notice = '模型未配置 · 按 Ctrl+P → 模型 / 提供方 添加真实提供方'
       this.tui.requestRender()
       return
     }

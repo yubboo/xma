@@ -97,10 +97,11 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 - Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区，对话区、输入 Dock、快捷键与提示区之间至少保留稳定空行；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。Prompt Dock 持续显示 Mode + Provider/Model + Reasoning，模式和推理强度使用稳定颜色；Tab/Shift+Tab 循环 Build/Plan/Compose(legacy)，Build 暴露完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
 - Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
+- 工作区信任界面选择“否，退出”属于正常用户取消，CLI 必须以成功退出语义返回，不得让 `xma-dev` / pnpm 包装层打印失败堆栈；
 - `xiaoyu --help / --version / doctor`；
 - `xiaoyu server / web` 发行入口；
 - **每次启动 Workspace Trust**：`xiaoyu / xma` 每次交互式启动都先以调用者当前目录作为 Workspace 并显示信任确认；普通项目也不跳过，授权只对本次启动有效。Home / 文件系统根目录 / Windows 系统目录（例如 `C:\Windows\System32`）追加高风险提示并默认选择退出；
-- **首次 Brain 配置**：Workspace Trust 通过后，如果当前没有已配置 Brain/Profile，必须在**同一 Xiaoyu TUI 的居中 modal**自动打开 Provider 配置；一旦 Profile 已配置，后续启动跳过此第二步。`Ctrl+P → Brain / Provider` 永久保留，并与首次 Setup 复用同一 Provider/API Key/Model/Reasoning/Brain Ready 实现；
+- **首次模型配置**：工作区信任通过后，如果当前没有已配置 Brain/Profile，必须在**同一 Xiaoyu TUI 的居中 modal**自动打开“模型 / 提供方”配置；一旦 Profile 已配置，后续启动跳过此第二步。`Ctrl+P → 模型 / 提供方` 永久保留，并与首次 Setup 复用同一 Provider/API Key/Model/Reasoning/Brain Ready 实现；
 - Workspace Session 绑定到正式 Agent Runtime；
 - `Xiaoyu Code` 当前会加载根 `skills/` 的 canonical Skills，并通过 `agent/skills` Context Source 进入正式 Context Assembly；portable launcher 使用 `XIAOYU_SKILLS_HOME` 指向随包分发的 `skills/`，普通用户不依赖源码仓库读取 Skill；
 - Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 从真实 Provider Catalog 添加 DeepSeek Official 或自定义 OpenAI-compatible Profile；同一品牌可保存多个账号/Profile。品牌 Provider 首次配置主路径固定为 API Key → 真实远程模型选择 → 推理强度 → Brain Ready；API Key 默认写入 OS Credentials，环境变量引用继续作为兼容路径，`/model` 可再次切换真实模型，Reasoning effort 作为非 Secret Profile option 持久化。`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 与 Credential Reference，永远不保存 Secret 值，也不写入 Session；v1 `credentialEnv`、v2 generic Profile 与 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续兼容迁移读取；

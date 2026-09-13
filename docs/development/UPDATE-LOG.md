@@ -98,3 +98,15 @@
 - 验证：75 个可离线 TypeScript 测试 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9 项 Gate PASS；`apps/cli + core + packages + agents + plugins + gates` targeted strict `tsc --noEmit` PASS；Unix launcher/install 脚本 `sh -n` PASS。
 - Source Manifest：仍为 204 个受管源码文件；相对上一正式源码包为新增 0、更新 15、删除 0、未变化 189。当前环境无法代替 Windows Terminal 做真实键盘/alternate-screen E2E，Workspace Trust 与首次 Brain Setup 的最终视觉/交互仍需 Windows 实机验收。
 - 下一步：Stage P1 顺延为 `##09 · Pi Agent Engine 行为研究与迁移设计`，先完成能力/行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。
+
+##09 · TUI 中文化、模型面板布局与干净取消
+
+- 日期：2026-09-13
+- 目的：修复 Windows 实机验收发现的两类产品问题：命令/模型设置仍混有英文功能名，模型设置 Overlay 与 Home Logo/装饰层视觉穿透；同时修复工作区信任选择“否，退出”被 `pnpm/xma-dev` 当作错误并打印 PowerShell 堆栈。
+- 中文化：Ctrl+P 命令面板的 `Workspace / Brain / Provider / Agent` 用户标签改为“工作区 / 模型 / 提供方 / 智能体”；模型配置页统一使用“添加提供方 / 模型就绪测试 / 选择模型 / 推理强度”等中文功能词，品牌名与真实 model ID 继续保留原文。
+- 布局：模型/提供方、提供方目录、真实模型、推理强度与 API Key 输入统一使用居中 Overlay；模型管理主面板扩宽为终端约 78%，并限制相对高度。任何 Overlay 打开时 Home Logo、星点和口号不再渲染，只保留底部紧凑状态 Dock，避免背景内容穿过设置面板。
+- 取消语义：工作区信任选择“否，退出”或在该确认层取消后，CLI 输出简短“已取消”并以成功退出码结束；这是用户主动取消，不是生命周期错误，开发 shim / pnpm / PowerShell 不得再打印 `ELIFECYCLE` 或 `failed with exit code 3`。
+- Gate：Distribution Gate 锁定中文模型入口、modal 背景隐藏和 `USER_CANCEL_EXIT_CODE = 0`；Architecture Gate 同步更新 Provider 失败保护标记，避免 UI 文案改名导致 Gate 与真实产品状态漂移。
+- 验证：Core + CLI + Desktop 可离线 TypeScript 测试 76/76 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9/9 Gate PASS；CLI/TUI/Gates targeted strict `tsc --noEmit` PASS。
+- 未验证边界：当前沙箱不能代替 Windows Terminal 真实 alternate-screen 视觉验收；模型管理面板的新宽度/居中效果与“否，退出”无错误堆栈仍需用户 Windows 实机确认。
+- 下一步：Stage P1 顺延为 `##10 · Pi Agent Engine 行为研究与迁移设计`，先列真实 streaming/tool/steering/cancellation 行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。

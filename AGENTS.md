@@ -49,7 +49,7 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - **Canonical Tool Name ≠ Provider wire function name。** XMA Core/ToolPlan 可使用带 `.` / `:` / `/` 的稳定领域名；若目标 Provider 的 function/tool name 线协议更严格，必须只在 Provider Adapter 边界做稳定可逆映射，并在模型 Tool Call 回流时恢复 canonical 名。禁止为了迎合某一家 API 改坏 Core Tool identity，也禁止把不合法 canonical 名原样发送导致真实模型请求失败。
 - Provider/Profile/Model 配置属于可恢复的产品交互：凭据写入、Profile 保存、模型发现、Probe 任一步失败都必须在当前 Host 内明确提示并保持进程可用；禁止未处理 Promise/异常因为“Brain 未配置/模型目录失败”直接终止 CLI/TUI。Profile 一旦持久化成功，后续模型目录或 Probe 失败不得反向伪装成“Provider 保存失败”或清除已保存 Profile。
 - `xiaoyu / xma` 每次交互式启动都必须先解析调用者当前目录并显示 Workspace Trust；授权只对本次启动有效，不得因为普通项目、历史信任或已有 Brain 而静默跳过。Home/文件系统根/Windows 系统目录继续作为高风险 Workspace，默认选择退出。
-- Workspace Trust 通过后，只有当前没有已配置 Brain/Profile 时才自动进入**同一 Xiaoyu TUI 内的居中 Brain Setup**；Profile 已存在的后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 是长期管理入口，始终保留，并与首次 Setup 复用同一 Provider/Model/Credential/Probe 能力。
+- Workspace Trust 通过后，只有当前没有已配置 Brain/Profile 时才自动进入**同一 Xiaoyu TUI 内的居中 Brain Setup**；Profile 已存在的后续启动不得重复强制弹出。`Ctrl+P → 模型 / 提供方` 是长期管理入口，始终保留，并与首次 Setup 复用同一 Provider/Model/Credential/Probe 能力。工作区信任选择“否，退出”是正常用户取消，必须干净退出，不能冒充运行失败。
 
 ## 4. Agent / Workspace / Plugin / Skill / Host 边界
 

@@ -19,7 +19,7 @@ import {
   workspaceTrustDefaultSelection,
   type TerminalTranscriptItem,
 } from '../src/tui.ts'
-import { assertCliNativeRuntimeStatus, parseArgs } from '../src/main.ts'
+import { assertCliNativeRuntimeStatus, parseArgs, USER_CANCEL_EXIT_CODE } from '../src/main.ts'
 
 
 
@@ -81,7 +81,7 @@ test('TUI Workspace Trust renders on every launch and explains elevated risk whe
   assert.match(normal, /本次授权不会跳过下次启动确认/)
 
   const warning = renderWorkspaceTrustPrompt(homedir())
-  assert.match(warning, /高风险 Workspace/)
+  assert.match(warning, /高风险工作区/)
   assert.match(warning, /用户主目录/)
   assert.match(warning, /↑↓ \/ Tab 选择 · Enter 确认/)
   assert.equal(workspaceTrustDefaultSelection(workspaceRisk(homedir())), 'exit')
@@ -93,12 +93,12 @@ test('TUI home renders the canonical xiaoyu identity and current runtime facts',
     version: '0.1.0',
     workspace: '/tmp/project',
     agentLabel: 'Xiaoyu Code',
-    providerLabel: 'Brain 未配置',
+    providerLabel: '模型未配置',
     providerReady: false,
   }, { columns: 112, rows: 34 })
   assert.match(output, /XIAOYU/)
   assert.match(output, /Xiaoyu Code/)
-  assert.match(output, /Brain 未配置/)
+  assert.match(output, /模型未配置/)
   assert.match(output, /\/doctor/)
   assert.doesNotMatch(output, /┌─/)
 })
@@ -108,11 +108,11 @@ test('TUI home falls back to a compact identity on narrow terminals', () => {
     version: '0.1.0',
     workspace: '/tmp/project',
     agentLabel: 'Xiaoyu Code',
-    providerLabel: 'Provider Ready',
+    providerLabel: '模型就绪',
     providerReady: true,
   }, { columns: 64, rows: 24 })
   assert.match(output, /XIAOYU/)
-  assert.match(output, /Provider Ready/)
+  assert.match(output, /模型就绪/)
 })
 
 test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
@@ -131,21 +131,31 @@ test('TUI slash command suggestions expose only implemented terminal commands', 
   assert.equal(slashCommandSuggestions('/missing').length, 0)
 })
 
-test('TUI command palette exposes only functional terminal actions', () => {
-  const values = commandPaletteOptions().map(item => item.value)
+test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {
+  const options = commandPaletteOptions()
+  const values = options.map(item => item.value)
   assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
+  assert.equal(options.find(item => item.value === 'workspace')?.label, '工作区')
+  assert.equal(options.find(item => item.value === 'provider')?.label, '模型 / 提供方')
+  assert.equal(options.find(item => item.value === 'agent')?.label, '智能体')
+})
+
+test('CLI treats an explicit Workspace Trust decline as a clean user cancellation', () => {
+  assert.equal(USER_CANCEL_EXIT_CODE, 0)
 })
 
 
 test('TUI home reserves breathing room and enters modal focus while an overlay is open', () => {
   const normal = terminalHomeLayout(34, false, true)
   assert.equal(normal.logoTop, 3)
+  assert.equal(normal.showIdentity, true)
   assert.equal(normal.promptEnd, 24)
   assert.equal(normal.hintRow, 27)
   assert.equal(normal.tipRow, 30)
 
   const overlay = terminalHomeLayout(34, true, true)
   assert.equal(overlay.promptEnd, 31)
+  assert.equal(overlay.showIdentity, false)
   assert.equal(overlay.hintRow, undefined)
   assert.equal(overlay.tipRow, undefined)
 

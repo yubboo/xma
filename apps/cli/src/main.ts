@@ -34,6 +34,7 @@ import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, ty
 import { TerminalBrainStore, osCredentialKey, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 
 const AGENT_ID = codeAgent.id
+export const USER_CANCEL_EXIT_CODE = 0
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 
 
@@ -74,10 +75,10 @@ function helpText(currentVersion: string): string {
     '  xiaoyu --version',
     '  xiaoyu --help',
     '',
-    'Brain：',
-    '  首次启动且尚未配置 Brain 时会自动进入 Provider 配置；之后可随时按 Ctrl+P → Brain / Provider 修改。',
-    '  使用 /model 可从当前 Provider 的真实模型目录切换模型。',
-    '  默认把 API Key 安全保存到 OS Credentials；Profile 只保存引用，不保存 Secret。',
+    '模型：',
+    '  首次启动且尚未配置模型时会自动进入提供方配置；之后可随时按 Ctrl+P → 模型 / 提供方 修改。',
+    '  使用 /model 可从当前提供方的真实模型目录切换模型。',
+    '  默认把 API Key 安全保存到系统凭据；配置文件只保存引用，不保存 Secret。',
     '  自定义 API Key 环境变量仍作为兼容配置方式保留。',
     '  XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY 继续作为兼容配置。',
     '',
@@ -97,8 +98,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 }
 
 function assertWorkspace(workspace: string): void {
-  if (!existsSync(workspace)) throw new Error(`Workspace 不存在：${workspace}`)
-  if (!statSync(workspace).isDirectory()) throw new Error(`Workspace 必须是目录：${workspace}`)
+  if (!existsSync(workspace)) throw new Error(`工作区不存在：${workspace}`)
+  if (!statSync(workspace).isDirectory()) throw new Error(`工作区必须是目录：${workspace}`)
 }
 
 function workspaceId(workspace: string): string {
@@ -153,7 +154,7 @@ function nativeExecutable(): string | undefined {
 }
 
 function brainLabel(profile: TerminalBrainProfile | undefined): string {
-  if (!profile) return 'Brain 未配置'
+  if (!profile) return '模型未配置'
   const providerName = providerCatalogDisplayName(profile.providerId)
   const profileName = profile.displayName === providerName ? '' : ` · ${profile.displayName}`
   return `${providerName}${profileName} · ${profile.model}`
@@ -173,8 +174,8 @@ function doctorItems(
   const credentialReady = active !== undefined && (activeView?.credentialReady ?? true)
   const brainReady = credentialReady && brainProbeReady
   const brainDetail = active
-    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : brainProbeReady ? ' · Brain Ready 已验证' : ' · Brain Ready 未验证/未通过'}`
-    : '未配置 Provider'
+    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : brainProbeReady ? ' · 模型就绪已验证' : ' · 模型就绪未验证/未通过'}`
+    : '未配置提供方'
   const skillHome = skillsRoot()
   const skillReady = [
     'common/task-planning/SKILL.md',
@@ -184,7 +185,7 @@ function doctorItems(
   ].every(relative => existsSync(path.join(skillHome, ...relative.split('/'))))
   return [
     { label: 'Node Runtime', ok: Number(process.versions.node.split('.')[0]) >= 22, detail: `v${process.versions.node}` },
-    { label: 'Workspace', ok: true, detail: workspace },
+    { label: '工作区', ok: true, detail: workspace },
     { label: 'Agent Skills', ok: skillReady, detail: skillReady ? skillHome : `缺少内置 Skill：${skillHome}` },
     { label: 'Session Store', ok: true, detail: path.join(stateRoot(), 'sessions') },
     { label: 'Brain', ok: brainReady, detail: brainDetail },
@@ -321,13 +322,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   const activeView = () => brainStore.list(osCredentialReadiness).find(profile => profile.id === activeProfile?.id)
   const activeProbeKey = () => activeProfile ? `${activeProfile.id}\u0000${activeProfile.model}` : undefined
   const requireActiveProfile = (): TerminalBrainProfile => {
-    if (!activeProfile) throw new Error('Brain 未配置。首次启动会自动引导；也可随时在 Ctrl+P → Brain / Provider 中添加 Provider。')
+    if (!activeProfile) throw new Error('模型未配置。首次启动会自动引导；也可随时在 Ctrl+P → 模型 / 提供方 中添加提供方。')
     return activeProfile
   }
   const credentialMissingMessage = (profile: TerminalBrainProfile): string => {
     if (profile.credential?.source === 'env') return `凭据环境变量 ${profile.credential.key} 尚未设置。`
-    if (profile.credential?.source === 'os') return 'OS Credentials 中没有此 Provider 的 API Key。'
-    return 'Provider 凭据未就绪。'
+    if (profile.credential?.source === 'os') return '系统凭据中没有此提供方的 API Key。'
+    return '提供方凭据未就绪。'
   }
   const ensureCredentialReady = async (profile: TerminalBrainProfile): Promise<boolean> => {
     if (!profile.credential) return true
@@ -390,7 +391,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     async saveBrainProfile(input) {
       if (input.apiKey && input.credentialEnv) throw new Error('API Key 只能选择 OS Credentials 或环境变量其中一种来源。')
       const preset = builtinProviderCatalogEntry(input.providerId)
-      if (!preset) throw new Error(`Provider Catalog 不存在：${input.providerId}`)
+      if (!preset) throw new Error(`提供方目录不存在：${input.providerId}`)
       const displayName = input.displayName?.trim() || preset.displayName
       const baseUrl = input.baseUrl?.trim() || preset.baseUrl
       const selectedModel = input.model?.trim() || preset.defaultModel
@@ -423,7 +424,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         if (storedCredentialKey && input.apiKey) {
           await osCredentials!.set(storedCredentialKey, input.apiKey, AbortSignal.timeout(10_000))
           const persisted = await osCredentials!.has(storedCredentialKey, AbortSignal.timeout(5_000))
-          if (!persisted) throw new Error('API Key 写入 OS Credentials 后无法读回确认；Provider 未保存。')
+          if (!persisted) throw new Error('API Key 写入系统凭据后无法读回确认；提供方未保存。')
         }
         profile = brainStore.upsert({
           id,
@@ -443,7 +444,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       }
       await refreshBrain()
       const saved = brainStore.list(osCredentialReadiness).find(item => item.id === profile.id)
-      if (!saved || !saved.active) throw new Error('Provider 已写入但没有成为当前 Brain；配置状态不一致。')
+      if (!saved || !saved.active) throw new Error('提供方已写入但没有成为当前模型配置；配置状态不一致。')
       return saved
     },
     async selectBrain(profileId) {
@@ -481,18 +482,18 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       return {
         ready: result.ready,
         latencyMs: result.latencyMs,
-        message: result.ready ? `${profile.displayName} · ${profile.model} 已就绪` : `${result.error?.code ?? 'unknown'} · ${result.error?.message ?? 'Brain Ready 失败'}`,
+        message: result.ready ? `${profile.displayName} · ${profile.model} 已就绪` : `${result.error?.code ?? 'unknown'} · ${result.error?.message ?? '模型就绪测试失败'}`,
       }
     },
     async sendMessage(message, mode: TerminalAgentMode, onEvent, signal, approve) {
       const profile = requireActiveProfile()
-      if (!model || !await ensureCredentialReady(profile)) throw new Error(`Brain 未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
+      if (!model || !await ensureCredentialReady(profile)) throw new Error(`模型未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
       const probeKey = `${profile.id}\u0000${profile.model}`
       if (brainProbeReadiness.get(probeKey) !== true) {
         const probe = await providerRegistry.probe(profile.id, profile.model, AbortSignal.timeout(20_000))
         brainProbeReadiness.set(probeKey, probe.ready)
         if (!probe.ready) {
-          throw new Error(`Brain Ready 失败：${probe.error?.code ?? 'unknown'} · ${probe.error?.message ?? '真实 Provider Probe 未通过'}`)
+          throw new Error(`模型就绪测试失败：${probe.error?.code ?? 'unknown'} · ${probe.error?.message ?? '真实提供方 Probe 未通过'}`)
         }
       }
       const listener = (event: RuntimeLiveEvent): void => {
@@ -585,8 +586,8 @@ async function main(): Promise<number> {
   }
 
   if (!await confirmWorkspaceTrust(args.workspace)) {
-    process.stderr.write('已取消：未授权当前 Workspace。\n')
-    return 3
+    process.stdout.write('已取消：未授权当前工作区。\n')
+    return USER_CANCEL_EXIT_CODE
   }
   const backend = await createBackend(args.workspace, currentVersion)
   await runTui(backend)
