@@ -85,7 +85,9 @@ test('OpenAI-compatible Adapter normalizes catalog, provider-safe tool wire name
       const body = await readJson(request)
       requests.push({ url: request.url, authorization: request.headers.authorization, body })
       response.writeHead(200, { 'content-type': 'text/event-stream' })
-      response.write('data: {"choices":[{"delta":{"reasoning_content":"先分析"}}]}\n\n')
+      // DeepSeek 官方流式协议在 include_usage=true 时，中间块会显式携带 usage:null。
+      response.write('data: {"choices":[{"delta":{"role":"assistant","content":""}}],"usage":null}\n\n')
+      response.write('data: {"choices":[{"delta":{"reasoning_content":"先分析"}}],"usage":null}\n\n')
       response.write('data: {"choices":[{"delta":{"content":"你好"}}]}\n\n')
       const tools = body.tools as Array<{ function?: { name?: string } }>
       const wireToolName = tools[0]?.function?.name

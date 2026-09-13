@@ -291,7 +291,10 @@ function parseToolArguments(call: PendingToolCall): JsonObject {
 
 function usageEvent(payload: JsonRecord): Extract<ModelEvent, { type: 'usage' }> | undefined {
   const usageRaw = payload.usage
-  if (usageRaw === undefined) return undefined
+  // DeepSeek 等 OpenAI-compatible 流式接口在开启 stream_options.include_usage 后，
+  // 会在最终统计块之前显式返回 usage: null。null 表示“当前块暂无统计”，
+  // 不能按 malformed_response 处理；只有非 null 的 usage 才要求为对象。
+  if (usageRaw === undefined || usageRaw === null) return undefined
   const usage = objectValue(usageRaw, 'usage')
   const event: Extract<ModelEvent, { type: 'usage' }> = { type: 'usage' }
   const input = numberValue(usage.prompt_tokens)
