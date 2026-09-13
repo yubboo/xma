@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 XMA `xiaoyu` 终端工作台的交互界面、主题、命令分发与 Workspace 风险确认。
  * 关联模块：main.ts、Core Agent Runtime、Workspace、Provider、Tool Approval 与 Native 文件 ToolSet。
- * 当前实现：基于 Pi TUI 的差分渲染/真实 Editor，提供固定 Home/Prompt Dock、动态丰富视觉、Ctrl+P 命令面板、终端设置、风险确认、斜杠自动补全、流式回复与 Tool Approval。
+ * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、动态丰富视觉、Ctrl+P 命令面板、Brain 配置、终端设置、风险确认、斜杠补全、流式回复与 Tool Approval。
  * 职责边界：TUI 只负责终端视觉和交互；不得复制 Agent Loop、Provider 协议、Workspace Policy 或 Native 安全逻辑。
  */
 
@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import type { ToolApprovalDecision, ToolApprovalRequest } from '../../../core/src/tool/policy.ts'
+import type { TerminalBrainProfileView } from './brain.ts'
 
 const ESC = '\u001b['
 const reset = `${ESC}0m`
@@ -22,7 +23,6 @@ const textFaint = `${ESC}38;2;98;98;98m`
 const green = `${ESC}38;2;98;202;132m`
 const yellow = `${ESC}38;2;224;190;72m`
 const red = `${ESC}38;2;238;94;94m`
-const panel = `${ESC}48;2;30;30;30m`
 const clearScreen = `${ESC}2J${ESC}H`
 const enterAltScreen = `${ESC}?1049h`
 const leaveAltScreen = `${ESC}?1049l`
@@ -52,7 +52,7 @@ const COMMANDS = [
   { value: 'vivid', label: 'vivid', description: '切换丰富 / 简洁视觉' },
   { value: 'doctor', label: 'doctor', description: '检查当前运行环境' },
   { value: 'workspace', label: 'workspace', description: '查看当前 Workspace' },
-  { value: 'provider', label: 'provider', description: '查看当前 Brain / Provider' },
+  { value: 'provider', label: 'provider', description: '配置 Brain / Provider' },
   { value: 'agent', label: 'agent', description: '查看当前 Agent' },
   { value: 'clear', label: 'clear', description: '清空当前终端显示' },
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
@@ -63,7 +63,7 @@ const PALETTE_ACTIONS = [
   { value: 'visual', label: '切换丰富显示', description: '动态星点 / 简洁模式' },
   { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor' },
   { value: 'workspace', label: 'Workspace', description: '查看当前工作区' },
-  { value: 'provider', label: 'Brain / Provider', description: '查看当前 Provider 状态' },
+  { value: 'provider', label: 'Brain / Provider', description: '配置、测试和选择模型' },
   { value: 'agent', label: 'Agent', description: '查看当前 Agent' },
   { value: 'clear', label: '清空显示', description: '清空当前会话的终端显示' },
   { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端' },
@@ -121,12 +121,29 @@ export interface DoctorItem {
   detail: string
 }
 
+export interface BrainProbeView {
+  ready: boolean
+  latencyMs: number
+  message: string
+}
+
 export interface TerminalBackend {
   version: string
   workspace: string
   agentLabel: string
-  providerLabel: string
-  providerReady: boolean
+  readonly providerLabel: string
+  readonly providerReady: boolean
+  listBrainProfiles(): readonly TerminalBrainProfileView[]
+  saveBrainProfile(input: {
+    displayName: string
+    baseUrl: string
+    model: string
+    credentialEnv?: string
+  }): Promise<TerminalBrainProfileView>
+  selectBrain(profileId: string): Promise<TerminalBrainProfileView>
+  listBrainModels(): Promise<readonly string[]>
+  selectBrainModel(model: string): Promise<TerminalBrainProfileView>
+  probeBrain(): Promise<BrainProbeView>
   sendMessage(
     input: string,
     write: (chunk: string) => void,
@@ -157,7 +174,7 @@ interface AutocompleteItem {
 interface PiTuiToolkit {
   TUI: new (terminal: unknown, showHardwareCursor?: boolean) => any
   ProcessTerminal: new () => any
-  Editor: new (tui: unknown, theme: unknown, options?: { paddingX?: number; autocompleteMaxVisible?: number }) => any
+  CURSOR_MARKER: string
   Box: new (paddingX?: number, paddingY?: number, bgFn?: (value: string) => string) => any
   SelectList: new (items: readonly AutocompleteItem[], maxVisible: number, theme: unknown) => any
   visibleWidth(value: string): number
@@ -308,10 +325,15 @@ function padStyled(value: string, width: number, visibleWidth: (value: string) =
 }
 
 function renderHintLine(width: number): string {
-  const hint = `${bold}/${reset} ${textSoft}命令${reset}    ${bold}ctrl+p${reset} ${textSoft}命令面板${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}shift+enter${reset} ${textSoft}换行${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-  const plain = '/ 命令    ctrl+p 命令面板    ↑↓ 历史    shift+enter 换行    ctrl+c 中止'
-  const left = Math.max(0, Math.floor((width - cellWidth(plain)) / 2))
-  return `${spaces(left)}${hint}`
+  const compact = width < 64
+  const plain = compact
+    ? '/ 命令  ctrl+p 面板  ↑↓ 历史  ctrl+c 中止'
+    : '/ 命令    ctrl+p 命令面板    ↑↓ 历史    shift+enter 换行    ctrl+c 中止'
+  const styled = compact
+    ? `${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+p${reset} ${textSoft}面板${reset}  ${bold}↑↓${reset} ${textSoft}历史${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+    : `${bold}/${reset} ${textSoft}命令${reset}    ${bold}ctrl+p${reset} ${textSoft}命令面板${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}shift+enter${reset} ${textSoft}换行${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+  if (cellWidth(plain) <= width) return styled
+  return `${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+p${reset} ${textSoft}面板${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
 }
 
 export function commandPaletteOptions(): readonly AutocompleteItem[] {
@@ -372,11 +394,11 @@ export function renderHome(
   const width = contentWidth(size.columns)
   const left = Math.max(0, Math.floor((size.columns - width) / 2))
   const indent = spaces(left)
-  const provider = backend.providerReady ? backend.providerLabel : 'Brain 未配置'
+  const provider = backend.providerLabel
   const card = [
-    `${indent}${orange}▌${reset}${panel} ${textFaint}输入消息…（输入 / 唤起命令）${spaces(Math.max(0, width - 31))}${reset}`,
-    `${indent}${orange}▌${reset}${panel}${spaces(width - 1)}${reset}`,
-    `${indent}${orange}▌${reset}${panel} ${orange}${bold}Build${reset}${panel}${text} · ${backend.agentLabel}    ${backend.providerReady ? green : yellow}${backend.providerReady ? '●' : '○'}${reset}${panel}${textSoft} ${provider}${spaces(Math.max(0, width - 30 - cellWidth(backend.agentLabel) - cellWidth(provider)))}${reset}`,
+    `${indent}${orange}▌${reset} ${textFaint}输入消息…（输入 / 唤起命令）${reset}`,
+    `${indent}${orange}▌${reset}`,
+    `${indent}${orange}▌${reset} ${orange}${bold}Build${reset}${text} · ${backend.agentLabel}${reset}   ${backend.providerReady ? green : yellow}${backend.providerReady ? '●' : '○'}${reset}${textSoft} ${provider}${reset}`,
   ]
   return [
     '',
@@ -472,38 +494,294 @@ export function slashCommandSuggestions(prefix: string): readonly AutocompleteIt
   return COMMANDS.filter(command => command.value.startsWith(normalized)).map(command => ({ ...command }))
 }
 
-class SlashAutocompleteProvider {
-  async getSuggestions(
-    lines: string[],
-    cursorLine: number,
-    cursorCol: number,
-  ): Promise<{ items: AutocompleteItem[]; prefix: string } | null> {
-    const line = lines[cursorLine] ?? ''
-    const beforeCursor = line.slice(0, cursorCol)
-    if (!beforeCursor.startsWith('/') || beforeCursor.includes(' ')) return null
-    const items = [...slashCommandSuggestions(beforeCursor)]
-    if (items.length === 0) return null
-    return { items, prefix: beforeCursor }
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
+function previousGraphemeIndex(value: string, cursor: number): number {
+  if (cursor <= 0) return 0
+  let previous = 0
+  for (const segment of graphemeSegmenter.segment(value.slice(0, cursor))) previous = segment.index
+  return previous
+}
+
+function nextGraphemeIndex(value: string, cursor: number): number {
+  if (cursor >= value.length) return value.length
+  const segment = graphemeSegmenter.segment(value.slice(cursor))[Symbol.iterator]().next().value as Intl.SegmentData | undefined
+  return segment ? cursor + segment.segment.length : Math.min(value.length, cursor + 1)
+}
+
+function sliceCells(value: string, startCell: number, width: number): string {
+  if (width <= 0) return ''
+  let cell = 0
+  let out = ''
+  for (const char of value) {
+    const charWidth = isWideCodePoint(char.codePointAt(0) ?? 0) ? 2 : 1
+    const next = cell + charWidth
+    if (next <= startCell) {
+      cell = next
+      continue
+    }
+    if (cell >= startCell + width || next > startCell + width) break
+    out += char
+    cell = next
+  }
+  return out
+}
+
+function cursorCell(value: string, index: number): number {
+  return cellWidth(value.slice(0, Math.max(0, Math.min(index, value.length))))
+}
+
+/**
+ * Windows Terminal 安全 Prompt：只使用 CURSOR_MARKER 定位真实硬件光标，不输出 ESC[7m 反色假光标。
+ * 这样既保留 CJK IME 光标位置，也避免 Pi Editor/Input 0.74.0 在 Windows 上出现整块反色背景泄漏。
+ */
+export class SafePromptInput {
+  focused = false
+  disableSubmit = false
+  onSubmit?: (value: string) => void
+  onChange?: (value: string) => void
+  private value = ''
+  private cursor = 0
+  private history: string[] = []
+  private historyIndex = -1
+  private pasteBuffer = ''
+  private pasting = false
+  private selectedSuggestion = 0
+
+  constructor(private readonly toolkit: PiTuiToolkit) {}
+
+  invalidate(): void {
+    // Prompt 不缓存渲染结果；保留 Component 兼容方法。
   }
 
-  applyCompletion(
-    lines: string[],
-    cursorLine: number,
-    cursorCol: number,
-    item: AutocompleteItem,
-    prefix: string,
-  ): { lines: string[]; cursorLine: number; cursorCol: number } {
-    const line = lines[cursorLine] ?? ''
-    const before = line.slice(0, Math.max(0, cursorCol - prefix.length))
-    const after = line.slice(cursorCol)
-    const value = `${before}/${item.value} ${after}`
-    const next = [...lines]
-    next[cursorLine] = value
-    return { lines: next, cursorLine, cursorCol: before.length + item.value.length + 2 }
+  getText(): string {
+    return this.value
   }
 
-  shouldTriggerFileCompletion(): boolean {
-    return false
+  setText(value: string): void {
+    this.value = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\t/g, '    ')
+    this.cursor = this.value.length
+    this.historyIndex = -1
+    this.selectedSuggestion = 0
+    this.onChange?.(this.value)
+  }
+
+  addToHistory(value: string): void {
+    const trimmed = value.trim()
+    if (!trimmed || this.history[0] === trimmed) return
+    this.history.unshift(trimmed)
+    if (this.history.length > 100) this.history.pop()
+  }
+
+  suggestions(): readonly AutocompleteItem[] {
+    const trimmed = this.value.trimStart()
+    if (!trimmed.startsWith('/') || trimmed.includes(' ')) return []
+    return slashCommandSuggestions(trimmed)
+  }
+
+  selectedSuggestionIndex(): number {
+    const items = this.suggestions()
+    return items.length === 0 ? -1 : Math.min(this.selectedSuggestion, items.length - 1)
+  }
+
+  private emitChange(): void {
+    this.selectedSuggestion = 0
+    this.onChange?.(this.value)
+  }
+
+  private insert(value: string): void {
+    this.value = this.value.slice(0, this.cursor) + value + this.value.slice(this.cursor)
+    this.cursor += value.length
+    this.emitChange()
+  }
+
+  private deleteBackward(): void {
+    if (this.cursor <= 0) return
+    const previous = previousGraphemeIndex(this.value, this.cursor)
+    this.value = this.value.slice(0, previous) + this.value.slice(this.cursor)
+    this.cursor = previous
+    this.emitChange()
+  }
+
+  private deleteForward(): void {
+    if (this.cursor >= this.value.length) return
+    const next = nextGraphemeIndex(this.value, this.cursor)
+    this.value = this.value.slice(0, this.cursor) + this.value.slice(next)
+    this.emitChange()
+  }
+
+  private navigateHistory(direction: -1 | 1): void {
+    if (this.value.includes('\n') || this.history.length === 0) return
+    const next = this.historyIndex + (direction === -1 ? 1 : -1)
+    if (next < -1 || next >= this.history.length) return
+    this.historyIndex = next
+    this.value = next === -1 ? '' : this.history[next] ?? ''
+    this.cursor = this.value.length
+    this.emitChange()
+  }
+
+  private applySelectedSuggestion(): boolean {
+    const items = this.suggestions()
+    if (items.length === 0) return false
+    const item = items[Math.min(this.selectedSuggestion, items.length - 1)]
+    if (!item) return false
+    this.value = `/${item.value} `
+    this.cursor = this.value.length
+    this.selectedSuggestion = 0
+    this.onChange?.(this.value)
+    return true
+  }
+
+  private submit(): void {
+    if (this.disableSubmit) return
+    const result = this.value.trim()
+    if (!result) return
+    this.onSubmit?.(result)
+  }
+
+  handleInput(data: string): void {
+    if (data.includes('\u001b[200~')) {
+      this.pasting = true
+      this.pasteBuffer = ''
+      data = data.replace('\u001b[200~', '')
+    }
+    if (this.pasting) {
+      this.pasteBuffer += data
+      const end = this.pasteBuffer.indexOf('\u001b[201~')
+      if (end < 0) return
+      const pasted = this.pasteBuffer.slice(0, end).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\t/g, '    ')
+      const rest = this.pasteBuffer.slice(end + 6)
+      this.pasteBuffer = ''
+      this.pasting = false
+      this.insert(pasted)
+      if (rest) this.handleInput(rest)
+      return
+    }
+
+    const suggestions = this.suggestions()
+    const exactSlash = suggestions.some(item => `/${item.value}` === this.value.trim())
+    if (suggestions.length > 0 && (this.toolkit.matchesKey(data, 'up') || data === '\u001b[A')) {
+      this.selectedSuggestion = (this.selectedSuggestion - 1 + suggestions.length) % suggestions.length
+      this.onChange?.(this.value)
+      return
+    }
+    if (suggestions.length > 0 && (this.toolkit.matchesKey(data, 'down') || data === '\u001b[B')) {
+      this.selectedSuggestion = (this.selectedSuggestion + 1) % suggestions.length
+      this.onChange?.(this.value)
+      return
+    }
+    if (suggestions.length > 0 && (this.toolkit.matchesKey(data, 'tab') || data === '\t')) {
+      this.applySelectedSuggestion()
+      return
+    }
+    if (!exactSlash && suggestions.length > 0 && (this.toolkit.matchesKey(data, 'enter') || data === '\r')) {
+      this.applySelectedSuggestion()
+      return
+    }
+
+    if (this.toolkit.matchesKey(data, 'shift+enter') || this.toolkit.matchesKey(data, 'ctrl+enter') || this.toolkit.matchesKey(data, 'alt+enter') || data === '\u001b\r') {
+      this.insert('\n')
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'enter') || data === '\r' || data === '\n') {
+      this.submit()
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'backspace') || data === '\u007f' || data === '\b') {
+      this.deleteBackward()
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'delete') || data === '\u001b[3~') {
+      this.deleteForward()
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'left') || data === '\u001b[D') {
+      this.cursor = previousGraphemeIndex(this.value, this.cursor)
+      this.onChange?.(this.value)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'right') || data === '\u001b[C') {
+      this.cursor = nextGraphemeIndex(this.value, this.cursor)
+      this.onChange?.(this.value)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'up') || data === '\u001b[A') {
+      this.navigateHistory(-1)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'down') || data === '\u001b[B') {
+      this.navigateHistory(1)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'ctrl+a') || data === '\u0001') {
+      const lineStart = this.value.lastIndexOf('\n', Math.max(0, this.cursor - 1)) + 1
+      this.cursor = lineStart
+      this.onChange?.(this.value)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'ctrl+e') || data === '\u0005') {
+      const nextLine = this.value.indexOf('\n', this.cursor)
+      this.cursor = nextLine < 0 ? this.value.length : nextLine
+      this.onChange?.(this.value)
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'ctrl+u') || data === '\u0015') {
+      const start = this.value.lastIndexOf('\n', Math.max(0, this.cursor - 1)) + 1
+      this.value = this.value.slice(0, start) + this.value.slice(this.cursor)
+      this.cursor = start
+      this.emitChange()
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'ctrl+k') || data === '\u000b') {
+      const end = this.value.indexOf('\n', this.cursor)
+      this.value = this.value.slice(0, this.cursor) + (end < 0 ? '' : this.value.slice(end))
+      this.emitChange()
+      return
+    }
+    if (this.toolkit.matchesKey(data, 'ctrl+w') || data === '\u0017') {
+      let start = this.cursor
+      while (start > 0 && /\s/.test(this.value[start - 1] ?? '')) start -= 1
+      while (start > 0 && !/\s/.test(this.value[start - 1] ?? '')) start -= 1
+      this.value = this.value.slice(0, start) + this.value.slice(this.cursor)
+      this.cursor = start
+      this.emitChange()
+      return
+    }
+
+    if (data.includes('\u001b') || [...data].some(char => {
+      const code = char.charCodeAt(0)
+      return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f)
+    })) return
+    if (data) this.insert(data)
+  }
+
+  render(width: number): string[] {
+    const safeWidth = Math.max(4, width)
+    const lines = this.value.split('\n')
+    const beforeCursor = this.value.slice(0, this.cursor)
+    const cursorLine = beforeCursor.split('\n').length - 1
+    const cursorCol = beforeCursor.slice(beforeCursor.lastIndexOf('\n') + 1).length
+    const firstVisible = Math.max(0, Math.min(cursorLine - 2, Math.max(0, lines.length - 4)))
+    const visible = lines.slice(firstVisible, firstVisible + 4)
+    const rendered: string[] = []
+
+    visible.forEach((line, visibleIndex) => {
+      const logicalIndex = firstVisible + visibleIndex
+      if (logicalIndex !== cursorLine) {
+        rendered.push(truncateCells(line, safeWidth))
+        return
+      }
+      const cursorVisual = cursorCell(line, cursorCol)
+      const startCell = Math.max(0, cursorVisual - safeWidth + 2)
+      const before = sliceCells(line, startCell, Math.max(0, cursorVisual - startCell))
+      const afterWidth = Math.max(0, safeWidth - cellWidth(before))
+      const after = sliceCells(line.slice(cursorCol), 0, afterWidth)
+      const marker = this.focused ? this.toolkit.CURSOR_MARKER : ''
+      rendered.push(`${before}${marker}${after}`)
+    })
+
+    if (rendered.length === 0) rendered.push(this.focused ? this.toolkit.CURSOR_MARKER : '')
+    return rendered
   }
 }
 
@@ -519,8 +797,7 @@ async function loadPiTui(): Promise<PiTuiToolkit> {
 
 class XiaoyuSurface {
   private _focused = false
-  readonly editor: any
-  private readonly promptBox: any
+  readonly editor: SafePromptInput
   private readonly transcript: TranscriptItem[] = []
   private notice = ''
   private busy = false
@@ -540,30 +817,9 @@ class XiaoyuSurface {
     initialSettings: TerminalUiSettings,
   ) {
     this.settings = { ...initialSettings }
-    const mutedBorder = (value: string): string => `${textFaint}${value.replaceAll('─', ' ')}${reset}`
-    const selectList = {
-      selectedPrefix: (value: string) => `${orange}${value}${reset}`,
-      selectedText: (value: string) => `${text}${bold}${value}${reset}`,
-      description: (value: string) => `${textSoft}${value}${reset}`,
-      scrollInfo: (value: string) => `${textFaint}${value}${reset}`,
-      noMatch: (value: string) => `${textFaint}${value}${reset}`,
-    }
-    this.editor = new toolkit.Editor(tui, { borderColor: mutedBorder, selectList }, { paddingX: 0, autocompleteMaxVisible: 7 })
-    this.editor.setAutocompleteProvider?.(new SlashAutocompleteProvider())
+    this.editor = new SafePromptInput(toolkit)
     this.editor.onChange = () => this.tui.requestRender()
     this.editor.onSubmit = (value: string) => { void this.submit(value) }
-
-    // Prompt 只让 Pi TUI Editor 自己处理光标/IME；不再叠加手写 ANSI 背景，避免 Windows Terminal 反色泄漏。
-    this.promptBox = new toolkit.Box(1, 0)
-    this.promptBox.addChild({
-      render: (width: number) => this.editor.getText?.()
-        ? []
-        : [`${textFaint}${truncateCells('输入消息…（输入 / 唤起命令）', width)}${reset}`],
-    })
-    this.promptBox.addChild(this.editor)
-    this.promptBox.addChild({
-      render: (width: number) => [this.renderPromptStatus(width)],
-    })
 
     this.animationTimer = setInterval(() => {
       if (this.settings.visual !== 'vivid' && !this.busy) return
@@ -634,9 +890,8 @@ class XiaoyuSurface {
       }
     }
 
-    const boxWidth = Math.max(40, cardWidth - 1)
-    const promptLines = (this.promptBox.render(boxWidth) as string[]).map(line => `${indent}${orange}▌${reset}${line}`)
-    const hintLine = renderHintLine(columns)
+    const promptLines = this.renderPromptCard(cardWidth).map(line => `${indent}${line}`)
+    const hintLine = `${indent}${renderHintLine(cardWidth)}`
 
     if (this.transcript.length === 0) {
       const logo = renderLogo(columns, this.settings.logo)
@@ -655,9 +910,8 @@ class XiaoyuSurface {
       if (this.settings.tips && hintRow + 2 < rows - 1) {
         const spinner = SPINNER[Math.floor(Date.now() / 180) % SPINNER.length]!
         const tip = this.notice || (this.busy ? `${spinner} Xiaoyu 正在工作；Ctrl+C 中止` : 'Ctrl+P 打开命令面板；输入 / 查看快捷命令')
-        screen[hintRow + 2] = centerPlain(`●  提示  ${tip}`, columns)
-          .replace('●  提示', `${orange}●  提示${reset}`)
-          .replace(tip, `${textSoft}${tip}${reset}`)
+        const clippedTip = truncateCells(tip, Math.max(12, cardWidth - 12))
+        screen[hintRow + 2] = `${indent}${orange}●  提示${reset}${textSoft}  ${clippedTip}${reset}`
       }
     } else {
       // 对话态使用固定底部 Prompt Dock；上方内容变化不会推动输入区。
@@ -699,9 +953,36 @@ class XiaoyuSurface {
     return screen
   }
 
+  private renderPromptCard(width: number): string[] {
+    const bodyWidth = Math.max(24, width - 3)
+    const inputLines = this.editor.render(bodyWidth)
+    const empty = !this.editor.getText()
+    const lines: string[] = []
+    const first = inputLines[0] ?? ''
+    lines.push(`${orange}▌${reset} ${empty ? `${first}${textFaint}输入消息…（输入 / 唤起命令）${reset}` : first}`)
+    for (const line of inputLines.slice(1)) lines.push(`${orange}▌${reset} ${line}`)
+
+    const suggestions = this.editor.suggestions()
+    const selected = this.editor.selectedSuggestionIndex()
+    if (suggestions.length > 0) {
+      const visible = suggestions.slice(0, 6)
+      for (let index = 0; index < visible.length; index += 1) {
+        const item = visible[index]!
+        const prefix = index === selected ? `${orange}${bold}›${reset}` : `${textFaint}·${reset}`
+        const name = `/${item.label}`
+        const description = item.description ?? ''
+        const remaining = Math.max(8, bodyWidth - cellWidth(name) - 5)
+        lines.push(`${orange}▌${reset}   ${prefix} ${index === selected ? `${text}${bold}${name}${reset}` : `${textSoft}${name}${reset}`}  ${textFaint}${truncateCells(description, remaining)}${reset}`)
+      }
+    }
+
+    lines.push(`${orange}▌${reset} ${this.renderPromptStatus(bodyWidth)}`)
+    return lines
+  }
+
   private renderPromptStatus(width: number): string {
     const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
-    const provider = this.backend.providerReady ? this.backend.providerLabel : 'Brain 未配置'
+    const provider = this.backend.providerLabel
     const plainAgent = truncateCells(this.backend.agentLabel, 24)
     const plainProvider = truncateCells(provider, Math.max(8, width - cellWidth(plainAgent) - 16))
     const styled = `${orange}${bold}Build${reset}${text} · ${plainAgent}${reset}   ${providerDot}${textSoft} ${plainProvider}${reset}`
@@ -755,6 +1036,163 @@ class XiaoyuSurface {
     })
   }
 
+  private openProviderManager(): void {
+    if (this.overlayOpen) return
+    const profiles = this.backend.listBrainProfiles()
+    const active = profiles.find(profile => profile.active)
+    const items: AutocompleteItem[] = [
+      { value: 'add', label: '新增 OpenAI-compatible Provider', description: '保存 Base URL / Model / API Key 环境变量引用' },
+    ]
+    if (active) {
+      items.push(
+        { value: 'probe', label: 'Brain Ready 测试', description: `${active.displayName} · ${active.model}` },
+        { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
+      )
+    }
+    for (const profile of profiles) {
+      const credential = profile.credentialEnv
+        ? profile.credentialReady ? `Key: ${profile.credentialEnv}` : `缺少 ${profile.credentialEnv}`
+        : '无需 API Key'
+      items.push({
+        value: `select:${profile.id}`,
+        label: `${profile.active ? '●' : '○'} ${profile.displayName}`,
+        description: `${profile.model} · ${profile.source === 'environment' ? '环境变量' : '用户配置'} · ${credential}`,
+      })
+    }
+    this.showListOverlay('Brain / Provider', items, value => {
+      void this.runProviderAction(value)
+    })
+  }
+
+  private async runProviderAction(value: string): Promise<void> {
+    try {
+      if (value === 'add') {
+        await this.addProviderWizard()
+        return
+      }
+      if (value === 'probe') {
+        this.notice = '正在执行 Brain Ready 测试…'
+        this.tui.requestRender()
+        const result = await this.backend.probeBrain()
+        this.notice = `${result.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${result.latencyMs}ms · ${result.message}`
+        this.tui.requestRender()
+        return
+      }
+      if (value === 'models') {
+        this.notice = '正在读取模型列表…'
+        this.tui.requestRender()
+        const models = await this.backend.listBrainModels()
+        if (models.length === 0) {
+          this.notice = 'Provider 没有返回模型列表；可重新新增 Profile 手工填写模型 ID。'
+          this.tui.requestRender()
+          return
+        }
+        this.showListOverlay('选择模型', models.slice(0, 80).map(model => ({ value: model, label: model })), model => {
+          void this.backend.selectBrainModel(model).then(profile => {
+            this.notice = `模型已切换 · ${profile.model}`
+            this.tui.requestRender()
+          }).catch(error => {
+            this.notice = `模型切换失败 · ${error instanceof Error ? error.message : String(error)}`
+            this.tui.requestRender()
+          })
+        })
+        return
+      }
+      if (value.startsWith('select:')) {
+        const profile = await this.backend.selectBrain(value.slice('select:'.length))
+        this.notice = `Brain 已切换 · ${profile.displayName} · ${profile.model}`
+        this.tui.requestRender()
+      }
+    } catch (error) {
+      this.notice = `Brain 操作失败 · ${error instanceof Error ? error.message : String(error)}`
+      this.tui.requestRender()
+    }
+  }
+
+  private async addProviderWizard(): Promise<void> {
+    const displayName = await this.showInputOverlay('Provider 名称', '例如：OpenAI Compatible', '')
+    if (displayName === undefined) return
+    const baseUrl = await this.showInputOverlay('Base URL', '例如：https://api.example.com/v1', '')
+    if (baseUrl === undefined) return
+    const model = await this.showInputOverlay('默认模型 ID', '例如：gpt-4.1 / deepseek-chat', '')
+    if (model === undefined) return
+    const credentialEnv = await this.showInputOverlay('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY')
+    if (credentialEnv === undefined) return
+
+    try {
+      const profile = await this.backend.saveBrainProfile({
+        displayName: displayName.trim() || 'OpenAI Compatible',
+        baseUrl: baseUrl.trim(),
+        model: model.trim(),
+        ...(credentialEnv.trim() ? { credentialEnv: credentialEnv.trim() } : {}),
+      })
+      this.notice = `Provider 已保存 · ${profile.displayName} · ${profile.model}`
+      this.tui.requestRender()
+      const probe = await this.backend.probeBrain()
+      this.notice = `${probe.ready ? 'Brain Ready' : 'Provider 已保存但未就绪'} · ${probe.message}`
+      this.tui.requestRender()
+    } catch (error) {
+      this.notice = `Provider 保存失败 · ${error instanceof Error ? error.message : String(error)}`
+      this.tui.requestRender()
+    }
+  }
+
+  private showInputOverlay(title: string, description: string, initial: string): Promise<string | undefined> {
+    if (this.overlayOpen) return Promise.resolve(undefined)
+    this.overlayOpen = true
+    return new Promise(resolve => {
+      const field = new SafePromptInput(this.toolkit)
+      field.setText(initial)
+      let handle: any
+      let settled = false
+      const finish = (value: string | undefined): void => {
+        if (settled) return
+        settled = true
+        this.overlayOpen = false
+        try { handle?.hide?.() } catch { /* best effort */ }
+        this.tui.setFocus(this)
+        this.tui.requestRender()
+        resolve(value)
+      }
+      field.onChange = () => this.tui.requestRender()
+      field.onSubmit = value => finish(value)
+      const frame = {
+        _focused: false,
+        get focused(): boolean { return this._focused },
+        set focused(value: boolean) {
+          this._focused = value
+          field.focused = value
+        },
+        render: (width: number): string[] => {
+          const inner = Math.max(24, width - 4)
+          return [
+            `${bold}${text}${title}${reset}${spaces(Math.max(1, inner - cellWidth(title) - 3))}${textFaint}esc${reset}`,
+            `${textFaint}${truncateCells(description, inner)}${reset}`,
+            '',
+            ...field.render(inner),
+            '',
+            `${textFaint}Enter 确认 · Esc 取消${reset}`,
+          ]
+        },
+        handleInput: (data: string): void => {
+          if (this.toolkit.matchesKey(data, 'escape') || data === '\u001b') {
+            finish(undefined)
+            return
+          }
+          field.handleInput(data)
+          this.tui.requestRender()
+        },
+      }
+      handle = this.tui.showOverlay(frame, {
+        width: 66,
+        maxHeight: 10,
+        row: '28%',
+        col: '50%',
+        margin: 2,
+      })
+    })
+  }
+
   private showListOverlay(
     title: string,
     items: readonly AutocompleteItem[],
@@ -801,7 +1239,8 @@ class XiaoyuSurface {
     handle = this.tui.showOverlay(frame, {
       width: 62,
       maxHeight: Math.min(18, Math.max(8, items.length + 4)),
-      anchor: 'center',
+      row: '22%',
+      col: '50%',
       margin: 2,
     })
   }
@@ -838,8 +1277,7 @@ class XiaoyuSurface {
       return true
     }
     if (command === 'provider') {
-      this.notice = `Brain · ${this.backend.providerLabel}`
-      this.tui.requestRender()
+      this.openProviderManager()
       return true
     }
     if (command === 'agent') {
@@ -886,7 +1324,7 @@ class XiaoyuSurface {
       return
     }
     if (!this.backend.providerReady) {
-      this.notice = 'Brain 未配置 · 设置 XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY 后重新运行'
+      this.notice = 'Brain 未配置或未就绪 · 按 Ctrl+P → Brain / Provider 完成配置与 Brain Ready 测试'
       this.tui.requestRender()
       return
     }

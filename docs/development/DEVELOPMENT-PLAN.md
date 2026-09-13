@@ -205,10 +205,10 @@ XMA 长期参考：
 
 - `xiaoyu` canonical command + `xma` compatibility alias；
 - 持续 TUI，而不是欢迎页打印后退出；
-- 固定 Pi TUI 0.74.0 作为 Node 22 兼容终端渲染层：真实 Editor、CJK/IME、差分刷新、历史与已实现命令的 `/` 自动补全；Home/Prompt Dock 固定锚点，丰富视觉只刷新装饰层；`Ctrl+P` 命令面板 + Terminal Settings（丰富/简洁、提示、Logo）作为真正可操作的 Overlay，不推动主布局；
+- 固定 Pi TUI 0.74.0 作为 Node 22 兼容差分渲染/Overlay/硬件光标基础层；主输入使用 XMA `SafePromptInput`，禁止使用上游 Editor/Input 的 reverse-video cursor；支持 CJK 硬件光标、历史、多行与已实现命令的 `/` 自动补全；Home/Prompt Dock 固定锚点，丰富视觉只刷新装饰层；`Ctrl+P` 命令面板 + Terminal Settings（丰富/简洁、提示、Logo）作为真正可操作的 Overlay，不推动主布局；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
-- 第一批环境变量 OpenAI-compatible Brain；
+- OpenAI-compatible Brain Terminal 配置闭环第一版：用户级非 Secret Profile Store、Credential Env Reference、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；
 - `xiaoyu doctor/server/web` 入口；
 - portable bundle：私有 Node + CLI/Server/Web + Rust Native；
 - Windows / Unix bootstrap installer；
@@ -217,7 +217,7 @@ XMA 长期参考：
 
 ### 尚未完成
 
-- OS Keychain Provider Settings；
+- OS Keychain Credentials：在不把 Secret 写入 `brain.json` / Session 的前提下，允许 Terminal/Desktop 安全录入 API Key；
 - Terminal process Tool allowlist / Approval（文件 read/write 第一批已接 Rust Kernel）；
 - PTY/ConPTY；
 - 正式公网安装域名；GitHub tag release workflow 已有代码，但尚未完成真实 tag/release E2E；

@@ -86,9 +86,9 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 `xiaoyu [workspace]` 是正式 Terminal Workbench。第一批必须具备：
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
-- Terminal UI 使用固定 `@earendil-works/pi-tui@0.74.0` 提供差分渲染、真实 Editor、CJK/IME 光标与输入历史；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
+- Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/硬件光标基础层；主 Prompt 使用 XMA `SafePromptInput`，只发 `CURSOR_MARKER` 定位真实硬件光标，不使用上游 Editor/Input 的 reverse-video 假光标，避免 Windows Terminal 白块/反色泄漏；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
 - Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
-- `/` 使用真实 Editor autocomplete，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
+- `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
 - Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
 - Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
@@ -96,12 +96,12 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - `xiaoyu server / web` 发行入口；
 - Home / 文件系统根目录风险确认，只允许“退出”或“仅本次信任”；
 - Workspace Session 绑定到正式 Agent Runtime；
-- 第一批允许通过 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 接入 OpenAI-compatible Brain，Secret 只从环境变量读取，不写入 Session；
+- Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 新增 OpenAI-compatible Base URL、模型 ID、API Key **环境变量名**，执行 Brain Ready Probe、远程模型列表和模型切换；`XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续作为只读兼容 Profile。`brain.json` 永远只保存 Credential Reference，不保存 Secret 值，也不写入 Session；
 - 未配置 Provider 时明确显示未就绪，禁止伪造模型回复；
 - 如果 bundled/development Native Kernel 可用，Terminal 注册 `native.fs.read_text` / `native.fs.write_text`：读取按 standard policy 直接允许，写入必须在 TUI 显示 Tool Approval，并支持 deny / allow-once / allow-session；
 - Terminal 第一批 **不注册 `native.process.run`**。只有 Host 明确给出 absolute executable allowlist 后才允许把进程工具加入 ToolPlan，不能为了终端方便退回 PATH/shell 执行。
 
-后续把 Provider Settings、OS Keychain、process allowlist 管理、PTY/ConPTY 接入同一个 Terminal Host；不能重新实现一套 CLI Agent。
+后续把 OS Keychain（允许在 UI 中安全录入 Secret）、process allowlist 管理、PTY/ConPTY 接入同一个 Terminal Host；不能重新实现一套 CLI Agent。
 
 ## 6. Release 输出
 

@@ -201,7 +201,8 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 apps/cli/
 ├─ src/
 │  ├─ main.ts          # xiaoyu 产品入口 / Runtime 接线
-│  └─ tui.ts           # 纯 Terminal Shell / 交互
+│  ├─ brain.ts         # Terminal Provider Profile / 非 Secret Credential Reference
+│  └─ tui.ts           # 纯 Terminal Shell / Safe Prompt / Overlay 交互
 └─ tests/
 
 scripts/

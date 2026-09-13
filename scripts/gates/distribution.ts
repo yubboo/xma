@@ -28,7 +28,6 @@ for (const marker of [
   'confirmWorkspaceTrust',
   'JsonlSessionStore',
   'WorkspaceRegistry',
-  'XIAOYU_BASE_URL',
   'StdioNativeClient',
   'registerNativeTools',
   'allowedPrograms: []',
@@ -40,10 +39,18 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SlashAutocompleteProvider', 'setAutocompleteProvider', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', '终端设置', 'new toolkit.Box(1, 0)', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
+for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', 'showInputOverlay', 'Brain Ready 测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
 }
-if (tui.includes('CURSOR_MARKER') || tui.includes("\\u001b[7m")) throw new Error('XMA TUI must not reintroduce a hand-written reverse-video cursor around the Pi Editor; this caused Windows white-screen leakage.')
+if (tui.includes('new toolkit.Editor') || tui.includes('new toolkit.Input') || tui.includes("\u001b[7m") || tui.includes("\x1b[7m")) {
+  throw new Error('XMA TUI must not use reverse-video Pi Editor/Input cursors on the Windows Terminal main prompt; use the hardware CURSOR_MARKER SafePrompt instead.')
+}
+
+const brain = text('apps/cli/src/brain.ts')
+for (const marker of ['TerminalBrainStore', "'brain.json'", 'credentialEnv', 'profileToProvider', 'XIAOYU_BASE_URL', 'XIAOYU_MODEL', 'XIAOYU_API_KEY']) {
+  if (!brain.includes(marker)) throw new Error(`XMA Terminal Brain config marker missing: ${marker}`)
+}
+if (brain.includes('apiKey:') || brain.includes('api_key:')) throw new Error('XMA Terminal Brain config must persist credential references, never API Key Secret fields.')
 
 const stage = text('scripts/release/cli.ts')
 for (const marker of [

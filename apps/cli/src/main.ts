@@ -2,7 +2,7 @@
 /**
  * 文件作用：XMA `xiaoyu` 命令的产品入口，解析参数并把 Terminal Shell 接到正式 Agent Runtime。
  * 关联模块：tui.ts、core Runtime/Workspace/Session、OpenAI-compatible Provider、Server/Web 发行入口。
- * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、环境变量 Provider、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
+ * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、用户级非 Secret Brain Profile/环境兼容 Provider、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
  * 职责边界：本文件只做 Product Launcher；Agent 推理、Tool 安全、Provider 协议和 Native 权限必须继续由 Core/Plugin/Rust 层实现。
  */
 
@@ -25,9 +25,10 @@ import {
   type RuntimeLiveEvent,
   type ToolApprovalProvider,
 } from '../../../core/src/index.ts'
-import { OpenAiCompatibleAdapter, OPENAI_COMPATIBLE_ADAPTER_ID } from '../../../plugins/providers/openai-compatible.ts'
+import { OpenAiCompatibleAdapter } from '../../../plugins/providers/openai-compatible.ts'
 import { registerNativeTools } from '../../../plugins/tools/native.ts'
-import { confirmWorkspaceTrust, runTui, type DoctorItem, type TerminalBackend } from './tui.ts'
+import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalBackend } from './tui.ts'
+import { TerminalBrainStore, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 
 const AGENT_ID = 'xiaoyu.code'
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
@@ -60,10 +61,10 @@ function helpText(currentVersion: string): string {
     '  xiaoyu --version',
     '  xiaoyu --help',
     '',
-    'Brain 环境变量（第一批）：',
-    '  XIAOYU_BASE_URL          OpenAI-compatible API 根地址',
-    '  XIAOYU_MODEL             模型 ID',
-    '  XIAOYU_API_KEY           Bearer Secret（可选，不持久化）',
+    'Brain：',
+    '  在 Terminal 内按 Ctrl+P → Brain / Provider 添加 OpenAI-compatible Profile。',
+    '  Profile 只保存 Base URL / Model / API Key 环境变量名，不保存 Secret。',
+    '  XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY 继续作为兼容配置。',
     '',
     '说明：xiaoyu/xma 是同一入口；Desktop、Web、Server 都复用同一个 Core Runtime。',
   ].join('\n')
@@ -114,28 +115,24 @@ function nativeExecutable(): string | undefined {
   return undefined
 }
 
-function providerConfig(): { ready: false; label: string } | { ready: true; label: string; baseUrl: string; model: string; hasKey: boolean } {
-  const baseUrl = process.env.XIAOYU_BASE_URL?.trim()
-  const model = process.env.XIAOYU_MODEL?.trim()
-  if (!baseUrl || !model) return { ready: false, label: '未配置 Provider' }
-  return {
-    ready: true,
-    label: `OpenAI-compatible · ${model}`,
-    baseUrl,
-    model,
-    hasKey: Boolean(process.env.XIAOYU_API_KEY),
-  }
+function brainLabel(profile: TerminalBrainProfile | undefined): string {
+  return profile ? `${profile.displayName} · ${profile.model}` : 'Brain 未配置'
 }
 
-function doctorItems(workspace: string): readonly DoctorItem[] {
-  const provider = providerConfig()
+function doctorItems(workspace: string, brainStore: TerminalBrainStore): readonly DoctorItem[] {
+  const active = brainStore.active()
+  const activeView = brainStore.list().find(profile => profile.id === active?.id)
   const native = nativeExecutable()
   const nativeExists = native !== undefined && existsSync(native)
+  const brainReady = active !== undefined && (activeView?.credentialReady ?? true)
+  const brainDetail = active
+    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据环境变量未设置' : ''}`
+    : '未配置 Provider'
   return [
     { label: 'Node Runtime', ok: Number(process.versions.node.split('.')[0]) >= 22, detail: `v${process.versions.node}` },
     { label: 'Workspace', ok: true, detail: workspace },
     { label: 'Session Store', ok: true, detail: path.join(stateRoot(), 'sessions') },
-    { label: 'Brain', ok: provider.ready, detail: provider.label },
+    { label: 'Brain', ok: brainReady, detail: brainDetail },
     { label: 'Native Kernel', ok: nativeExists, detail: nativeExists ? native : '未找到 Native Runtime；文件 Tool 将保持不可用' },
   ]
 }
@@ -150,10 +147,28 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   const runtime = new AgentRuntime(new JsonlSessionStore(sessions), { workspaces, requireWorkspace: true })
   const session = await runtime.createSession({ agentId: AGENT_ID, workspaceId: id })
   const tools = new ToolRegistry()
-  const provider = providerConfig()
+  const brainStore = new TerminalBrainStore()
+  const providerRegistry = new ProviderRegistry(new EnvironmentCredentialResolver())
+  providerRegistry.registerAdapter(new OpenAiCompatibleAdapter())
   const nativePath = nativeExecutable()
   let nativeClient: StdioNativeClient | undefined
   let disposeNativeTools: Disposer | undefined
+  let activeProfile: TerminalBrainProfile | undefined
+  let model: ReturnType<ProviderRegistry['createModel']> | undefined
+
+  const refreshBrain = (): void => {
+    for (const profile of brainStore.list()) providerRegistry.saveProfile(profileToProvider(profile))
+    activeProfile = brainStore.active()
+    model = activeProfile ? providerRegistry.createModel(activeProfile.id) : undefined
+  }
+
+  const activeView = () => brainStore.list().find(profile => profile.id === activeProfile?.id)
+  const requireActiveProfile = (): TerminalBrainProfile => {
+    if (!activeProfile) throw new Error('Brain 未配置。请在 Ctrl+P → Brain / Provider 中添加 Provider。')
+    return activeProfile
+  }
+
+  refreshBrain()
 
   if (nativePath !== undefined) {
     if (!existsSync(nativePath)) {
@@ -175,7 +190,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     try {
       const status = await nativeClient.status()
       if (!status.ready || !status.policyConfigured) throw new Error('Native Runtime 未进入 ready/policyConfigured 状态。')
-      // Terminal 第一批只开放文件读写；process.run 在有明确绝对程序白名单前保持不注册。
+      // Terminal 当前只开放文件读写；process.run 在绝对程序白名单配置面完成前保持不注册。
       disposeNativeTools = registerNativeTools(tools, {
         client: nativeClient,
         workspaceId: id,
@@ -190,33 +205,57 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     }
   }
 
-  let model: ReturnType<ProviderRegistry['createModel']> | undefined
-  if (provider.ready) {
-    const registry = new ProviderRegistry(new EnvironmentCredentialResolver())
-    registry.registerAdapter(new OpenAiCompatibleAdapter())
-    registry.saveProfile({
-      id: 'terminal',
-      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
-      displayName: 'Xiaoyu Terminal Provider',
-      baseUrl: provider.baseUrl,
-      auth: provider.hasKey
-        ? { type: 'bearer', credential: { source: 'env', key: 'XIAOYU_API_KEY' } }
-        : { type: 'none' },
-      defaultModel: provider.model,
-    })
-    model = registry.createModel('terminal')
-  }
-
-  const doctor = async (): Promise<readonly DoctorItem[]> => doctorItems(workspace)
+  const doctor = async (): Promise<readonly DoctorItem[]> => doctorItems(workspace, brainStore)
 
   return {
     version: currentVersion,
     workspace,
     agentLabel: 'Xiaoyu Code',
-    providerLabel: provider.label,
-    providerReady: provider.ready,
+    get providerLabel() {
+      return brainLabel(activeProfile)
+    },
+    get providerReady() {
+      return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)
+    },
+    listBrainProfiles() {
+      return brainStore.list()
+    },
+    async saveBrainProfile(input) {
+      const profile = brainStore.upsert(input)
+      refreshBrain()
+      return brainStore.list().find(item => item.id === profile.id)!
+    },
+    async selectBrain(profileId) {
+      const profile = brainStore.select(profileId)
+      refreshBrain()
+      return brainStore.list().find(item => item.id === profile.id)!
+    },
+    async listBrainModels() {
+      const profile = requireActiveProfile()
+      if (activeView()?.credentialReady === false) throw new Error(`凭据环境变量 ${profile.credentialEnv} 尚未设置。`)
+      const models = await providerRegistry.listModels(profile.id, AbortSignal.timeout(20_000))
+      return models.map(item => item.id)
+    },
+    async selectBrainModel(modelId) {
+      const profile = requireActiveProfile()
+      const updated = brainStore.updateModel(profile.id, modelId)
+      refreshBrain()
+      return brainStore.list().find(item => item.id === updated.id)!
+    },
+    async probeBrain(): Promise<BrainProbeView> {
+      const profile = requireActiveProfile()
+      if (activeView()?.credentialReady === false) {
+        return { ready: false, latencyMs: 0, message: `凭据环境变量 ${profile.credentialEnv} 尚未设置。` }
+      }
+      const result = await providerRegistry.probe(profile.id, profile.model, AbortSignal.timeout(20_000))
+      return {
+        ready: result.ready,
+        latencyMs: result.latencyMs,
+        message: result.ready ? `${profile.displayName} · ${profile.model} 已就绪` : `${result.error?.code ?? 'unknown'} · ${result.error?.message ?? 'Brain Ready 失败'}`,
+      }
+    },
     async sendMessage(message, write, signal, approve) {
-      if (!model) throw new Error('Brain 未配置。')
+      if (!model || activeView()?.credentialReady === false) throw new Error('Brain 未配置或凭据未就绪。')
       const listener = (event: RuntimeLiveEvent): void => {
         if (event.type === 'model/text-delta' && event.sessionId === session.id) write(event.text)
       }
@@ -278,7 +317,7 @@ async function main(): Promise<number> {
 
   assertWorkspace(args.workspace)
   if (args.command === 'doctor') {
-    for (const item of doctorItems(args.workspace)) {
+    for (const item of doctorItems(args.workspace, new TerminalBrainStore())) {
       process.stdout.write(`${item.ok ? 'OK' : 'WARN'}\t${item.label}\t${item.detail}\n`)
     }
     return 0

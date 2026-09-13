@@ -8,6 +8,7 @@ import {
   DEFAULT_TERMINAL_UI_SETTINGS,
   renderHome,
   renderWorkspaceTrustWarning,
+  SafePromptInput,
   slashCommandSuggestions,
   toggleTerminalVisual,
   workspaceRisk,
@@ -44,7 +45,7 @@ test('TUI home renders the canonical xiaoyu identity and current runtime facts',
     version: '0.1.0',
     workspace: '/tmp/project',
     agentLabel: 'Xiaoyu Code',
-    providerLabel: '未配置 Provider',
+    providerLabel: 'Brain 未配置',
     providerReady: false,
   }, { columns: 112, rows: 34 })
   assert.match(output, /XIAOYU/)
@@ -101,4 +102,35 @@ test('TUI trust warning defaults to exit and can render the one-time trust selec
   const trust = renderWorkspaceTrustWarning(homedir(), workspaceRisk(homedir()), 'trust')
   assert.match(exit, /●\u001b\[0m 退出（推荐）/)
   assert.match(trust, /●\u001b\[0m 我了解风险，仅本次信任/)
+})
+
+
+test('Safe Prompt uses only the hardware cursor marker and never reverse-video ANSI', () => {
+  const toolkit = {
+    CURSOR_MARKER: '<CURSOR>',
+    matchesKey(data: string, key: string) {
+      const map: Record<string, string> = { enter: '\r', backspace: '\u007f', left: '\u001b[D', right: '\u001b[C', up: '\u001b[A', down: '\u001b[B', tab: '\t' }
+      return map[key] === data
+    },
+  } as any
+  const input = new SafePromptInput(toolkit)
+  input.focused = true
+  input.handleInput('你')
+  input.handleInput('好')
+  const line = input.render(20).join('\n')
+  assert.match(line, /<CURSOR>/)
+  assert.match(line, /你好/)
+  assert.doesNotMatch(line, /\u001b\[7m|\u001b\[27m/)
+})
+
+test('Safe Prompt exposes slash suggestions without changing the fixed parent layout contract', () => {
+  const toolkit = {
+    CURSOR_MARKER: '<CURSOR>',
+    matchesKey: () => false,
+  } as any
+  const input = new SafePromptInput(toolkit)
+  input.focused = true
+  input.handleInput('/pro')
+  assert.deepEqual(input.suggestions().map(item => item.value), ['provider'])
+  assert.equal(input.selectedSuggestionIndex(), 0)
 })

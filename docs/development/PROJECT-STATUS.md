@@ -43,8 +43,8 @@
 - `xiaoyu` 持续 Terminal TUI + Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
-- `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认与环境变量 OpenAI-compatible Brain；
-- Terminal TUI 已迁到固定 `@earendil-works/pi-tui@0.74.0`：真实 Editor/IME 光标、差分渲染、输入历史、斜杠命令自动补全；Home/Prompt 使用固定锚点，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板与 Terminal Settings（丰富/简洁、提示、Logo）已接线，风险页默认退出并支持键盘选择；UI 不再展示尚未实现的假快捷入口；
+- `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；OpenAI-compatible Brain 已从“仅环境变量”升级为用户级非 Secret Profile Store：`brain.json` 保存 Base URL / Model / Credential Env Reference，环境变量 Profile 继续兼容；
+- Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/硬件光标基础能力，但主 Prompt 已改成 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标，专门规避 Windows Terminal 白块/反色泄漏；支持 CJK 硬件光标、输入历史、多行、斜杠补全；Home/Prompt 使用固定锚点，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板、Terminal Settings 与 Brain / Provider 管理已接线；
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
 - 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；
@@ -59,7 +59,7 @@
 - Session Store generation migration / fork（export/redaction/纯 migration Contract 已有第一版）；
 - system-message reconciliation / compaction（Context Assembly/durable snapshot 已有第一版）；
 - OS Keychain/安全 Credential Store（env/memory resolver 已有第一版）；
-- Provider 通用 Retry / Cost Catalog / App Protocol 配置面；
+- Provider 通用 Retry / Cost Catalog / App Protocol 配置面；Terminal 已有第一版 Provider Profile/Brain Ready/模型选择，但 Desktop/Web/App Protocol 配置面仍未完成；
 - 外部真实 Provider E2E 与 Product Ready 证据；
 - 至少两个不同协议族真实 Provider；
 - App Protocol Approval request/decision 与多 Host 交互；
@@ -72,7 +72,7 @@
 ## 4. 尚未完成，禁止过度宣称
 
 - 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo **品牌 Provider 产品支持**；当前只有通用 OpenAI-compatible 协议 Adapter；
-- 任何外部 Profile 的 Brain Ready 证据；当前只有 Probe 实现与本地协议测试；
+- 真实外部 Profile 的 Brain Ready **验收证据**；Terminal 已可执行真实 Probe，但当前仓库仍只有本地协议测试，不能冒充外部厂商 E2E 已通过；
 - 完整 Session/Memory/Context；
 - 完整 Rust Workspace Sandbox：process tree / PTY / network / executable content identity；（FS 与 absolute-path direct process 最小 capability 已有第一版）
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
@@ -112,13 +112,14 @@ XMA 已建立三条固定参考线：
 
 Stage C 已经由用户 Windows `[7]` 完成真实 Rust 验证；Stage D 第一批 Workspace ownership/binding/grant/scope 已进入代码。当前插入 Distribution + Terminal Runtime 第一批，让 XMA 具备真实安装与持续终端入口，然后继续 Stage D：
 
-1. Windows `xiaoyu` portable/installer 实机 E2E：构建、安装、PATH、doctor、升级；
-2. Linux/macOS release workflow 与对应 installer E2E（各平台原生构建，不伪造跨平台）；
-3. Terminal `process.run` absolute executable allowlist 配置 + Approval；文件 read/write + Approval 第一批已完成；
-4. Workspace persistence + repo/project metadata；
-5. Workspace instructions discovery（AGENTS.md/CLAUDE.md 等）与作用域/硬上限；
-6. large Tool output attachment + compaction / Session fork；
-7. App Protocol Workspace/Approval Handler + process-tree / PTY/ConPTY。
+1. Windows 实机验收 Safe Prompt（白块/反色必须归零）+ Terminal Brain Profile → Brain Ready → 模型选择 → 一句话文件任务闭环；
+2. Windows `xiaoyu` portable/installer E2E：构建、安装、PATH、doctor、升级；
+3. OS Keychain Credentials，把 Terminal Provider 从“环境变量引用”升级到可安全录入 Secret；
+4. Terminal `process.run` absolute executable allowlist 配置 + Approval；文件 read/write + Approval 第一批已完成；
+5. Linux/macOS release workflow 与对应 installer E2E（各平台原生构建，不伪造跨平台）；
+6. Workspace persistence + repo/project metadata + instructions discovery；
+7. large Tool output attachment + compaction / Session fork；
+8. App Protocol Workspace/Approval Handler + process-tree / PTY/ConPTY。
 
 完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
 

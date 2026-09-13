@@ -72,7 +72,7 @@ xiaoyu server        Headless Server（发行包）
 xiaoyu web           本地 Web + Server（发行包）
 ```
 
-第一批 TUI 已接正式 Workspace/Session Runtime，并可通过 `XIAOYU_BASE_URL`、`XIAOYU_MODEL`、`XIAOYU_API_KEY` 使用 OpenAI-compatible Brain；未配置 Brain 时明确显示未就绪，不伪造回复。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
+Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provider` 可以保存 OpenAI-compatible Base URL、Model 与 API Key **环境变量引用**，执行 Brain Ready Probe、读取模型列表并切换模型；`XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续作为兼容配置。Secret 不写入 `brain.json` 或 Session。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
 
 发行架构、Windows `%LOCALAPPDATA%\Programs\Xiaoyu`、Linux/macOS `~/.local` 合同与一键安装 bootstrap 见 `docs/architecture/DISTRIBUTION.md`。公网 `irm/curl` 安装命令只有在 Release/域名真实部署后才算可用。
 
