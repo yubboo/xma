@@ -8,9 +8,9 @@
     "web:build:tauri": "pnpm --dir ../.. exec vite build apps/web --base ./ --outDir .cache/desktop/tauri/web --emptyOutDir",
     "main:build:dev": "pnpm --dir ../.. exec tsup apps/desktop/src/main.ts --format esm --platform node --external electron --out-dir .cache/desktop/electron/dev/main",
     "dev": "pnpm run dev:electron",
-    "dev:electron": "pnpm --dir ../.. exec tsx apps/desktop/scripts/dev-electron.ts",
+    "dev:electron": "pnpm --dir ../.. exec tsx apps/desktop/scripts/electron/dev.ts",
     "build": "pnpm run build:electron",
-    "build:electron": "pnpm --dir ../.. exec tsx apps/desktop/scripts/build-electron.ts",
+    "build:electron": "pnpm --dir ../.. exec tsx apps/desktop/scripts/electron/build.ts",
     "dev:tauri": "tauri dev",
     "build:tauri": "tauri build",
     "tauri": "tauri"

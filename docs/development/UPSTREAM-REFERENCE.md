@@ -223,3 +223,26 @@ Rust Native/Security Kernel
 - 不从 TypeScript 直接 `fs`/`child_process` 实现真实 Native Tool；
 - 不把当前 direct-child timeout/kill 写成“process tree sandbox 已完成”；
 - 不把“canonical absolute path identity”夸大成完整 executable identity：当前已消除 PATH/当前目录同名程序解析，后续仍需文件内容/句柄级 TOCTOU hardening。
+
+
+## 11. 0.1.0 Workspace / Context / Session Stage D 第一批研究记录
+
+本批继续使用第 2 节锁定 commit，不追随上游默认分支漂移。
+
+### OpenAI Codex · environment / capability roots
+
+继续核对固定 commit 下 `codex-rs/core/src/environment_selection.rs` 等环境选择边界，重点吸收“Workspace roots/Capability roots 属于持久 Thread/Turn environment identity，不能只靠临时 cwd”“owner/thread 配置来源需要明确”“环境选择变化要显式比较 identity”的工程经验。XMA 没有复制 Codex Environment Manager，也不把 Workspace 产品逻辑下沉 Rust；XMA 用 TypeScript `WorkspaceBinding` 冻结 owner/root/allowed roots，并让 Rust 只 enforce Native roots/capability。
+
+### DeepSeek Harness · context group
+
+核对固定 commit 下 `packages/context/` group tree 与 `README.md`。其中 workspace instructions、file/session references 都是 request-context plugin；README 明确强调 model-visible context 需要 durable、可 replay/compact，session reference 是 bounded read-only snapshot。XMA 吸收“Context Source 有明确 scope、跨边界引用必须 bounded/read-only、模型可见引用可追溯”原则；没有复制 DSH package 粒度或把所有 Workspace 能力拆成插件 package。
+
+### Minecraft Host Agent · workspace/data-dir confinement
+
+继续沿用 Stage C 已审阅的 `src/tools/confinement.rs` / `src/tools/mod.rs` / `src/agent/mod.rs`：MCHA 把 workspace/data-dir 作为工具收敛基准，并把确认门与 Tool permission 分开。XMA 吸收“Workspace 是工具副作用边界”但拒绝把词法路径判断当最终安全层；XMA 仍由 Rust canonical confinement 二次强制。
+
+### 本批吸收/拒绝
+
+吸收：stable Workspace identity、Owner boundary、显式跨 Workspace grant、Session durable audit、Context read scope、Tool/Native 双层 enforcement。
+
+拒绝：把 cwd 当 Workspace identity；允许 Agent 直接创建其他 Agent 的 Owner Session；把 UI Approval 当 Workspace ACL；Context Source 未授权先读后过滤；仅靠 TypeScript path string 判断替代 Rust canonical confinement。

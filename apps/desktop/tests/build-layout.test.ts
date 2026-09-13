@@ -1,6 +1,6 @@
 /**
  * 文件作用：锁定 XMA Desktop 构建目录合同，避免中间产物重新散落到 apps/desktop 或仓库根 build/target。
- * 关联模块：apps/desktop/package.json、build-electron.ts、tauri.conf.json、electron-builder.json。
+ * 关联模块：apps/desktop/package.json、scripts/electron/build.ts、tauri.conf.json、electron-builder.json。
  * 当前实现：验证 Electron/Tauri staging 全部进入 .cache/desktop，最终 Electron 发布物进入 dist/release/electron。
  * 职责边界：这里只验证目录/脚本 Contract，不实际启动 Electron/Tauri 或下载 Runtime。
  */
@@ -23,7 +23,7 @@ test('Desktop build scripts use .cache for staging and never app-local dist/web/
 })
 
 test('Electron build stages in .cache and publishes only to dist/release/electron', async () => {
-  const source = await readFile('apps/desktop/scripts/build-electron.ts', 'utf8')
+  const source = await readFile('apps/desktop/scripts/electron/build.ts', 'utf8')
   assert.match(source, /'\.cache', 'desktop', 'electron', 'app'/)
   assert.match(source, /'dist', 'release', 'electron'/)
   assert.match(source, /'--base', '\.\/'/)

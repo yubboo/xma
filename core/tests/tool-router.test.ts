@@ -1,15 +1,15 @@
 /**
  * 文件作用：验证 XMA Frozen ToolPlan、Schema/Policy/Guard/Approval 与 parallel-safe/exclusive 调度不变量。
- * 关联模块：core/src/tools.ts、tool-policy.ts、tool-schema.ts、runtime.ts。
+ * 关联模块：core/src/tool/router.ts、tool/policy.ts、tool/schema.ts、runtime.ts。
  * 当前实现：冻结 Runtime 配对、参数拒绝、fail-closed Approval、Session 允许缓存、单调 Guard 与并发/独占执行顺序测试。
  * 职责边界：测试只验证 TypeScript Tool Platform；真实文件/进程安全边界由 native/runtime Rust 测试承担。
  */
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { StaticToolApprovalProvider } from '../src/tool-policy.ts'
-import { ToolApprovalSessionCache, ToolRegistry } from '../src/tools.ts'
-import type { ToolContext } from '../src/tools.ts'
+import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
+import { ToolApprovalSessionCache, ToolRegistry } from '../src/tool/router.ts'
+import type { ToolContext } from '../src/tool/router.ts'
 
 function context(): ToolContext {
   return {

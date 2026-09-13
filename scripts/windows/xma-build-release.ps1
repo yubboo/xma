@@ -47,7 +47,7 @@ if ($DesktopRuntime -in @('electron','both')) {
   if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) {
     Write-Host "[下载] 正在准备 Electron $ElectronVersion 主桌面 Runtime；首次下载包含 Chromium，可能需要数分钟。" -ForegroundColor Yellow
     Write-Host '[进度] 使用 XMA Electron Runtime 下载器显示实时百分比/MB；Windows 使用系统 PowerShell Expand-Archive 解压已校验 ZIP。' -ForegroundColor DarkYellow
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/install-electron-runtime.ts')
+    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/electron/install-runtime.ts')
   }
   if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) { throw 'Electron Runtime 未准备成功；可重试或使用 -DesktopRuntime tauri 构建备用桌面端。' }
   Write-Host "[通过] Electron $ElectronVersion Runtime 已就绪。" -ForegroundColor Green

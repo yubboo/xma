@@ -1,13 +1,14 @@
 /**
  * 文件作用：实现 XMA 模型上下文（Context Assembly）的注册、确定性组装与快照摘要。
- * 关联模块：runtime.ts、session.ts、未来 Workspace/Skill/Knowledge/Plugin Context Source。
+ * 关联模块：runtime.ts、session/contract.ts、未来 Workspace/Skill/Knowledge/Plugin Context Source。
  * 当前实现：Context Source Registry、稳定排序、异步组装、字符上限、SHA-256 快照与可释放注册。
  * 职责边界：这里只组装模型可见上下文，不读取 Provider Secret、不执行 Tool；任何进入模型的动态内容必须先形成 durable Context Snapshot。
  */
 
 import { createHash } from 'node:crypto'
-import type { SessionHeader, SessionSnapshot } from './session.ts'
+import type { SessionHeader, SessionSnapshot } from './session/contract.ts'
 import type { Disposer } from './types.ts'
+import type { WorkspaceAccessDecision, WorkspaceAccessRequest, WorkspaceBinding } from './workspace.ts'
 
 export interface ContextAssemblyRequest {
   header: SessionHeader
@@ -15,6 +16,10 @@ export interface ContextAssemblyRequest {
   turnId: string
   stepId: string
   signal: AbortSignal
+  /** 当前 Session 的稳定 Workspace Binding；legacy 无 Workspace Session 为空。 */
+  workspace?: WorkspaceBinding
+  /** 跨 Workspace Context Source 读取前由 Runtime 注入授权判断。 */
+  authorizeWorkspaceAccess?(request: WorkspaceAccessRequest): WorkspaceAccessDecision
 }
 
 export interface ContextSource {
@@ -22,6 +27,8 @@ export interface ContextSource {
   id: string
   /** 数值越小越靠前；相同 order 以 id 的 code-unit 顺序稳定排序。 */
   order?: number
+  /** 声明 Context Source 读取的 Workspace；不填 workspaceId 表示当前 Session Workspace。 */
+  workspaceAccess?: { workspaceId?: string }
   render(request: ContextAssemblyRequest): string | undefined | Promise<string | undefined>
 }
 
@@ -30,6 +37,7 @@ export interface AssembledContextSection {
   order: number
   content: string
   digest: string
+  workspaceId?: string
 }
 
 export interface ContextAssembly {
@@ -98,6 +106,22 @@ export class ContextRegistry {
 
     for (const source of this.list()) {
       if (request.signal.aborted) throw Object.assign(new Error('XMA context assembly aborted.'), { name: 'AbortError' })
+      let workspaceId: string | undefined
+      if (source.workspaceAccess !== undefined) {
+        workspaceId = source.workspaceAccess.workspaceId ?? request.workspace?.workspaceId
+        if (workspaceId === undefined) {
+          throw new Error(`XMA context source ${source.id} requires a Workspace but the Session is unbound.`)
+        }
+        const sameWorkspace = request.workspace?.workspaceId === workspaceId
+        if (!sameWorkspace) {
+          const decision = request.authorizeWorkspaceAccess?.({ workspaceId, permission: 'read' })
+          if (decision?.allow !== true) {
+            const reason = decision && !decision.allow ? decision.reason : 'no Workspace authorization provider'
+            throw new Error(`XMA context source ${source.id} cannot read workspace ${workspaceId}: ${reason}`)
+          }
+        }
+      }
+
       const rendered = await source.render(request)
       if (rendered === undefined || rendered.length === 0) continue
       characters += rendered.length
@@ -109,6 +133,7 @@ export class ContextRegistry {
         order: source.order ?? 0,
         content: rendered,
         digest: digestText(rendered),
+        ...(workspaceId !== undefined ? { workspaceId } : {}),
       })
     }
 

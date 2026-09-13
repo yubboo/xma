@@ -5,6 +5,7 @@
 本文定义 Xiaoyu Management Agent（XMA）的长期产品架构边界。它回答“谁负责推理、状态放在哪里、工具如何执行、插件如何扩展、桌面/CLI 如何复用同一 Runtime”。具体 Agent Loop、Provider 和 Desktop 细节分别见：
 
 - `docs/architecture/AGENT-RUNTIME.md`；
+- `docs/architecture/WORKSPACE.md`；
 - `docs/architecture/MODEL-PROVIDER.md`；
 - `docs/architecture/PLUGIN-SYSTEM.md`；
 - `docs/architecture/DESKTOP-WORKBENCH.md`。
@@ -97,25 +98,32 @@ Rust 负责：
 
 Rust 不认识 Minecraft Agent、Writer Agent、Claude 或 GPT，也不决定应该调用哪个模型/工具。
 
-## 5. Core Runtime 分层
+## 5. Core Runtime 分层与模块粒度
 
-0.1.x 不急于拆成几十个 npm package，但代码内部必须有清晰模块边界：
+0.1.x 不急于拆成几十个 npm package。源码先按领域聚合，但**物理目录只在领域真正长大时创建**：
 
 ```text
-core/
-  agent/        Agent Definition / Registry / Turn/Step driver
-  session/      durable events / store contract / projections
-  model/        Provider/Model contracts and normalized events
-  context/      prompt/context assembly, compaction
-  tools/        definition / registry / tool plan / router / policy
-  permissions/  approval and capability requests
-  workspace/    workspace identity, roots, instructions
-  plugin/       context/services/events/effects/lifecycle
-  skills/       skill registry/catalog/loading
-  protocol/     Shell ↔ Runtime commands/events
+core/src/
+  agent.ts / agent-registry.ts     Agent Definition / Registry（当前保持扁平）
+  runtime.ts                        Turn/Step driver
+  session/                          durable contract / store / export
+    contract.ts
+    store.ts
+    export.ts
+  model.ts / provider.ts            标准 Model Contract / Provider Platform
+  context.ts                        Context Assembly
+  tool/                             Tool Router / Policy / Schema
+    router.ts
+    policy.ts
+    schema.ts
+  workspace.ts                      Workspace identity / ownership / access
+  plugin.ts                         services/events/effects/lifecycle
+  app-protocol.ts                   Shell ↔ Runtime command/event types
 ```
 
-上述是目标模块，不要求本轮立刻把文件物理拆全。真正长大后再按独立发布、生命周期或团队边界拆 package。
+命名和拆分遵循三个原则：**短、可辨识、不重复路径**。目录与 TypeScript 使用小写 kebab-case，Rust 使用 snake_case；普通文件/目录优先 1～3 个核心词，父目录已经表达领域时文件名去掉领域前缀。只有职责、生命周期或安全边界确实不同才拆文件；同一逻辑的类型/helper/constants 默认留在一起。
+
+`session/` 与 `tool/` 之所以建立子目录，是因为它们已经各自形成三个稳定且职责不同的模块；`agent.ts + agent-registry.ts` 目前只有两个文件，因此仍保持扁平。未来也按同一标准演进，而不是参考上游目录数量机械拆包。
 
 ## 6. Session 是事实源
 
@@ -165,7 +173,9 @@ Tool Call
 
 ## 9. Workspace
 
-Workspace 是 Agent 的工作领地和安全边界，不只是 cwd：
+Workspace 是 Agent 的工作领地和安全边界，不只是 cwd。Stage D 第一批已经落地稳定 `WorkspaceDescriptor / WorkspaceBinding`、Owner-only Session 绑定、resume descriptor-digest 漂移检测、Session durable grant/revoke/use、Tool Workspace Security Guard 与 Context Source read scope。详细 Contract 见 `docs/architecture/WORKSPACE.md`。
+
+Workspace 长期包含：
 
 - stable id；
 - root / allowed roots；
@@ -175,7 +185,7 @@ Workspace 是 Agent 的工作领地和安全边界，不只是 cwd：
 - persistent state；
 - Native filesystem scope。
 
-默认一个 Agent 不得修改另一个 Agent 的 Workspace。跨 Workspace 操作需要用户显式授权，并留下 durable record。
+默认新 Session 只能绑定 Owner Agent 自己的 Workspace。跨 Agent Workspace 访问需要用户显式 durable grant；Tool/Context 在使用前必须经过 Workspace Policy，真实 filesystem/process 副作用仍由 Rust Native Kernel 二次 enforcement。
 
 ## 10. Plugin / Capability
 

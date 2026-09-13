@@ -29,7 +29,10 @@
 - parallel-safe batch + exclusive barrier；
 - TypeScript Native Capability Bridge + `native.fs.read_text` / `native.fs.write_text` / `native.process.run` Tool Adapter；
 - Rust Host Policy（roots/绝对 executable identities/resource limits）+ filesystem canonical confinement + 一次性 Capability lease + 无 shell process allowlist/timeout/output cap；
-- Workspace Registry；
+- Workspace Registry + stable Descriptor/Binding digest；
+- Workspace-bound Session Owner 校验 + resume descriptor drift fail-loud；
+- durable cross-workspace grant/revoke/use + Workspace Tool Security Guard；
+- Workspace-scoped Context Source read authorization + Native Tool stable workspaceId；
 - Plugin Host；
 - `ctx.<service>` Service Proxy；
 - `inject + apply(ctx)` DeepSeek Harness/Cordis 基础适配；
@@ -39,7 +42,8 @@
 - Minecraft / Code / Writer Agent 身份骨架；
 - CLI / Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
-- Architecture / Comment / Documentation / Version / Windows / Repository Gates；
+- Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
+- 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；
 - Electron 41.2.0 Runtime 的显式下载、校验、Windows staging 原子安装链；
 - Desktop 发布资源使用相对 Vite base，解决 `file://` 黑屏；
 - 仓库级 `.agents/.codex/.claude` AI 开发上下文规范和上游参考基线文档。
@@ -57,7 +61,7 @@
 - App Protocol Approval request/decision 与多 Host 交互；
 - Rust process-tree ownership / cancellation、PTY/ConPTY、network/hash/archive capability；
 - process executable 已完成“绝对路径 + canonical identity + 不经 PATH”第一版；仍缺可执行文件内容/句柄级 TOCTOU identity hardening；
-- Workspace persistence / ownership / instructions；
+- Workspace persistence / repo metadata / instructions / explicit rebind migration（ownership/grant 第一版已落地）；
 - App Protocol / Event Stream；
 - DSH Tool/LLM/Session/Skill bridge 与 Conformance Tests。
 
@@ -102,14 +106,15 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-Stage C 的 frozen ToolPlan / Policy / Approval 与 Native FS/Process 最小安全链已经进入代码。下一批继续按底层顺序推进：
+Stage C 已经由用户 Windows `[7]` 完成真实 `cargo fmt/check/test --offline` 验证；Stage D 第一批 Workspace ownership/binding/grant/scope 已进入代码。下一批继续按底层顺序推进：
 
-1. App Protocol Approval request/decision，把 CLI/Desktop 交互接到同一 Contract；
-2. process-tree ownership/cancellation + PTY/ConPTY；
-3. Native network capability；
-4. CLI/Server App Protocol 真正接 Runtime；
-5. 有真实凭据时执行外部 OpenAI-compatible E2E，并开始 Anthropic native Adapter；
-6. system-message reconciliation / compaction 与 Session Store generation migration。
+1. Workspace persistence + repo/project metadata；
+2. Workspace instructions discovery（AGENTS.md/CLAUDE.md 等）与作用域/硬上限；
+3. large Tool output attachment + durable reference；
+4. context compaction durable event + system-message reconciliation；
+5. Session fork / generation migration 接入 Store；
+6. App Protocol Workspace/Approval 实际 Handler，再接 CLI/Server；
+7. process-tree ownership/cancellation + PTY/ConPTY。
 
 完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
 

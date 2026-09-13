@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 XMA Session Export、Secret Redaction 与未来相邻版本 Migration Contract。
- * 关联模块：core/src/session-export.ts、session.ts、runtime.ts。
+ * 关联模块：core/src/session/export.ts、session/contract.ts、runtime.ts。
  * 当前实现：文本/嵌套 JSON 脱敏、原 Snapshot 不被修改、相邻迁移和未来版本拒绝测试。
  * 职责边界：测试不会把 Secret 写入 Provider Profile；这里故意构造含 Secret 的历史，用于证明导出边界能做二次防护。
  */
@@ -12,8 +12,8 @@ import {
   createSecretValueRedactor,
   exportSession,
   type StoredSessionSnapshot,
-} from '../src/session-export.ts'
-import { SESSION_FORMAT_VERSION, type SessionSnapshot } from '../src/session.ts'
+} from '../src/session/export.ts'
+import { SESSION_FORMAT_VERSION, type SessionSnapshot } from '../src/session/contract.ts'
 
 test('Session export redacts known Secret values recursively without mutating the live snapshot', () => {
   const secret = 'sk-secret-123456789'

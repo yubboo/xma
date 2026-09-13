@@ -76,6 +76,22 @@ XMA Plugin Host 必须支持两条路径：
 
 在模块真正长大前，不要把 `memory/context/session/tools/...` 每个都拆成独立 npm 包。
 
+### 6.1 命名与模块粒度（锁死）
+
+XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责。固定规则：
+
+- 产品目录与 TypeScript / TSX / PowerShell 文件使用**小写 kebab-case**，例如 `model-provider/`、`agent-registry.ts`、`xma-build-release.ps1`；
+- Rust 模块文件遵循 Rust 生态使用 **snake_case**，例如 `host_policy.rs`；`main.rs` / `lib.rs` / `build.rs` 等官方约定名保持不变；
+- `.` 只表达文件角色/工具约定，不用于普通单词分隔：统一使用 `*.test.ts`、`*.config.ts`、`*.d.ts`；`package.json`、`Cargo.toml`、`tauri.conf.json` 等生态固定名保持官方名称；
+- `docs/` 的正式架构/开发/安全文档使用 `UPPER-KEBAB.md`；`README.md`、`AGENTS.md`、`CLAUDE.md` 等固定入口例外；
+- 普通文件名/目录名优先 **1～3 个核心词**，不得靠堆词描述整句职责；路径已经表达领域时，文件名禁止重复父目录，例如 `session/store.ts`，不要 `session/session-store.ts`；
+- **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
+- 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
+- 顶层固定启动器 `XMA.bat`、`XMA-GitHub.bat`、`XMA-Sync.bat` 以及 Windows `xma-*.ps1` 属于稳定外部入口，保留既有产品前缀，不按父目录去重；
+- 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。
+
+当前已经达到分组规模并固定的结构包括：`core/src/session/{contract,store,export}.ts`、`core/src/tool/{router,policy,schema}.ts`、`apps/desktop/scripts/electron/`、`scripts/gates/`。
+
 ## 7. 中文注释与文件说明（强制）
 
 所有核心 `.ts` / `.tsx` / `.rs` 文件顶部必须有中文文件说明，至少包含：
@@ -96,16 +112,17 @@ XMA Plugin Host 必须支持两条路径：
 3. `docs/architecture/DIRECTORY-STRUCTURE.md`
 4. `docs/architecture/LANGUAGE-OWNERSHIP.md`
 5. `docs/architecture/AGENT-RUNTIME.md`
-6. `docs/architecture/MODEL-PROVIDER.md`
-7. `docs/architecture/PLUGIN-SYSTEM.md`
-8. `docs/architecture/DESKTOP-RUNTIME.md`
-9. `docs/architecture/DESKTOP-WORKBENCH.md`
-10. `docs/development/DEVELOPMENT-RULES.md`
-11. `docs/development/DEVELOPMENT-PLAN.md`
-12. `docs/development/PROJECT-STATUS.md`
-13. `docs/development/UPSTREAM-REFERENCE.md`
-14. `docs/development/VERSIONING-AND-RELEASES.md`
-15. `docs/development/WINDOWS-WORKFLOW.md`
+6. `docs/architecture/WORKSPACE.md`
+7. `docs/architecture/MODEL-PROVIDER.md`
+8. `docs/architecture/PLUGIN-SYSTEM.md`
+9. `docs/architecture/DESKTOP-RUNTIME.md`
+10. `docs/architecture/DESKTOP-WORKBENCH.md`
+11. `docs/development/DEVELOPMENT-RULES.md`
+12. `docs/development/DEVELOPMENT-PLAN.md`
+13. `docs/development/PROJECT-STATUS.md`
+14. `docs/development/UPSTREAM-REFERENCE.md`
+15. `docs/development/VERSIONING-AND-RELEASES.md`
+16. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 
@@ -181,7 +198,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `XMA.bat -> [1] 一键准备开发环境` 是首次运行的唯一推荐入口：一次准备系统工具、全部 Workspace JavaScript 依赖元数据、esbuild Native Binary 与 XMA Native Rust crates。
 - `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
 - Web / CLI 在 `[1]` 成功后只负责直接启动；不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。
-- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/install-electron-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
+- Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/electron/install-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
 - XMA 自己控制的开发/编译中间产物统一进入 `.cache/`：根 Rust 使用 `.cache/cargo-target/`，Tauri Rust 使用 `.cache/tauri-target/`，Desktop staging 使用 `.cache/desktop/`。正式可交付产物统一进入根 `dist/`。仓库根 `build/` / `target/` 与 `apps/desktop/dist|web|release|native` 只视为旧版遗留目录并应清理，禁止重新成为正常输出。
@@ -222,6 +239,11 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - 完整 Capability 至少考虑 Definition / Provider / Consumer；只有接口或只有实现不算完成。
 - Provider 不只是 `stream()`：必须逐步包含 capability、auth、model catalog、usage/error normalization、Brain Ready Probe；Provider-specific JSON/headers 不得散落 Core Loop。
 - “Brain Ready / Provider supported”必须有真实 API 请求或目标 Runner E2E 证据；fixture/mock 不能改变产品支持状态。
+- Workspace 是 stable identity + roots + owner，不是裸 cwd；Stage D 新 Session 的 Workspace 安全身份必须冻结到 Session Header，并在 resume 时校验 descriptor digest。
+- 新 Session 默认只能绑定 Owner Agent 自己的 Workspace；跨 Agent Workspace 访问必须使用用户显式 durable grant，默认 deny。
+- Tool 声明的 Workspace access 必须在 Approval/execute 前经过单调 Workspace Security Guard；Approval 不能把 Workspace deny 变成 allow。
+- 跨 Workspace Context Source 在 render 前必须通过 read authorization，且 durable context source 记录目标 workspaceId。
+- Native Tool 必须绑定稳定 workspaceId；TypeScript Workspace policy 与 Rust roots/capability enforcement 必须同时存在，任一层都不能被当成另一层的替代。
 
 ## 13. 上游参考纪律（锁死）
 

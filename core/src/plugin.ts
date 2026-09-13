@@ -1,6 +1,6 @@
 /**
  * 文件作用：实现 XMA 的最小 Plugin Host、Context Service 容器和可逆副作用生命周期。
- * 关联模块：plugins/compat/deepseek-harness/index.ts、tools.ts、model.ts。
+ * 关联模块：plugins/compat/deepseek-harness/index.ts、tool/router.ts、model.ts。
  * 当前实现：service provide/get、ctx.<service> 代理读取、inject、apply(ctx)、effect/disposer、五种事件分发基础语义。
  * 职责边界：这里只负责插件生命周期，不负责 Agent 推理和 Native 副作用执行。
  */

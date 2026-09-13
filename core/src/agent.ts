@@ -1,12 +1,12 @@
 /**
  * 文件作用：保留 XMA 早期无持久化 runAgent() 兼容入口，供迁移期旧调用方继续使用。
- * 关联模块：runtime.ts、model.ts、tools.ts；新代码应优先使用 AgentRuntime / AgentSession。
+ * 关联模块：runtime.ts、model.ts、tool/router.ts；新代码应优先使用 AgentRuntime / AgentSession。
  * 当前实现：多轮 Tool Call、结构化 Tool Call 历史、Observation 回灌和文本结果收集。
  * 职责边界：本文件不再承担正式 Session 生命周期；不得在这里加入关键词路由或专业 Agent 固定流程。
  */
 
 import type { ModelMessage, ModelProvider } from './model.ts'
-import { ToolRegistry } from './tools.ts'
+import { ToolRegistry } from './tool/router.ts'
 
 export interface AgentRunInput {
   runId: string

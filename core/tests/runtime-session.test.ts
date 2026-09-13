@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 XMA 正式 Session → Turn → Step Runtime 的关键不变量和 JSONL 恢复能力。
- * 关联模块：core/src/runtime.ts、session.ts、session-store.ts、model.ts、tools.ts。
+ * 关联模块：core/src/runtime.ts、session/contract.ts、session/store.ts、model.ts、tool/router.ts。
  * 当前实现：多 Step Tool Loop、请求快照、恢复续聊、取消结算、单写者锁和截断尾修复回归测试。
  * 职责边界：全部 Provider 都是确定性测试夹具；真实厂商 Provider 必须在 Stage B 通过独立 Conformance/E2E 证明。
  */
@@ -12,10 +12,10 @@ import path from 'node:path'
 import test from 'node:test'
 import type { ModelProvider } from '../src/model.ts'
 import { AgentRuntime } from '../src/runtime.ts'
-import { deriveModelMessages } from '../src/session.ts'
-import { JsonlSessionStore, MemorySessionStore } from '../src/session-store.ts'
-import { StaticToolApprovalProvider } from '../src/tool-policy.ts'
-import { ToolRegistry } from '../src/tools.ts'
+import { deriveModelMessages } from '../src/session/contract.ts'
+import { JsonlSessionStore, MemorySessionStore } from '../src/session/store.ts'
+import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
+import { ToolRegistry } from '../src/tool/router.ts'
 
 function toolsWithObservation(executions: { count: number }): ToolRegistry {
   const tools = new ToolRegistry()

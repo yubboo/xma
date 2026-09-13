@@ -13,36 +13,54 @@ const required = [
   'core/src/agent.ts',
   'core/src/plugin.ts',
   'core/src/runtime.ts',
-  'core/src/session.ts',
-  'core/src/session-export.ts',
+  'core/src/session/contract.ts',
+  'core/src/session/export.ts',
   'core/src/context.ts',
+  'core/src/workspace.ts',
   'core/src/provider.ts',
-  'core/src/tool-schema.ts',
-  'core/src/tool-policy.ts',
-  'core/src/tools.ts',
+  'core/src/tool/schema.ts',
+  'core/src/tool/policy.ts',
+  'core/src/tool/router.ts',
   'core/src/native.ts',
   'plugins/providers/builtin.ts',
   'plugins/providers/openai-compatible.ts',
   'plugins/tools/native.ts',
-  'apps/desktop/scripts/build-electron.ts',
+  'apps/desktop/scripts/electron/build.ts',
   'apps/desktop/electron-builder.json',
   'apps/desktop/src-tauri/tauri.conf.json',
   'plugins/compat/deepseek-harness/index.ts',
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
   'docs/architecture/PROJECT-ARCHITECTURE.md',
+  'docs/architecture/DIRECTORY-STRUCTURE.md',
   'docs/architecture/AGENT-RUNTIME.md',
+  'docs/architecture/WORKSPACE.md',
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
+  'docs/development/DEVELOPMENT-RULES.md',
   'docs/development/UPSTREAM-REFERENCE.md',
+  'scripts/gates/naming.ts',
   'docs/security/NATIVE-CAPABILITIES.md',
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
 
 
+const directoryDoc = readFileSync('docs/architecture/DIRECTORY-STRUCTURE.md', 'utf8')
+for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/session/contract.ts', 'apps/desktop/scripts/electron/install-runtime.ts']) {
+  if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
+}
+const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
+for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpers', '父目录已经表达领域时去掉重复前缀']) {
+  if (!developmentRules.includes(marker)) throw new Error(`XMA development naming rule missing: ${marker}`)
+}
+
 const runtimeDoc = readFileSync('docs/architecture/AGENT-RUNTIME.md', 'utf8')
 for (const marker of ['Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline']) {
   if (!runtimeDoc.includes(marker)) throw new Error(`XMA Agent Runtime architecture marker missing: ${marker}`)
+}
+const workspaceDoc = readFileSync('docs/architecture/WORKSPACE.md', 'utf8')
+for (const marker of ['WorkspaceBinding', 'descriptorDigest', 'workspace/access-granted', 'workspace/access-revoked', 'workspace/access-used', '其他 Agent → 目标 Workspace → deny']) {
+  if (!workspaceDoc.includes(marker)) throw new Error(`XMA Workspace architecture marker missing: ${marker}`)
 }
 const providerDoc = readFileSync('docs/architecture/MODEL-PROVIDER.md', 'utf8')
 for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests']) {
@@ -51,14 +69,18 @@ for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Pro
 
 
 const contextSource = readFileSync('core/src/context.ts', 'utf8')
-for (const marker of ['class ContextRegistry', 'maxCharacters', 'sha256', 'sourceId']) {
+for (const marker of ['class ContextRegistry', 'maxCharacters', 'sha256', 'sourceId', 'workspaceAccess', 'authorizeWorkspaceAccess']) {
   if (!contextSource.includes(marker)) throw new Error(`XMA Context architecture marker missing: ${marker}`)
 }
-const sessionSource = readFileSync('core/src/session.ts', 'utf8')
-for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep']) {
+const sessionSource = readFileSync('core/src/session/contract.ts', 'utf8')
+for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep', "type: 'workspace/access-granted'", "type: 'workspace/access-revoked'", "type: 'workspace/access-used'"]) {
   if (!sessionSource.includes(marker)) throw new Error(`XMA Session reconstruction marker missing: ${marker}`)
 }
-const exportSource = readFileSync('core/src/session-export.ts', 'utf8')
+const workspaceSource = readFileSync('core/src/workspace.ts', 'utf8')
+for (const marker of ['class WorkspaceRegistry', 'WorkspaceBinding', 'descriptorDigest', 'bindOwned', 'verifyBinding', 'class WorkspaceToolSecurityGuard']) {
+  if (!workspaceSource.includes(marker)) throw new Error(`XMA Workspace core marker missing: ${marker}`)
+}
+const exportSource = readFileSync('core/src/session/export.ts', 'utf8')
 for (const marker of ['SessionExportEnvelope', 'redacted: boolean', 'SessionMigrationRegistry']) {
   if (!exportSource.includes(marker)) throw new Error(`XMA Session export/migration marker missing: ${marker}`)
 }
@@ -70,11 +92,11 @@ const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', '
 for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(']) {
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
 }
-const toolsSource = readFileSync('core/src/tools.ts', 'utf8')
-for (const marker of ['class ToolPlan', 'class ToolRouter', 'createPlan()', 'validateToolArguments', 'dispatchMany']) {
+const toolsSource = readFileSync('core/src/tool/router.ts', 'utf8')
+for (const marker of ['class ToolPlan', 'class ToolRouter', 'createPlan()', 'validateToolArguments', 'dispatchMany', 'Workspace-scoped tool requires a bound Session Workspace', 'Cross-workspace tool access requires durable Workspace access auditing']) {
   if (!toolsSource.includes(marker)) throw new Error(`XMA ToolPlan architecture marker missing: ${marker}`)
 }
-const policySource = readFileSync('core/src/tool-policy.ts', 'utf8')
+const policySource = readFileSync('core/src/tool/policy.ts', 'utf8')
 for (const marker of ['DefaultToolPolicy', 'ToolSecurityGuard', 'ToolApprovalProvider', 'allow-session']) {
   if (!policySource.includes(marker)) throw new Error(`XMA Tool Policy architecture marker missing: ${marker}`)
 }
@@ -83,7 +105,7 @@ for (const marker of ['NativeCapabilityKind', 'NativeHostPolicy', 'issueCapabili
   if (!nativeBridge.includes(marker)) throw new Error(`XMA Native bridge marker missing: ${marker}`)
 }
 const nativeTools = readFileSync('plugins/tools/native.ts', 'utf8')
-for (const marker of ['native.fs.read_text', 'native.fs.write_text', 'native.process.run', 'issueCapability', 'programs: [program]']) {
+for (const marker of ['native.fs.read_text', 'native.fs.write_text', 'native.process.run', 'issueCapability', 'programs: [program]', 'workspaceAccess', 'workspaceId']) {
   if (!nativeTools.includes(marker)) throw new Error(`XMA Native tool marker missing: ${marker}`)
 }
 const nativeProtocol = readFileSync('native/protocol/src/lib.rs', 'utf8')
@@ -109,6 +131,9 @@ if (!agents.includes('provider.stream') || !agents.includes('createPlan()') || !
 }
 if (!runtimeSource.includes('toolPlanId: toolPlan.id') || !runtimeSource.includes('toolRouter.dispatchMany')) {
   throw new Error('XMA Runtime must bind each Step to one frozen ToolPlan and execute through its ToolRouter')
+}
+for (const marker of ['new WorkspaceToolSecurityGuard', 'grantWorkspaceAccess', 'revokeWorkspaceAccess', "type: 'workspace/access-used'", 'verifyBinding(handle.header.workspace)', 'Workspace header identity is inconsistent']) {
+  if (!runtimeSource.includes(marker)) throw new Error(`XMA Runtime Workspace boundary marker missing: ${marker}`)
 }
 const compat = readFileSync('plugins/compat/deepseek-harness/index.ts', 'utf8')
 for (const marker of ['inject', 'apply(context']) if (!compat.includes(marker)) throw new Error(`DeepSeek Harness compatibility marker missing: ${marker}`)
@@ -168,13 +193,13 @@ for (const marker of ['.cache/desktop/tauri/web', '--emptyOutDir', '--base ./'])
 const desktopDevMainBuild = desktopPackage.scripts?.['main:build:dev'] ?? ''
 if (!desktopDevMainBuild.includes('.cache/desktop/electron/dev/main')) throw new Error('XMA Electron dev Main Process must build under .cache/desktop')
 const desktopElectronBuild = desktopPackage.scripts?.['build:electron'] ?? ''
-if (!desktopElectronBuild.includes('apps/desktop/scripts/build-electron.ts')) throw new Error('XMA Electron release build must use the unified build orchestrator')
+if (!desktopElectronBuild.includes('apps/desktop/scripts/electron/build.ts')) throw new Error('XMA Electron release build must use the unified build orchestrator')
 const desktopWebDev = desktopPackage.scripts?.['web:dev'] ?? ''
 if (!desktopWebDev.includes('exec vite apps/web --host 127.0.0.1 --port 1420 --strictPort')) {
   throw new Error('XMA Desktop web:dev must bind Vite to 127.0.0.1:1420 without forwarding a literal -- argument')
 }
 if (desktopWebDev.includes(' -- --host')) throw new Error('XMA Desktop web:dev must not pass a literal -- to Vite')
-const electronBuildSource = readFileSync('apps/desktop/scripts/build-electron.ts', 'utf8')
+const electronBuildSource = readFileSync('apps/desktop/scripts/electron/build.ts', 'utf8')
 for (const marker of ["'.cache', 'desktop', 'electron', 'app'", "'dist', 'release', 'electron'", "'--base', './'", "'--emptyOutDir'", 'ELECTRON_CACHE: electronCache', 'ELECTRON_BUILDER_CACHE: builderCache']) {
   if (!electronBuildSource.includes(marker)) throw new Error(`XMA Electron unified output contract missing: ${marker}`)
 }
@@ -184,7 +209,7 @@ if (JSON.stringify(electronBuilder.files) !== JSON.stringify(['main/**', 'web/**
 const tauriConfig = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8')) as { build?: { frontendDist?: string; beforeBuildCommand?: string } }
 if (tauriConfig.build?.frontendDist !== '../../../.cache/desktop/tauri/web') throw new Error('XMA Tauri frontendDist must use .cache/desktop/tauri/web')
 if (tauriConfig.build?.beforeBuildCommand !== 'pnpm run web:build:tauri') throw new Error('XMA Tauri build must use the dedicated cache-staging Web build')
-const desktopLauncher = readFileSync('apps/desktop/scripts/dev-electron.ts', 'utf8')
+const desktopLauncher = readFileSync('apps/desktop/scripts/electron/dev.ts', 'utf8')
 if (desktopLauncher.includes('shell: true') || desktopLauncher.includes("shell: process.platform === 'win32'")) {
   throw new Error('XMA Desktop launcher must not use shell:true with child-process arguments (Node DEP0190)')
 }

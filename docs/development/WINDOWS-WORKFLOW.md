@@ -57,7 +57,7 @@ Electron 版本固定为 `41.2.0`，只存在于 `apps/desktop/package.json`，�
 为了避免“一键准备环境”卡在 Electron postinstall：
 
 1. Desktop JavaScript package 先使用 `--ignore-scripts` 安装；
-2. 只有用户明确选择 Electron Desktop 时，才调用 `apps/desktop/scripts/install-electron-runtime.ts`；禁止把下载藏进 `pnpm rebuild electron` lifecycle；
+2. 只有用户明确选择 Electron Desktop 时，才调用 `apps/desktop/scripts/electron/install-runtime.ts`；禁止把下载藏进 `pnpm rebuild electron` lifecycle；
 3. XMA 直接通过 `@electron/get` API 输出实时百分比与 MB；下载连接连续 45 秒没有新数据就主动中止，避免界面无限停在 postinstall；
 4. `@electron/get` 返回已校验 ZIP 后，Windows 安装器调用系统 PowerShell `Expand-Archive` 解压到 staging，先验证版本和 `electron.exe`，再原子替换正式 `dist` 并写 `path.txt`；Windows 固定使用系统解压链，不把安装成功依赖于 Node `extract-zip/yauzl` 流；
 5. 默认使用官方 GitHub Releases；连接停滞时切换 Electron 官方文档示例镜像 `npmmirror`，并继续使用包内 `checksums.json` 校验；下载 ZIP 默认缓存到 XMA 项目根 `.cache/electron/`，不写入 Windows 用户 `%LOCALAPPDATA%`，后续运行不重复下载；

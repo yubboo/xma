@@ -178,10 +178,16 @@ fn configure_policy(
     policy: NativeHostPolicy,
 ) -> Result<RuntimeStatus, String> {
     if state.host_policy.is_some() {
-        return Err("native host policy is already configured for this runtime process".to_string());
+        return Err(
+            "native host policy is already configured for this runtime process".to_string(),
+        );
     }
     let roots = canonicalize_roots(&policy.roots, "native host policy")?;
-    if policy.programs.iter().any(|program| program.trim().is_empty()) {
+    if policy
+        .programs
+        .iter()
+        .any(|program| program.trim().is_empty())
+    {
         return Err("native host policy program paths must be non-empty".to_string());
     }
     let programs = policy
@@ -314,8 +320,12 @@ fn resolve_existing_path(scope: &CapabilityScope, raw: &str) -> Result<PathBuf, 
     } else {
         scope.roots[0].join(raw_path)
     };
-    let canonical = fs::canonicalize(&candidate)
-        .map_err(|error| format!("cannot canonicalize target {}: {error}", candidate.display()))?;
+    let canonical = fs::canonicalize(&candidate).map_err(|error| {
+        format!(
+            "cannot canonicalize target {}: {error}",
+            candidate.display()
+        )
+    })?;
     if !starts_in_any_root(&canonical, &scope.roots) {
         return Err(format!(
             "native path is outside capability roots: {}",
@@ -399,9 +409,12 @@ fn resolve_write_path(
             canonical_parent.display()
         ));
     }
-    let name = candidate
-        .file_name()
-        .ok_or_else(|| format!("native write target has no file name: {}", candidate.display()))?;
+    let name = candidate.file_name().ok_or_else(|| {
+        format!(
+            "native write target has no file name: {}",
+            candidate.display()
+        )
+    })?;
     Ok(canonical_parent.join(name))
 }
 
@@ -463,8 +476,12 @@ fn read_text(state: &mut RuntimeState, request: ReadTextRequest) -> Result<ReadT
     if truncated {
         bytes.truncate(max_bytes);
     }
-    let content = String::from_utf8(bytes)
-        .map_err(|_| format!("native read target is not valid UTF-8 text: {}", path.display()))?;
+    let content = String::from_utf8(bytes).map_err(|_| {
+        format!(
+            "native read target is not valid UTF-8 text: {}",
+            path.display()
+        )
+    })?;
     Ok(ReadTextResult {
         path: path.display().to_string(),
         bytes: content.len(),
@@ -500,7 +517,7 @@ fn write_text(
 }
 
 fn read_limited<R: Read + Send + 'static>(
-    mut reader: R,
+    reader: R,
     limit: usize,
 ) -> thread::JoinHandle<Result<(Vec<u8>, bool), String>> {
     thread::spawn(move || {
@@ -620,9 +637,7 @@ fn handle(request: JsonRpcRequest, state: &mut RuntimeState) -> JsonRpcResponse 
         "initialize" => decode::<NativeHostPolicy>(request.params)
             .and_then(|policy| configure_policy(state, policy))
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
-        "runtime/status" => {
-            serde_json::to_value(status(state)).map_err(|error| error.to_string())
-        }
+        "runtime/status" => serde_json::to_value(status(state)).map_err(|error| error.to_string()),
         "capability/issue" => decode::<CapabilityGrant>(request.params)
             .and_then(|grant| issue_capability(state, grant))
             .and_then(|lease| serde_json::to_value(lease).map_err(|error| error.to_string())),
@@ -733,7 +748,8 @@ mod tests {
             .display()
             .to_string();
         configure_for_root(&mut state, &root, vec![allowed_program]);
-        fs::write(outside.join("not-allowed.exe"), "fixture").expect("write outside program fixture");
+        fs::write(outside.join("not-allowed.exe"), "fixture")
+            .expect("write outside program fixture");
 
         let outside_root = issue_capability(
             &mut state,

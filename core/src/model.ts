@@ -1,6 +1,6 @@
 /**
  * 文件作用：定义 XMA 对外部大模型的统一 Model Provider 请求/流事件 Contract，以及 Runtime 可持久重建的规范化消息结构。
- * 关联模块：runtime.ts、session.ts、provider.ts、tools.ts、plugins/providers/。
+ * 关联模块：runtime.ts、session/contract.ts、provider.ts、tool/router.ts、plugins/providers/。
  * 当前实现：模型身份、消息、Tool Call、流式文本/Reasoning/Usage 事件和统一请求接口。
  * 职责边界：XMA 不在这里实现“自己的弱模型”；厂商 JSON、认证、Catalog、Probe 与错误映射必须通过 Provider Adapter 注入。
  */

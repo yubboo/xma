@@ -25,7 +25,39 @@ xma/
 
 ## 3. core/
 
-当前统一承载 Agent、Session、Model、Provider Contract、Context、Plugin、Tool、Workspace 等 TypeScript 核心 Contract。0.1.0 当前关键文件包括 `runtime.ts`、`session.ts`、`session-store.ts`、`session-export.ts`、`context.ts`、`provider.ts`、`app-protocol.ts`。目标逻辑模块见 `PROJECT-ARCHITECTURE.md`，但在模块真正长大前不强制每个概念成为独立 package。
+当前统一承载 Agent、Session、Model、Provider Contract、Context、Plugin、Tool、Workspace 等 TypeScript 核心 Contract。0.1.0 采用“**小领域保持扁平，达到稳定规模再分组**”的物理布局：
+
+```text
+core/src/
+├─ agent.ts
+├─ agent-registry.ts          # Agent 当前只有两个核心文件，暂不建单文件式目录
+├─ runtime.ts
+├─ context.ts
+├─ workspace.ts
+├─ provider.ts
+├─ session/                   # 已有 3 个稳定且职责不同的 Session 模块
+│  ├─ contract.ts
+│  ├─ store.ts
+│  └─ export.ts
+└─ tool/                      # Router / Policy / Schema 是三个不同安全职责
+   ├─ router.ts
+   ├─ policy.ts
+   └─ schema.ts
+```
+
+这里的子目录只是源码组织，不代表拆成独立 npm package。只有真正需要独立发布/生命周期/消费者时才考虑 package 边界。
+
+### 3.1 命名规则与父目录去重
+
+- 目录、TypeScript/TSX、PowerShell：小写 `kebab-case`；
+- Rust 模块：`snake_case`；
+- 正式 docs 文件：`UPPER-KEBAB.md`；
+- `.` 只表示 `test/config/d` 等角色或生态固定命名；普通单词不得用点号连接；
+- 普通名字优先 1～3 个核心词；目录已经表达领域时文件名去掉重复前缀；
+- 同逻辑优先聚合，只有真正不同的逻辑职责才拆文件；通常领域达到约 3 个稳定文件或独立生命周期后才建立子目录；
+- 可机械判断的规则由 `scripts/gates/naming.ts` 锁定。
+
+例如：`session/store.ts`、`tool/policy.ts`、`apps/desktop/scripts/electron/install-runtime.ts` 都优于重复写成 `session/session-store.ts`、`tool/tool-policy.ts`、`install-electron-runtime.ts`。
 
 ## 4. agents/
 
@@ -144,11 +176,14 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 不能因为参考项目拆了很多包，就机械复制其目录规模。
 
 
-## 当前 Stage C 新增源码归属
+## 当前 Stage C / D 关键源码归属
 
-- `core/src/tool-schema.ts`：模型 Tool arguments 的 TypeScript Schema 校验；
-- `core/src/tool-policy.ts`：Permission Policy / Security Guard / Approval Contract；
-- `core/src/tools.ts`：Tool Registry / frozen ToolPlan / ToolRouter；
+- `core/src/session/contract.ts`：Session/Turn/Step durable fact Contract；
+- `core/src/session/store.ts`：Memory / JSONL Session Store；
+- `core/src/session/export.ts`：安全导出 / redaction / migration Contract；
+- `core/src/tool/schema.ts`：模型 Tool arguments 的 TypeScript Schema 校验；
+- `core/src/tool/policy.ts`：Permission Policy / Security Guard / Approval Contract；
+- `core/src/tool/router.ts`：Tool Registry / frozen ToolPlan / ToolRouter；
 - `core/src/native.ts`：TypeScript ↔ Rust Native Capability Bridge；
 - `plugins/tools/native.ts`：Native FS/Process 的 Tool Definition Adapter；
 - `native/protocol/`：稳定 JSON-RPC / Capability wire contract；

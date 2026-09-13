@@ -142,9 +142,9 @@ XMA 长期参考：
 
 ### 当前落地（本批次）
 
-- `core/src/tool-schema.ts`：模型参数在进入 Policy 前做最小 JSON Schema fail-loud 校验；
-- `core/src/tools.ts`：Registry → frozen ToolPlan → 同源 ToolRouter，模型 Schema 与可执行 Runtime 不漂移；
-- `core/src/tool-policy.ts`：standard/paranoid/auto、monotonic Guard、allow-once/allow-session/deny；
+- `core/src/tool/schema.ts`：模型参数在进入 Policy 前做最小 JSON Schema fail-loud 校验；
+- `core/src/tool/router.ts`：Registry → frozen ToolPlan → 同源 ToolRouter，模型 Schema 与可执行 Runtime 不漂移；
+- `core/src/tool/policy.ts`：standard/paranoid/auto、monotonic Guard、allow-once/allow-session/deny；
 - durable `tool/approval` 审计事件；
 - `parallel-safe` batch + `exclusive` barrier；
 - `core/src/native.ts` + `plugins/tools/native.ts`：TypeScript Capability Bridge 与 Native Tool Adapter；
@@ -176,6 +176,18 @@ XMA 长期参考：
 - usage ledger / cost estimation；
 - redaction；
 - future Session format version/migration Contract。
+
+### 当前落地（Stage D 第一批）
+
+- `core/src/workspace.ts`：稳定 Workspace Descriptor、绝对 roots、Owner identity、Binding digest 与 Registry；
+- Stage D 新 Session 可冻结 `WorkspaceBinding` 到 Header，`requireWorkspace` 可强制产品 Session 必须绑定 Workspace；
+- Session resume 对 owner/root/allowed roots descriptor drift fail loud；
+- durable `workspace/access-granted` / `workspace/access-revoked` / `workspace/access-used`；
+- Tool `workspaceAccess()` + `WorkspaceToolSecurityGuard`，跨 Agent grant 在真实 execute 前写审计；
+- Native Tool Adapter 绑定稳定 workspaceId，并分别声明 read/write/execute；
+- Context Source 可声明 Workspace read scope，跨 Workspace 未授权时在 render 前拒绝；
+- App Protocol 已增加 workspace list/grant/revoke 类型面；
+- 当前仍未完成：Workspace 持久 Registry、repo metadata、instructions discovery、rebind/migration、large-output attachment、compaction、Session fork。
 
 ### 出口标准
 

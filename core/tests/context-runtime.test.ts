@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 Context Assembly 真正进入 durable Session，并可按 Step 精确重建模型可见上下文。
- * 关联模块：core/src/context.ts、runtime.ts、session.ts。
+ * 关联模块：core/src/context.ts、runtime.ts、session/contract.ts。
  * 当前实现：稳定排序、上下文变化、Context Snapshot 去重/更新和 Step 请求历史重建测试。
  * 职责边界：测试 Source 只返回确定性文本；Workspace/Skill/Knowledge 的真实 Context Provider 在后续阶段实现。
  */
@@ -10,9 +10,9 @@ import test from 'node:test'
 import { ContextRegistry } from '../src/context.ts'
 import type { ModelProvider } from '../src/model.ts'
 import { AgentRuntime } from '../src/runtime.ts'
-import { requestContextForStep, requestMessagesForStep } from '../src/session.ts'
-import { MemorySessionStore } from '../src/session-store.ts'
-import { ToolRegistry } from '../src/tools.ts'
+import { requestContextForStep, requestMessagesForStep } from '../src/session/contract.ts'
+import { MemorySessionStore } from '../src/session/store.ts'
+import { ToolRegistry } from '../src/tool/router.ts'
 
 test('ContextRegistry orders sources deterministically and Runtime persists only effective changes', async () => {
   const context = new ContextRegistry({ maxCharacters: 4096 })

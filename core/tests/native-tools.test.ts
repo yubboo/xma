@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 Native Tool Adapter 只通过 Capability Bridge 访问文件/进程，并受 ToolRouter Approval 约束。
- * 关联模块：plugins/tools/native.ts、core/src/native.ts、core/src/tools.ts、native/runtime。
+ * 关联模块：plugins/tools/native.ts、core/src/native.ts、core/src/tool/router.ts、native/runtime。
  * 当前实现：最小 Capability scope、读工具直通、写工具 Approval、进程白名单注册条件与参数转发测试。
  * 职责边界：Fake NativeClient 只验证 TypeScript 桥接；路径真实 canonical confinement 和进程 enforcement 由 Rust Kernel 负责。
  */
@@ -19,8 +19,8 @@ import type {
   NativeWriteTextRequest,
   NativeWriteTextResult,
 } from '../src/native.ts'
-import { StaticToolApprovalProvider } from '../src/tool-policy.ts'
-import { ToolRegistry } from '../src/tools.ts'
+import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
+import { ToolRegistry } from '../src/tool/router.ts'
 import { registerNativeTools } from '../../plugins/tools/native.ts'
 
 class FakeNativeClient implements NativeClient {
@@ -72,12 +72,20 @@ const toolContext = {
   turnId: 'turn-1',
   stepId: 'step-1',
   signal: new AbortController().signal,
+  workspace: {
+    workspaceId: 'workspace-main',
+    ownerAgentId: 'xiaoyu.code',
+    name: 'Main Workspace',
+    root: 'C:/workspace',
+    allowedRoots: ['C:/workspace'],
+    descriptorDigest: '0'.repeat(64),
+  },
 }
 
 test('native read requests only filesystem.read scope and never uses Approval in standard policy', async () => {
   const client = new FakeNativeClient()
   const registry = new ToolRegistry()
-  registerNativeTools(registry, { client, allowedRoots: ['C:/workspace'] })
+  registerNativeTools(registry, { client, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'] })
 
   const outcome = await registry.createPlan().createRouter().dispatch({
     callId: 'read-1',
@@ -95,7 +103,7 @@ test('native read requests only filesystem.read scope and never uses Approval in
 test('native write fails closed before Capability issuance, then runs only after explicit Approval', async () => {
   const deniedClient = new FakeNativeClient()
   const deniedRegistry = new ToolRegistry()
-  registerNativeTools(deniedRegistry, { client: deniedClient, allowedRoots: ['C:/workspace'] })
+  registerNativeTools(deniedRegistry, { client: deniedClient, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'] })
   const denied = await deniedRegistry.createPlan().createRouter().dispatch({
     callId: 'write-denied',
     name: 'native.fs.write_text',
@@ -107,7 +115,7 @@ test('native write fails closed before Capability issuance, then runs only after
 
   const client = new FakeNativeClient()
   const registry = new ToolRegistry()
-  registerNativeTools(registry, { client, allowedRoots: ['C:/workspace'], maxWriteBytes: 1024 })
+  registerNativeTools(registry, { client, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'], maxWriteBytes: 1024 })
   const allowed = await registry.createPlan().createRouter({
     approvals: new StaticToolApprovalProvider('allow-once'),
   }).dispatch({
@@ -126,12 +134,13 @@ test('native write fails closed before Capability issuance, then runs only after
 test('native process tool requires absolute executable identity and leases only the selected program', async () => {
   const hiddenClient = new FakeNativeClient()
   const hiddenRegistry = new ToolRegistry()
-  registerNativeTools(hiddenRegistry, { client: hiddenClient, allowedRoots: ['C:/workspace'] })
+  registerNativeTools(hiddenRegistry, { client: hiddenClient, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'] })
   assert.equal(hiddenRegistry.createPlan().modelVisibleSpecs().some(spec => spec.name === 'native.process.run'), false)
 
   const invalidRegistry = new ToolRegistry()
   assert.throws(() => registerNativeTools(invalidRegistry, {
     client: new FakeNativeClient(),
+    workspaceId: 'workspace-main',
     allowedRoots: ['C:/workspace'],
     allowedPrograms: ['git.exe'],
   }), /absolute executable paths/)
@@ -141,6 +150,7 @@ test('native process tool requires absolute executable identity and leases only 
   const allowedProgram = process.execPath
   registerNativeTools(registry, {
     client,
+    workspaceId: 'workspace-main',
     allowedRoots: ['C:/workspace'],
     allowedPrograms: [allowedProgram],
     defaultCwd: 'C:/workspace',
@@ -169,6 +179,7 @@ test('native process ToolPlan exposes only configured executable identities and 
   const registry = new ToolRegistry()
   registerNativeTools(registry, {
     client,
+    workspaceId: 'workspace-main',
     allowedRoots: ['C:/workspace'],
     allowedPrograms: [process.execPath],
     defaultCwd: 'C:/workspace',

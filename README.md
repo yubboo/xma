@@ -19,7 +19,7 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 - CLI、Desktop、Web、Server 四种 Shell；
 - Desktop：Electron 41.2.0 主运行时 + Tauri 2 备用运行时；
 - Windows 一键环境、同步、GitHub 推送、构建发布入口；
-- Architecture / Comment / Documentation Gates；
+- Architecture / Naming / Comment / Documentation Gates；
 - 版本规则与开发文档。
 
 > 0.1.0 是平台骨架，不代表 Minecraft、Code、Writer 已经产品完成。
@@ -35,6 +35,8 @@ native/     Rust Native / Security Kernel
 scripts/    Windows 控制台、同步、GitHub、构建、Gates
 docs/       架构、规则、计划、安全文档
 ```
+
+源码命名固定为：目录/TypeScript 使用小写 kebab-case，Rust 模块使用 snake_case，`.` 只表达 test/config/d 等角色；普通名字优先 1～3 个核心词，并按“同逻辑聚合、不同职责才拆分”的原则组织。详细规则见 `AGENTS.md`、`docs/architecture/DIRECTORY-STRUCTURE.md` 和 `docs/development/DEVELOPMENT-RULES.md`。
 
 ## Windows 固定流程
 
@@ -67,3 +69,8 @@ XMA.bat
 XMA 0.1.x 当前采用 **Backend/Agent Runtime First**：先完成 Session/Turn/Step、真实 Model Provider、Tool/Permission/Native、Workspace、Plugin/Skill 和 Code/Minecraft 真闭环，再进入完整 Desktop Workbench。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
 
 上游实现参考固定记录在 `docs/development/UPSTREAM-REFERENCE.md`；项目级 AI 开发入口为根 `AGENTS.md`，并提供 `.agents/`、`.codex/`、`.claude/` 适配目录。
+
+
+## Stage D 当前进展
+
+0.1.0 未冻结开发线已加入 Workspace Binding/ownership、Session durable cross-workspace grant、Tool Workspace Security Guard 与 Context Source workspace read scope。详细边界见 `docs/architecture/WORKSPACE.md`；Workspace persistence、instructions discovery、compaction/fork 仍在后续批次。

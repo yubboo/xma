@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；本批又落地了 frozen ToolPlan/ToolRouter、Schema → Policy → Security Guard → Approval → Execute 流水线，以及 Rust filesystem/process 最小 Capability 链。PTY/Network/process-tree ownership 等仍按本文继续实现。
+本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；Stage C 已落地 frozen ToolPlan/ToolRouter、Schema → Policy → Security Guard → Approval → Execute 流水线与 Rust filesystem/process 最小 Capability 链；Stage D 第一批又把 Workspace Binding、ownership、跨 Agent durable grant、Tool/Context Workspace scope 接入 Runtime。PTY/Network/process-tree ownership、Workspace persistence/instructions 等仍按本文继续实现。
 
 参考上，XMA 借鉴 Codex 的 Thread/Turn/ToolRouter/Permission 运行语义、DeepSeek Harness 的 Session/Event/Service/Effect 结构和 Minecraft Host Agent 的 Agent-First/Skill/Tool 实践；实现上仍严格服从 XMA 自己的 **TypeScript Agent Core + Rust Native/Security Kernel** 边界。
 
@@ -138,7 +138,7 @@ Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `core/src/conte
 3. 稳定排序，减少 Provider prefix cache 无意义失效；
 4. 模型可见动态内容必须先形成 durable Snapshot，可按 Step digest 重建；
 5. 动态事实优先通过 Tool/Knowledge 查询进入；
-6. Workspace / Agent / Skill instructions 有作用域；
+6. Workspace / Agent / Skill instructions 有作用域；跨 Workspace Context Source 必须在 render 前通过 `read` authorization，并在 durable source ref 记录 workspaceId；
 7. 大输出先持久化，模型只拿必要摘要或引用；
 8. Compaction 必须是可追踪的显式行为，而不是暗中改历史。
 
@@ -146,7 +146,7 @@ Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `core/src/conte
 
 ## 5.1 Session Export / Redaction / Migration
 
-当前 `core/src/session-export.ts` 已提供第一版安全导出 Contract：`SessionExportEnvelope` 带独立 export version；调用方可把 Credentials Service 已知 Secret 临时交给 `SessionRedactor`，递归清理 user/assistant/tool/context/turn 文本与 JSON 数据，且不修改原 Session。带 redactor 的导出明确标记 `redacted: true`，它是安全分享投影，不承诺保持原始 digest 的可重放一致性。
+当前 `core/src/session/export.ts` 已提供第一版安全导出 Contract：`SessionExportEnvelope` 带独立 export version；调用方可把 Credentials Service 已知 Secret 临时交给 `SessionRedactor`，递归清理 user/assistant/tool/context/turn 文本与 JSON 数据，且不修改原 Session。带 redactor 的导出明确标记 `redacted: true`，它是安全分享投影，不承诺保持原始 digest 的可重放一致性。
 
 `SessionMigrationRegistry` 只允许 `vN → vN+1` 相邻单向升级，拒绝 future format 与隐式 downgrade。当前 `SESSION_FORMAT_VERSION = 1` 没有历史已发布格式，因此默认 migration registry 为空；**它尚未接入 JSONL Store generation 发布流程**，不能写成“持久格式迁移已经完成”。
 
@@ -200,9 +200,9 @@ resolve call
 
 ### 当前 0.1.0 落地
 
-`core/src/tools.ts` 已把 Tool Registry 生成的 Schema 与真实 Runtime 一起冻结到同一个 `ToolPlan`；每个 Step 只创建一次 Plan，并把 `toolPlanId + tools[]` 写入 `step/start`。Registry 在模型请求之后发生增删，不会改变该 Step 的 Router。`core/src/tool-schema.ts` 在 Policy 之前做 fail-loud 参数校验，普通参数错误变成 `TOOL_INVALID_ARGUMENTS` 返回模型自纠。
+`core/src/tool/router.ts` 已把 Tool Registry 生成的 Schema 与真实 Runtime 一起冻结到同一个 `ToolPlan`；每个 Step 只创建一次 Plan，并把 `toolPlanId + tools[]` 写入 `step/start`。Registry 在模型请求之后发生增删，不会改变该 Step 的 Router。`core/src/tool/schema.ts` 在 Policy 之前做 fail-loud 参数校验，普通参数错误变成 `TOOL_INVALID_ARGUMENTS` 返回模型自纠。
 
-`core/src/tool-policy.ts` 已提供 standard/paranoid/auto Policy、单调 Security Guard、allow-once/allow-session/deny Approval 与 Session cache。没有 Host Approval Provider 时，write/execute/network 默认 fail closed。`parallel-safe` 调用可在同一批次并行；`exclusive` 调用形成 barrier。
+`core/src/tool/policy.ts` 已提供 standard/paranoid/auto Policy、单调 Security Guard、allow-once/allow-session/deny Approval 与 Session cache。没有 Host Approval Provider 时，write/execute/network 默认 fail closed。`parallel-safe` 调用可在同一批次并行；`exclusive` 调用形成 barrier。
 
 
 ## 7. Permission / Approval / Capability
@@ -245,17 +245,18 @@ UI 的“聊天历史”“工作记录”“摘要”“来源”都应从这�
 
 ## 10. Workspace
 
-Workspace 不只是 cwd 字符串，而是 Agent 的安全领地：
+Workspace 不只是 cwd 字符串，而是 Agent 的安全领地。详细 Contract 见 `WORKSPACE.md`。Stage D 第一批已经实现：
 
-- stable workspace id；
-- root path + allowed roots；
-- attached repo/project metadata；
-- Agent ownership / cross-agent authorization；
-- instructions discovery；
-- persistent state location；
-- Native filesystem capability scope。
+- stable `WorkspaceDescriptor`：id / ownerAgentId / root / allowed roots；
+- `WorkspaceBinding` 冻结进新 Session Header，并以 descriptor digest 防止 resume 时 owner/root 静默漂移；
+- `requireWorkspace` Product Host 模式；
+- Owner-only Session binding；
+- durable `workspace/access-granted` / `workspace/access-revoked` / `workspace/access-used`；
+- Tool `workspaceAccess()` + `WorkspaceToolSecurityGuard`；
+- Context Source workspace read scope；
+- Native Tool stable workspaceId。
 
-默认一个 Agent 不修改另一个 Agent Workspace；跨 Workspace 操作必须显式授权并进入 Session 记录。
+默认一个 Agent 不访问另一个 Agent Workspace；跨 Workspace 操作必须由用户显式授权。Workspace Policy 是 TypeScript 逻辑边界，真实 path/process 安全仍由 Rust Host Policy/Capability/canonical confinement 强制。当前仍缺 Workspace persistence、repo metadata、instructions discovery 和显式 rebind/migration。
 
 ## 11. Plugin extension points
 
@@ -299,15 +300,15 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 当前第一版已经不再只有 `messages[] + runAgent()`：
 
 - `core/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume、Context Assembly 与 Turn/Step driver；
-- `core/src/session.ts`：durable event Contract、模型消息投影与历史 Step 请求重建；
-- `core/src/session-store.ts`：Memory / JSONL Store；
-- `core/src/session-export.ts`：安全导出、Secret redaction 与相邻 migration Contract；
+- `core/src/session/contract.ts`：durable event Contract、模型消息投影与历史 Step 请求重建；
+- `core/src/session/store.ts`：Memory / JSONL Store；
+- `core/src/session/export.ts`：安全导出、Secret redaction 与相邻 migration Contract；
 - `core/src/context.ts`：Context Source Registry、确定性组装、硬上限与 digest；
 - `core/src/provider.ts`：Provider Profile/Credential/Capability/Catalog/Registry/Probe Contract；
 - `core/src/app-protocol.ts`：Host command/result/event envelope 第一版；
-- `core/src/tools.ts`：结构化 Tool Result 和普通异常/取消归一化。
+- `core/src/tool/router.ts`：结构化 Tool Result 和普通异常/取消归一化。
 
-第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/approval`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、`toolPlanId`、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。Approval 是审计事实，不进入模型消息投影；原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
+第一版 durable event 已包含：`session/created`、`workspace/access-granted`、`workspace/access-revoked`、`workspace/access-used`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/approval`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、`toolPlanId`、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。Approval 是审计事实，不进入模型消息投影；原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
 
-JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；Session export/redaction 与纯 migration registry 已有第一版，但 migration **尚未接入 JSONL Store generation 发布流程**。Context Assembly 已接入 Runtime，不过 system-message reconciliation、compaction、Workspace instructions discovery 仍未完成。
+JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；Session export/redaction 与纯 migration registry 已有第一版，但 migration **尚未接入 JSONL Store generation 发布流程**。Context Assembly 已接入 Runtime，Stage D 已增加 Workspace-scoped Context authorization；不过 system-message reconciliation、compaction、Workspace instructions discovery 仍未完成。
 

@@ -32,6 +32,32 @@
 - 不为了“架构漂亮”过度拆目录和 package。
 - 同一个事实只保留一个权威文档；AI Skill/README 引用它，不复制一份长期规则。
 
+### 3.1 文件/目录命名与拆分
+
+开发时先确定“领域”，再决定文件名，不用文件名重复整条路径。
+
+| 对象 | 固定形式 | 示例 |
+|---|---|---|
+| 产品目录 | 小写 `kebab-case` | `model-provider/`、`deepseek-harness/` |
+| TypeScript / TSX | 小写 `kebab-case` | `agent-registry.ts`、`install-runtime.ts` |
+| Rust 模块 | `snake_case` | `host_policy.rs`、`process_guard.rs` |
+| 测试 | `*.test.ts` | `workspace-runtime.test.ts` |
+| 配置代码 | `*.config.ts` | `desktop.config.ts` |
+| 类型声明 | `*.d.ts` | `vite-env.d.ts` |
+| 正式 docs 文档 | `UPPER-KEBAB.md` | `PROJECT-ARCHITECTURE.md` |
+| 生态固定文件 | 保持官方名称 | `package.json`、`Cargo.toml`、`tauri.conf.json` |
+
+额外规则：
+
+- 普通名字优先 1～3 个核心词，尽量不超过 32 个字符；测试/config/d 等角色后缀不算普通词；
+- `-` 用于普通英文词组合；`_` 只用于 Rust/Python 等语言自身约定；`.` 只用于角色后缀或生态固定文件；
+- 父目录已经表达领域时去掉重复前缀：`tool/policy.ts` 优于 `tool/tool-policy.ts`；
+- 同一逻辑的 types/constants/helpers 默认留在同一文件；只有不同职责、不同生命周期、不同安全边界或文件持续过大时再拆；
+- 一个只有单个实现文件的普通领域不应为了“整齐”新建文件夹；通常至少出现约 3 个稳定同领域文件才分组；
+- 已分组的 `session/`、`tool/`、Desktop `scripts/electron/` 和 `scripts/gates/` 不得退回重复长文件名；
+- 改名必须同时修复 import、脚本、文档、Gate 和测试，禁止留下兼容别名文件制造两套命名；
+- 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。
+
 ## 4. Agent Runtime 硬规则
 
 ### 4.1 真实模型是推理核心
@@ -131,8 +157,13 @@ TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/proce
 
 - Session append 是关键事实的主来源；Store 必须支持 crash/recovery 的演进设计。
 - 同一个 Session 同时只允许一个写所有者，除非 Store 明确定义并发协调。
-- Workspace 是 stable identity + roots + ownership + persistence，不是裸 cwd。
-- 默认 Agent 不能写其他 Agent Workspace；跨 Workspace 必须显式授权。
+- Workspace 是 stable identity + roots + owner + binding digest，不是裸 cwd。
+- Stage D 新 Workspace Session 默认只能绑定 Owner Agent 自己的 Workspace；Product Host 可启用 `requireWorkspace` 禁止 workspace-less Session。
+- Workspace-bound Session resume 必须验证安全 Descriptor identity；owner/root/allowed roots 漂移时 fail loud，未来 relocation 必须走显式 rebind/migration。
+- 跨 Agent Workspace 默认 deny；只有用户显式 durable grant 才允许对应 `read/write/execute` permission，且必须可 revoke。
+- Tool 的 Workspace access 必须在 Approval/execute 前经过单调 Workspace Security Guard；跨 Workspace grant 真正使用时要先 durable audit。
+- Context Source 若读取其他 Workspace，必须在 render 前检查 `read` grant，并在 durable Context Snapshot source 中保留 workspaceId。
+- Native Tool 必须绑定稳定 Workspace identity；TypeScript Workspace policy 不能替代 Rust Host Policy/Capability/canonical confinement，反之亦然。
 - instructions/Skill/Knowledge 注入必须有来源、作用域和大小预算。
 - 大 Tool 输出应落盘/附件化，模型只拿必要部分，避免无限撑爆 Context。
 
@@ -208,7 +239,7 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 - Electron 精确锁定 `41.2.0`，只在 `apps/desktop/`；Tauri 2 为备用。
 - `[1]` 可准备 Electron JS package metadata，但不执行 Electron postinstall。
-- Chromium Runtime 由 `apps/desktop/scripts/install-electron-runtime.ts` 显式按需下载，禁止 `pnpm rebuild electron`。
+- Chromium Runtime 由 `apps/desktop/scripts/electron/install-runtime.ts` 显式按需下载，禁止 `pnpm rebuild electron`。
 - 默认缓存根在 XMA `.cache/electron/`，不占用户 C 盘默认缓存；用户显式 `electron_config_cache` 可覆盖。
 - Windows 下载 ZIP 后用系统 PowerShell `Expand-Archive` → staging → `dist/version + executable` 校验 → 原子替换 → `path.txt`。
 - Runtime 完整性不使用 GUI `electron.exe --version` + `$LASTEXITCODE` 判定。

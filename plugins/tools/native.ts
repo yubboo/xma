@@ -1,18 +1,20 @@
 /**
  * 文件作用：把 Rust Native Runtime 的受限 FS/Process 能力包装成 XMA Tool Definition，供 Agent ToolPlan 安全暴露给模型。
- * 关联模块：core/src/native.ts、core/src/tools.ts、native/runtime、未来 Workspace Provider。
+ * 关联模块：core/src/native.ts、core/src/tool/router.ts、native/runtime、未来 Workspace Provider。
  * 当前实现：native.fs.read_text、native.fs.write_text、native.process.run；每次执行先申请最小 Capability lease，再由 Rust Kernel 二次校验。
  * 职责边界：本文件只描述 XMA Tool 语义和最小授权范围；不能直接使用 Node fs/child_process 绕过 Native Kernel，也不能替 Approval 自动放行副作用。
  */
 
 import { isAbsolute } from 'node:path'
 import type { NativeClient } from '../../core/src/native.ts'
-import type { ToolResult, XmaTool } from '../../core/src/tools.ts'
-import { ToolRegistry } from '../../core/src/tools.ts'
+import type { ToolResult, XmaTool } from '../../core/src/tool/router.ts'
+import { ToolRegistry } from '../../core/src/tool/router.ts'
 import type { Disposer, JsonObject, JsonValue } from '../../core/src/types.ts'
 
 export interface NativeToolSetOptions {
   client: NativeClient
+  /** 这些 Native Tool 属于哪个稳定 Workspace；Runtime Workspace Guard 会在 Capability issuance 前核对。 */
+  workspaceId: string
   allowedRoots: readonly string[]
   /** process.run 的精确绝对可执行文件白名单；为空时不注册进程工具。Rust 会 canonicalize 后再次核对身份。 */
   allowedPrograms?: readonly string[]
@@ -73,6 +75,7 @@ function readTool(options: NativeToolSetOptions): XmaTool {
     },
     effect: 'read',
     executionMode: 'parallel-safe',
+    workspaceAccess() { return { workspaceId: options.workspaceId, permission: 'read' } },
     async execute(args, context) {
       try {
         const lease = await options.client.issueCapability({ kind: 'filesystem.read', roots: options.allowedRoots }, context.signal)
@@ -117,6 +120,7 @@ function writeTool(options: NativeToolSetOptions): XmaTool {
     },
     effect: 'write',
     executionMode: 'exclusive',
+    workspaceAccess() { return { workspaceId: options.workspaceId, permission: 'write' } },
     approvalKey(args) { return stringArg(args, 'path') },
     approvalSummary(args) {
       const content = stringArg(args, 'content')
@@ -164,6 +168,7 @@ function processTool(options: NativeToolSetOptions): XmaTool {
     },
     effect: 'execute',
     executionMode: 'exclusive',
+    workspaceAccess() { return { workspaceId: options.workspaceId, permission: 'execute' } },
     approvalSummary(args) {
       const argv = stringArrayArg(args, 'args')
       const cwd = typeof args.cwd === 'string' ? args.cwd : defaultCwd
@@ -205,6 +210,7 @@ function processTool(options: NativeToolSetOptions): XmaTool {
 
 /** 注册 Native 工具并返回统一 disposer，便于 Plugin Host mount/unmount 不留幽灵注册。 */
 export function registerNativeTools(registry: ToolRegistry, options: NativeToolSetOptions): Disposer {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(options.workspaceId)) throw new Error(`Invalid XMA native tools workspace id: ${options.workspaceId}`)
   if (options.allowedRoots.length === 0) throw new Error('XMA native tools require at least one allowed root.')
   for (const program of options.allowedPrograms ?? []) {
     if (!isAbsolute(program)) throw new Error(`XMA native process allowlist requires absolute executable paths: ${program}`)
