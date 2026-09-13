@@ -41,19 +41,24 @@ $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJ
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
 
-# 中文说明：0.1.0 早期 Cargo 默认在仓库根生成 target/。现在统一迁移到 .cache/cargo-target，
-# 因此同步新源码时主动清理旧 target/，避免用户误把 Rust 编译缓存当成 dist 发布产物。
-$legacyCargoTargets = @(
+# 中文说明：0.1.0 早期曾把 Cargo/Desktop 中间产物散落在 target/build/apps/desktop 下。
+# 现在统一约束为：Cargo 根缓存位于 .cache/cargo-target，其他中间状态只进 .cache，正式产品只进 dist；同步时清理旧目录，避免继续误用。
+$legacyBuildDirs = @(
   (Join-Path $Target 'target'),
+  (Join-Path $Target 'build'),
+  (Join-Path $Target 'apps\desktop\dist'),
+  (Join-Path $Target 'apps\desktop\web'),
+  (Join-Path $Target 'apps\desktop\release'),
+  (Join-Path $Target 'apps\desktop\native'),
   (Join-Path $Target 'apps\desktop\src-tauri\target')
 )
-foreach ($legacyCargoTarget in $legacyCargoTargets) {
-  if (Test-Path $legacyCargoTarget) {
-    Write-Host "[清理] 正在删除旧版 Cargo 编译缓存：$legacyCargoTarget；新缓存统一位于 .cache\。" -ForegroundColor DarkYellow
+foreach ($legacyBuildDir in $legacyBuildDirs) {
+  if (Test-Path $legacyBuildDir) {
+    Write-Host "[清理] 正在删除旧版构建/编译目录：$legacyBuildDir；新中间产物统一位于 .cache\，正式产物统一位于 dist\。" -ForegroundColor DarkYellow
     try {
-      Remove-Item $legacyCargoTarget -Recurse -Force -ErrorAction Stop
+      Remove-Item $legacyBuildDir -Recurse -Force -ErrorAction Stop
     } catch {
-      Write-Host "[警告] 旧 Cargo 缓存当前可能被进程占用，暂未删除：$legacyCargoTarget。关闭相关进程后可手动删除；新构建不会继续使用它。" -ForegroundColor Yellow
+      Write-Host "[警告] 旧目录当前可能被进程占用，暂未删除：$legacyBuildDir。关闭相关进程后可手动删除；新构建不会继续使用它。" -ForegroundColor Yellow
     }
   }
 }
@@ -82,6 +87,6 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
   Write-Host '[提示] 当前系统还没有 Git；源码已同步，XMA-GitHub.bat 只负责 Git 推送且不会安装环境；请先通过 XMA.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
 }
 
-Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / node_modules / .cache 本地依赖与下载缓存。' -ForegroundColor Green
+Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / node_modules / .cache 本地依赖与缓存；dist 作为本机构建产物也不会从源码包覆盖。' -ForegroundColor Green
 Write-Host '[锁文件] 若版本包暂未携带 lockfile，则保留本机已生成的 pnpm-lock.yaml / Cargo.lock；若源码包携带，则以源码包版本为准。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

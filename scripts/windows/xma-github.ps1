@@ -55,7 +55,7 @@ function Test-ForbiddenGitPath([string]$Path) {
     'node_modules/', '.pnpm-store/', '.cache/', '.turbo/',
     'dist/', 'build/', 'coverage/', '.xma/',
     'native/target/', 'target/', 'apps/desktop/release/',
-    'apps/desktop/web/', 'apps/desktop/native/',
+    'apps/desktop/dist/', 'apps/desktop/web/', 'apps/desktop/native/',
     'tmp/', 'temp/', '.idea/'
   )
   # 中文说明：只禁止仓库根目录的用户运行数据 runtime/；native/runtime/ 是 Rust 源码，必须允许提交。

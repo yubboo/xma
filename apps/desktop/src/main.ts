@@ -1,6 +1,6 @@
 /**
  * 文件作用：XMA Electron 41.2.0 主桌面端入口，负责创建安全 BrowserWindow、中文桌面菜单并加载共享 Web UI。
- * 关联模块：apps/web、apps/desktop/electron-builder.yml、apps/desktop/scripts/dev-electron.ts、core/。
+ * 关联模块：apps/web、apps/desktop/electron-builder.json、apps/desktop/scripts/dev-electron.ts、core/。
  * 当前实现：开发环境加载本地 Vite 地址；发布环境通过 file:// 加载打包后的相对资源 Web UI，并对空白渲染做显式报错。
  * 职责边界：Electron 只是桌面 Shell，不承担 Agent 推理、Provider 选择或 Workspace 业务逻辑。
  */

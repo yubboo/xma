@@ -17,6 +17,7 @@ $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
 $CargoTargetDir = Join-Path $Root '.cache\cargo-target'
 $TauriTargetDir = Join-Path $Root '.cache\tauri-target'
+$DesktopCacheDir = Join-Path $Root '.cache\desktop'
 
 $requiredCommands = @('node.exe','pnpm.cmd','cargo.exe')
 $requiredFiles = @(
@@ -59,6 +60,7 @@ if ($DesktopRuntime -in @('tauri','both')) {
 
 Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
+Write-Host '[目录] XMA 中间产物统一进入 .cache\；正式产品统一进入 dist\；不再使用根 build\ / target\ 或 apps\desktop\dist|web|release。' -ForegroundColor DarkGray
 Write-Host '[构建] 正在构建 Web / CLI / Server...' -ForegroundColor Cyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build')
 Write-Host "[构建] 正在构建 XMA Native Runtime；Cargo 中间产物统一写入 $CargoTargetDir，不再生成仓库根 target\ 目录。" -ForegroundColor Cyan
@@ -71,10 +73,10 @@ $nativeExe = Join-Path $CargoTargetDir 'release\xma-native-runtime.exe'
 if (Test-Path $nativeExe) { Copy-Item $nativeExe (Join-Path $release 'xma-native-runtime.exe') -Force }
 
 if ($DesktopRuntime -in @('electron','both')) {
-  Write-Host "[构建] 正在构建 Electron $ElectronVersion 主桌面端..." -ForegroundColor Cyan
+  Write-Host "[构建] 正在构建 Electron $ElectronVersion 主桌面端；staging 写入 $DesktopCacheDir，最终产物直接写入 dist\release\electron。" -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:desktop:electron')
-  $electronRelease = Join-Path $Root 'apps\desktop\release\electron'
-  if (Test-Path $electronRelease) { Copy-Item $electronRelease (Join-Path $release 'electron') -Recurse -Force }
+  $electronRelease = Join-Path $release 'electron'
+  if (-not (Test-Path $electronRelease)) { throw 'Electron 构建完成但 dist\release\electron 不存在。' }
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {

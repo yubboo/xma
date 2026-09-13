@@ -92,7 +92,7 @@ XMA 已建立三条固定参考线：
 - 副：Tauri 2（系统 WebView2，备用桌面运行时）；
 - 两者共享 `apps/web` 与 Core，不复制 Agent Runtime；
 - Electron ZIP 默认缓存到项目 `.cache/electron`；
-- Cargo/Rust 编译缓存固定到项目 `.cache/cargo-target`，Tauri 使用 `.cache/tauri-target`；根 `target/` 不再作为正常输出；`dist/` 保持唯一产品构建/发布入口；
+- XMA-controlled 中间产物统一进入 `.cache/`：Cargo 使用 `.cache/cargo-target`、Tauri Rust 使用 `.cache/tauri-target`、Desktop staging 使用 `.cache/desktop`；`dist/` 是唯一正式产品构建/发布入口，根 `build/target` 与 app-local Desktop 输出不再作为正常目录；
 - Windows 使用 `@electron/get` 校验下载 → PowerShell `Expand-Archive` staging → version/executable 校验 → 原子替换 → `path.txt`；
 - `pnpm-workspace.yaml` 固定 `yauzl >= 3.3.1` override；
 - Electron 原子安装核心有离线测试；

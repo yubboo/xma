@@ -59,16 +59,37 @@ Rust 边界非常明确：Native / Security / Performance。第一阶段保留 `
 
 ## 7. 本地构建缓存与发布产物
 
-XMA 明确区分“编译缓存”和“产品产物”：
+XMA 只保留两种构建目录语义：
 
-- `.cache/cargo-target/`：XMA 根 Rust Workspace 的中间对象、build script 输出和 release 编译缓存，可随时删除，不提交 Git，不进入源码包；
-- `.cache/tauri-target/`：Tauri 2 备用桌面端的独立 Rust 编译缓存，避免与 Native Runtime release 目录混在一起；
-- `.cache/electron/`：Electron ZIP 下载缓存；
-- `dist/`：XMA 统一的产品构建/发布产物入口，例如 Web、CLI、Server、`dist/release`。
+```text
+xma/
+├─ .cache/                    # 可删除的本地下载/编译/staging，不提交 Git
+│  ├─ cargo-target/          # 根 Rust Workspace 编译缓存
+│  ├─ tauri-target/          # Tauri Rust 编译缓存
+│  ├─ electron/              # Electron Runtime ZIP 下载缓存
+│  ├─ electron-builder/      # Electron Builder 下载缓存
+│  └─ desktop/
+│     ├─ electron/           # Electron dev/release staging
+│     └─ tauri/              # Tauri Web staging
+└─ dist/                      # 唯一正式产品构建/发布输出
+   ├─ web/
+   ├─ cli/
+   ├─ server/
+   └─ release/
+      ├─ electron/
+      └─ tauri/
+```
 
-仓库根目录不再使用 `target/` 作为正常 Cargo 输出。根 `.cargo/config.toml` 固定 `build.target-dir = ".cache/cargo-target"`。旧版本遗留的根 `target/` 只是历史编译缓存，`XMA-Sync.bat` 会在同步新源码时清理。
+硬规则：
 
-`target/` 与 `dist/` **不是同一种目录**：前者属于 Cargo 内部编译状态，后者才是 XMA 对开发者/发布流程暴露的产品输出。
+- `.cache/` = 下载缓存、编译缓存、打包 staging，删除后只影响下一次构建速度；
+- `dist/` = 用户/发布流程真正关心的产品产物；
+- XMA 自己不得新增根 `build/`、根 `target/`，也不得重新生成 `apps/desktop/dist/`、`apps/desktop/web/`、`apps/desktop/release/`、`apps/desktop/native/`；
+- 第三方工具内部出现名为 build/target 的概念不改变 XMA 的目录合同；能重定向的 XMA-controlled 输出必须重定向；
+- 根 `.cargo/config.toml` 固定 `build.target-dir = ".cache/cargo-target"`；Tauri 脚本单独设置 `.cache/tauri-target`；
+- Electron build orchestrator 先在 `.cache/desktop/electron/app` 生成最小打包 staging，再由 electron-builder 直接输出到 `dist/release/electron`，不再“先 apps/desktop/release 再复制”。
+
+旧版本遗留的根 `target/` / `build/` 和 app-local Desktop 输出会由 `XMA-Sync.bat` 尝试清理；被进程占用时只警告，关闭进程后可手动删除。
 
 ## 8. docs/
 

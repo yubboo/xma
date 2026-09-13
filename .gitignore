@@ -27,10 +27,8 @@ workspaces/
 native/target/
 **/target/
 
-# Desktop 构建输出
-apps/desktop/release/
-apps/desktop/web/
-apps/desktop/native/
+# Desktop 中间产物统一进入 .cache/desktop；正式发布物统一进入 dist/release。
+# 下列旧目录不再作为合法输出，XMA-Sync 会清理；若再次出现应由 Gate/安全检查暴露。
 
 # 本地 Secret / 环境变量
 .env
@@ -65,6 +63,5 @@ apps/desktop/native/
 .DS_Store
 Thumbs.db
 
-# Tauri desktop build cache
-apps/desktop/src-tauri/target/
+# Tauri CLI 自身生成的 schema/gen 元数据（Rust target 已统一由 .cache/tauri-target 接管）
 apps/desktop/src-tauri/gen/

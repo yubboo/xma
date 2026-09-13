@@ -24,6 +24,9 @@ const required = [
   'plugins/providers/builtin.ts',
   'plugins/providers/openai-compatible.ts',
   'plugins/tools/native.ts',
+  'apps/desktop/scripts/build-electron.ts',
+  'apps/desktop/electron-builder.json',
+  'apps/desktop/src-tauri/tauri.conf.json',
   'plugins/compat/deepseek-harness/index.ts',
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
@@ -125,14 +128,33 @@ const cliSource = readFileSync('apps/cli/src/main.ts', 'utf8')
 if (!cliSource.startsWith('#!/usr/bin/env node')) throw new Error('XMA CLI entry must carry its own Node hashbang')
 
 const desktopPackage = JSON.parse(readFileSync('apps/desktop/package.json', 'utf8')) as { scripts?: Record<string, string> }
-const desktopWebBuild = desktopPackage.scripts?.['web:build'] ?? ''
-if (!desktopWebBuild.includes('--emptyOutDir')) throw new Error('XMA Desktop web build must explicitly empty apps/desktop/web')
-if (!desktopWebBuild.includes('--base ./')) throw new Error('XMA Desktop packaged Web UI must use relative Vite asset paths for Electron file:// loading')
+const desktopScripts = Object.values(desktopPackage.scripts ?? {}).join('\n').replaceAll('\\', '/')
+for (const legacy of ['apps/desktop/dist', 'apps/desktop/web', 'apps/desktop/release', 'apps/desktop/native']) {
+  if (desktopScripts.includes(legacy)) throw new Error(`XMA Desktop must not emit app-local build output: ${legacy}`)
+}
+const desktopTauriWebBuild = desktopPackage.scripts?.['web:build:tauri'] ?? ''
+for (const marker of ['.cache/desktop/tauri/web', '--emptyOutDir', '--base ./']) {
+  if (!desktopTauriWebBuild.includes(marker)) throw new Error(`XMA Tauri Web staging contract missing: ${marker}`)
+}
+const desktopDevMainBuild = desktopPackage.scripts?.['main:build:dev'] ?? ''
+if (!desktopDevMainBuild.includes('.cache/desktop/electron/dev/main')) throw new Error('XMA Electron dev Main Process must build under .cache/desktop')
+const desktopElectronBuild = desktopPackage.scripts?.['build:electron'] ?? ''
+if (!desktopElectronBuild.includes('apps/desktop/scripts/build-electron.ts')) throw new Error('XMA Electron release build must use the unified build orchestrator')
 const desktopWebDev = desktopPackage.scripts?.['web:dev'] ?? ''
 if (!desktopWebDev.includes('exec vite apps/web --host 127.0.0.1 --port 1420 --strictPort')) {
   throw new Error('XMA Desktop web:dev must bind Vite to 127.0.0.1:1420 without forwarding a literal -- argument')
 }
 if (desktopWebDev.includes(' -- --host')) throw new Error('XMA Desktop web:dev must not pass a literal -- to Vite')
+const electronBuildSource = readFileSync('apps/desktop/scripts/build-electron.ts', 'utf8')
+for (const marker of ["'.cache', 'desktop', 'electron', 'app'", "'dist', 'release', 'electron'", "'--base', './'", "'--emptyOutDir'", 'ELECTRON_CACHE: electronCache', 'ELECTRON_BUILDER_CACHE: builderCache']) {
+  if (!electronBuildSource.includes(marker)) throw new Error(`XMA Electron unified output contract missing: ${marker}`)
+}
+const electronBuilder = JSON.parse(readFileSync('apps/desktop/electron-builder.json', 'utf8')) as { electronVersion?: string; files?: string[] }
+if (electronBuilder.electronVersion !== '41.2.0') throw new Error('XMA Electron builder template must pin Electron 41.2.0')
+if (JSON.stringify(electronBuilder.files) !== JSON.stringify(['main/**', 'web/**', 'package.json'])) throw new Error('XMA Electron builder must package only staged main/web/package.json')
+const tauriConfig = JSON.parse(readFileSync('apps/desktop/src-tauri/tauri.conf.json', 'utf8')) as { build?: { frontendDist?: string; beforeBuildCommand?: string } }
+if (tauriConfig.build?.frontendDist !== '../../../.cache/desktop/tauri/web') throw new Error('XMA Tauri frontendDist must use .cache/desktop/tauri/web')
+if (tauriConfig.build?.beforeBuildCommand !== 'pnpm run web:build:tauri') throw new Error('XMA Tauri build must use the dedicated cache-staging Web build')
 const desktopLauncher = readFileSync('apps/desktop/scripts/dev-electron.ts', 'utf8')
 if (desktopLauncher.includes('shell: true') || desktopLauncher.includes("shell: process.platform === 'win32'")) {
   throw new Error('XMA Desktop launcher must not use shell:true with child-process arguments (Node DEP0190)')

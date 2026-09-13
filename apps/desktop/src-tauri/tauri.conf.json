@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "pnpm run web:dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "pnpm run web:build",
-    "frontendDist": "../web"
+    "beforeBuildCommand": "pnpm run web:build:tauri",
+    "frontendDist": "../../../.cache/desktop/tauri/web"
   },
   "app": {
     "windows": [

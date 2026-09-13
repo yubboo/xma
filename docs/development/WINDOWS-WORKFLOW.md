@@ -36,7 +36,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 - `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；
 - `pnpm rebuild esbuild`：只准备 TypeScript/Web 工具链必须的 esbuild Native Binary；
 - `cargo fetch`：预取 XMA 根 Rust Workspace（`native/protocol`、`native/runtime`）依赖。
-- 根 `.cargo/config.toml` 固定 XMA 根 Rust Workspace 输出到 `.cache/cargo-target/`；Tauri 开发/构建脚本单独覆盖到 `.cache/tauri-target/`。二者都是可删除的本地 Rust 编译缓存，`dist/` 才是 XMA 发布产物目录。旧版根 `target/` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
+- XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
 完成 `[1]` 后：
 
@@ -83,4 +83,4 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
 
-- Electron 发布包通过 `file://` 加载 `apps/desktop/web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`；禁止生成 `/assets/...` 绝对路径，否则安装后会出现只有原生窗口、Web UI 空白的故障。
+- Electron 发布包通过 `file://` 加载 `.cache/desktop/electron/app/web/` staging 打入应用的 `web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`。最终 Setup/Portable 由 electron-builder 直接写到 `dist/release/electron/`；禁止恢复 `apps/desktop/web|release` 中转目录。

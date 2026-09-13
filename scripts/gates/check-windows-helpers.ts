@@ -120,7 +120,7 @@ for (const marker of [
 const gitignoreSource = readFileSync('.gitignore', 'utf8')
 for (const marker of [
   'node_modules/', '.pnpm-store/', 'dist/', 'build/', '/runtime/', '.xma/', 'workspaces/',
-  'native/target/', '**/target/', 'apps/desktop/release/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
+  'native/target/', '**/target/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
 ]) {
   if (!gitignoreSource.includes(marker)) throw new Error(`.gitignore repository hygiene regression: missing ${marker}`)
 }
@@ -153,7 +153,9 @@ for (const file of [
   'apps/desktop/scripts/install-electron-runtime.ts',
   'apps/desktop/scripts/electron-runtime-core.ts',
   'apps/desktop/tests/electron-runtime-core.test.ts',
-  'apps/desktop/electron-builder.yml',
+  'apps/desktop/electron-builder.json',
+  'apps/desktop/scripts/build-electron.ts',
+  'apps/desktop/tests/build-layout.test.ts',
   'apps/desktop/src-tauri/Cargo.toml',
   'apps/desktop/src-tauri/build.rs',
   'apps/desktop/src-tauri/src/main.rs',
@@ -219,7 +221,10 @@ for (const marker of [
   'apps/desktop/scripts/install-electron-runtime.ts',
   "$CargoTargetDir = Join-Path $Root '.cache\\cargo-target'",
   "$TauriTargetDir = Join-Path $Root '.cache\\tauri-target'",
+  "$DesktopCacheDir = Join-Path $Root '.cache\\desktop'",
   "$nativeExe = Join-Path $CargoTargetDir 'release\\xma-native-runtime.exe'",
+  "$electronRelease = Join-Path $release 'electron'",
+  '最终产物直接写入 dist\\release\\electron',
   "$tauriBundle = Join-Path $tauriRelease 'bundle'",
   "$tauriExe = Join-Path $tauriRelease 'xma-desktop.exe'",
 ]) {
@@ -229,6 +234,7 @@ if (buildReleaseSource.includes("@('install','--ignore-scripts')")) {
   throw new Error('Build release must reuse [1] prepared Workspace dependencies instead of reinstalling them')
 }
 if (buildReleaseSource.includes('Copy-Item $tauriRelease (Join-Path $release')) throw new Error('Tauri Cargo release cache must not be copied wholesale into dist/release')
+if (buildReleaseSource.includes('apps\\desktop\\release\\electron')) throw new Error('Electron release must be written directly to dist/release/electron, not copied from apps/desktop/release')
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
@@ -280,8 +286,19 @@ if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA 
 if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
 if (!syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must preserve locally generated lockfiles when the source package omits them')
 if (!syncSource.includes('若版本包暂未携带 lockfile，则保留本机已生成的')) throw new Error('XMA sync must explain conditional lockfile preservation policy')
-if (!syncSource.includes("Join-Path $Target 'target'") || !syncSource.includes("apps\\desktop\\src-tauri\\target")) throw new Error('XMA sync must clean legacy Cargo target directories after cache migration')
+for (const marker of [
+  "Join-Path $Target 'target'",
+  "Join-Path $Target 'build'",
+  "apps\\desktop\\dist",
+  "apps\\desktop\\web",
+  "apps\\desktop\\release",
+  "apps\\desktop\\native",
+  "apps\\desktop\\src-tauri\\target",
+]) {
+  if (!syncSource.includes(marker)) throw new Error(`XMA sync must clean legacy build directory: ${marker}`)
+}
 if (!syncSource.includes('.cache/cargo-target') && !syncSource.includes('.cache\\cargo-target')) throw new Error('XMA sync must explain the new project-local Cargo cache location')
+if (!syncSource.includes('正式产物统一位于 dist')) throw new Error('XMA sync must state the unified .cache/dist build-layout contract')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

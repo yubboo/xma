@@ -235,7 +235,7 @@ Git 不存在时只能提示用户先运行 `XMA.bat → [1]`。
 
 应提交：源码、文档、测试、AI 开发上下文、脚本、配置模板、CI、`pnpm-lock.yaml`、`Cargo.lock`。
 
-禁止提交：`node_modules/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。Cargo 正常编译缓存固定在 `.cache/cargo-target/`，根 `target/` 仅作为旧版遗留/防误提交路径继续忽略。
+禁止提交：`node_modules/`、`.cache/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。XMA-controlled 中间产物必须统一进入 `.cache/`，正式构建产物必须统一进入 `dist/`；根 `build/target` 与 app-local Desktop 输出只作为旧版遗留/防误提交路径处理。
 
 `.gitignore` 是第一层，GitHub Safety 是第二层。Safety 必须扫描 Git 真正可能提交的文件，不能把已忽略二进制缓存误判 Secret。
 

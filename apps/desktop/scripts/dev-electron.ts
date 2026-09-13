@@ -6,8 +6,10 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
+import { resolve } from 'node:path'
 
 const devUrl = 'http://127.0.0.1:1420'
+const desktopMain = resolve(process.cwd(), '.cache', 'desktop', 'electron', 'dev', 'main', 'main.js')
 
 function run(args: string[], env = process.env): ChildProcess {
   // Node 24+ 会对 shell:true + 参数数组发出 DEP0190，并提示参数拼接存在注入风险。
@@ -36,7 +38,7 @@ async function waitForWeb(timeoutMs = 30_000): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const build = run(['--dir', 'apps/desktop', 'run', 'main:build'])
+  const build = run(['--dir', 'apps/desktop', 'run', 'main:build:dev'])
   const buildCode = await new Promise<number | null>(resolve => build.once('exit', resolve))
   if (buildCode !== 0) process.exit(buildCode ?? 1)
 
@@ -44,7 +46,7 @@ async function main(): Promise<void> {
   try {
     await waitForWeb()
     const electron = run(
-      ['--dir', 'apps/desktop', 'exec', 'electron', 'dist/main.js'],
+      ['--dir', 'apps/desktop', 'exec', 'electron', desktopMain],
       { ...process.env, XMA_DESKTOP_DEV_URL: devUrl },
     )
     const code = await new Promise<number | null>(resolve => electron.once('exit', resolve))
