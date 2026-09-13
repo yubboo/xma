@@ -35,15 +35,28 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - Framework 可以限制权限、Schema、生命周期和副作用，但不能抢走正常任务的推理权。
 - UI/TUI 必须展示真实 Provider、Model、Reasoning/能力、延迟和可获得的使用统计。
 
-## 4. Agent / Workspace / Plugin / Skill 边界
+## 4. Agent / Workspace / Plugin / Skill / Host 边界
 
-- **Agent**：专业身份与能力组合，例如 Minecraft、Code、Writer。
+- **Agent**：专业身份与能力组合；主 `Xiaoyu` 是 Manager Agent，Code/Minecraft/Writer/GameDev 等是可组合的专业 Agent。
 - **Workspace**：Agent 的工作领地和持久状态边界。
-- **Plugin**：可以注册/卸载的能力模块。
-- **Skill**：给模型的专业决策指南，不是硬编码流水线。
+- **Plugin**：可以注册/卸载的程序能力模块。
+- **Skill**：给运行中模型读取的专业工作方法、约束、流程和交付标准，不是硬编码流水线。产品级 Skill canonical source 位于根 `skills/`。
 - **Knowledge**：相对稳定的领域资料；实时事实必须优先通过 Tool/API 查询。
+- **Host**：承载 XMA Agent/Skill 的第三方 Agent Runtime，例如未来 Codex、Claude Code、DeepSeek Harness、Zcode；Host 不是 Provider。
 
-默认情况下，一个 Agent 不得修改其他 Agent 的 Workspace。
+`Agent ≠ Model ≠ Skill ≠ Plugin ≠ Workspace ≠ Host`。AgentDefinition 不绑定具体模型厂商；同一个 Agent/Skill 应能在不同 Provider、不同 Host 上复用。默认情况下，一个 Agent 不得修改其他 Agent 的 Workspace。
+
+根 `skills/` 与 `.agents/skills/` 必须严格区分：前者是 XMA 产品 Runtime Skill，后者是开发 XMA 的 AI 编程工具指南。
+
+### 4.1 Agent / Skill Platform 硬规则（锁死）
+
+- 主 Xiaoyu 是 Manager Agent，长期负责计划、委派、跟踪和验收；专业 Agent 复用同一 AgentRuntime，不得复制平行内核。
+- AgentDefinition canonical Contract 位于 `core/src/agent/`；产品 Skill canonical Contract 位于 `core/src/skill/`，实际内容位于根 `skills/`。
+- Skill 必须通过 Context Assembly 进入模型；动态 model-visible Skill/Agent 文本必须形成 durable Context Snapshot，禁止 UI 临时 state 偷偷注入。
+- Skill metadata 声明需要的 Tool/Brain capability；Agent 绑定不满足要求时必须 fail loud。
+- Multi-Agent 任务必须使用稳定 Task/Delegation Contract；禁止多个 Agent 依赖无法审计的随意字符串互聊。
+- 当前没有真实实现的 Writer/Minecraft/GameDev/Art 等 Agent 不创建空目录或“ready”假状态。
+- 外部 Host Adapter 只能位于 Integration/Compatibility 层；Core 禁止出现 `codex-agent.ts`、`claude-agent.ts` 等宿主专属平行 Agent。
 
 ## 5. 插件规则：XMA 原生 + DeepSeek Harness 兼容
 
@@ -68,8 +81,9 @@ XMA Plugin Host 必须支持两条路径：
 
 - `apps/`：CLI、Desktop、Web、Server 外壳；
 - `core/`：XMA TypeScript 核心；
-- `agents/`：专业 Agent；
-- `plugins/`：跨 Agent 可复用插件与兼容层；
+- `agents/`：Xiaoyu Manager 与已实际开发的专业 Agent；
+- `skills/`：XMA 产品级专业 Skill；
+- `plugins/`：跨 Agent 可复用插件、Provider、Tool 与兼容层；
 - `native/`：Rust Native Kernel；
 - `scripts/`：开发、同步、构建、发布、Gate；
 - `docs/`：架构、计划、规则、安全文档。
@@ -80,7 +94,7 @@ XMA Plugin Host 必须支持两条路径：
 
 XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责。固定规则：
 
-- 产品目录与 TypeScript / TSX / PowerShell 文件使用**小写 kebab-case**，例如 `model-provider/`、`agent-registry.ts`、`xma-build-release.ps1`；
+- 产品目录与 TypeScript / TSX / PowerShell 文件使用**小写 kebab-case**，例如 `model-provider/`、`agent/registry.ts`、`xma-build-release.ps1`；
 - Rust 模块文件遵循 Rust 生态使用 **snake_case**，例如 `host_policy.rs`；`main.rs` / `lib.rs` / `build.rs` 等官方约定名保持不变；
 - `.` 只表达文件角色/工具约定，不用于普通单词分隔：统一使用 `*.test.ts`、`*.config.ts`、`*.d.ts`；`package.json`、`Cargo.toml`、`tauri.conf.json` 等生态固定名保持官方名称；
 - `docs/` 的正式架构/开发/安全文档使用 `UPPER-KEBAB.md`；`README.md`、`AGENTS.md`、`CLAUDE.md` 等固定入口例外；
@@ -90,7 +104,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - 顶层固定启动器 `XMA.bat`、`XMA-GitHub.bat`、`XMA-Sync.bat` 以及 Windows `xma-*.ps1` 属于稳定外部入口，保留既有产品前缀，不按父目录去重；
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
-当前已经达到分组规模并固定的结构包括：`core/src/session/{contract,store,export}.ts`、`core/src/tool/{router,policy,schema}.ts`、`apps/desktop/scripts/electron/`、`scripts/gates/`。
+当前已经达到分组规模并固定的结构包括：`core/src/agent/{contract,registry,delegation}.ts`、`core/src/skill/{contract,registry,loader}.ts`、`core/src/session/{contract,store,export}.ts`、`core/src/tool/{router,policy,schema}.ts`、`apps/desktop/scripts/electron/`、`scripts/gates/`。
 
 ## 7. 中文注释与文件说明（强制）
 
@@ -112,18 +126,19 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 3. `docs/architecture/DIRECTORY-STRUCTURE.md`
 4. `docs/architecture/LANGUAGE-OWNERSHIP.md`
 5. `docs/architecture/AGENT-RUNTIME.md`
-6. `docs/architecture/WORKSPACE.md`
-7. `docs/architecture/MODEL-PROVIDER.md`
-8. `docs/architecture/PLUGIN-SYSTEM.md`
-9. `docs/architecture/DESKTOP-RUNTIME.md`
-10. `docs/architecture/DESKTOP-WORKBENCH.md`
-11. `docs/architecture/DISTRIBUTION.md`
-12. `docs/development/DEVELOPMENT-RULES.md`
-13. `docs/development/DEVELOPMENT-PLAN.md`
-14. `docs/development/PROJECT-STATUS.md`
-15. `docs/development/UPSTREAM-REFERENCE.md`
-16. `docs/development/VERSIONING-AND-RELEASES.md`
-17. `docs/development/WINDOWS-WORKFLOW.md`
+6. `docs/architecture/AGENT-PLATFORM.md`
+7. `docs/architecture/WORKSPACE.md`
+8. `docs/architecture/MODEL-PROVIDER.md`
+9. `docs/architecture/PLUGIN-SYSTEM.md`
+10. `docs/architecture/DESKTOP-RUNTIME.md`
+11. `docs/architecture/DESKTOP-WORKBENCH.md`
+12. `docs/architecture/DISTRIBUTION.md`
+13. `docs/development/DEVELOPMENT-RULES.md`
+14. `docs/development/DEVELOPMENT-PLAN.md`
+15. `docs/development/PROJECT-STATUS.md`
+16. `docs/development/UPSTREAM-REFERENCE.md`
+17. `docs/development/VERSIONING-AND-RELEASES.md`
+18. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 

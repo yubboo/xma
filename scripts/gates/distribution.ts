@@ -24,9 +24,14 @@ if (!(rootPackage.scripts?.check ?? '').includes('pnpm gate:distribution')) thro
 
 const cli = text('apps/cli/src/main.ts')
 for (const marker of [
-  "AGENT_ID = 'xiaoyu.code'",
+  'const AGENT_ID = codeAgent.id',
   'confirmWorkspaceTrust',
   'JsonlSessionStore',
+  'AgentRegistry',
+  'SkillLoader',
+  'SkillRegistry',
+  'createAgentSkillContextSource',
+  'XIAOYU_SKILLS_HOME',
   'WorkspaceRegistry',
   'StdioNativeClient',
   'registerNativeTools',
@@ -59,6 +64,9 @@ for (const marker of [
   "'app', 'cli.js'",
   "'app', 'server.js'",
   "'native', nativeName",
+  "path.join(root, 'skills')",
+  "'skills'",
+  'XIAOYU_SKILLS_HOME',
   "'web'",
   "'bin', 'xiaoyu.cmd'",
   "for (const name of ['xiaoyu', 'xma'])",

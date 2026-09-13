@@ -6,6 +6,7 @@
 
 - `docs/architecture/AGENT-RUNTIME.md`；
 - `docs/architecture/WORKSPACE.md`；
+- `docs/architecture/AGENT-PLATFORM.md`；
 - `docs/architecture/MODEL-PROVIDER.md`；
 - `docs/architecture/PLUGIN-SYSTEM.md`；
 - `docs/architecture/DESKTOP-WORKBENCH.md`。
@@ -55,7 +56,8 @@ XMA 产品代码长期只保留以下核心区域：
 ```text
 apps/       CLI / Desktop / Web / Server Shell
 core/       TypeScript Agent 平台核心
-agents/     Minecraft / Code / Writer 等专业 Agent
+agents/     Xiaoyu Manager / Code 等已实现专业 Agent
+skills/     XMA 产品级专业 Skill（SKILL.md + skill.json）
 plugins/    Provider、Tool、Integration、兼容层
 native/     Rust Native / Security / Performance Kernel
 scripts/    开发、同步、构建、发布、Gate
@@ -104,7 +106,15 @@ Rust 不认识 Minecraft Agent、Writer Agent、Claude 或 GPT，也不决定应
 
 ```text
 core/src/
-  agent.ts / agent-registry.ts     Agent Definition / Registry（当前保持扁平）
+  agent.ts                          legacy runAgent 迁移兼容入口
+  agent/                            Agent identity / registry / delegation
+    contract.ts
+    registry.ts
+    delegation.ts
+  skill/                            Skill metadata / registry / loader
+    contract.ts
+    registry.ts
+    loader.ts
   runtime.ts                        Turn/Step driver
   session/                          durable contract / store / export
     contract.ts
@@ -123,7 +133,7 @@ core/src/
 
 命名和拆分遵循三个原则：**短、可辨识、不重复路径**。目录与 TypeScript 使用小写 kebab-case，Rust 使用 snake_case；普通文件/目录优先 1～3 个核心词，父目录已经表达领域时文件名去掉领域前缀。只有职责、生命周期或安全边界确实不同才拆文件；同一逻辑的类型/helper/constants 默认留在一起。
 
-`session/` 与 `tool/` 之所以建立子目录，是因为它们已经各自形成三个稳定且职责不同的模块；`agent.ts + agent-registry.ts` 目前只有两个文件，因此仍保持扁平。未来也按同一标准演进，而不是参考上游目录数量机械拆包。
+`session/`、`tool/`、`agent/`、`skill/` 都已经形成至少三个稳定且职责不同的模块，因此使用领域子目录；legacy `agent.ts` 只保留迁移兼容。未来仍按同一标准演进，而不是参考上游目录数量机械拆包。
 
 ## 6. Session 是事实源
 
@@ -202,19 +212,31 @@ Capability 设计至少回答：
 - Lifecycle：如何 mount/dispose？
 - Evidence：什么 Conformance/E2E 证明它真的工作？
 
-## 11. 专业 Agent
+## 11. Xiaoyu Manager / 专业 Agent / Skill
 
-### Xiaoyu Code
+XMA 的用户入口首先是主管理智能体 `xiaoyu`。主 Xiaoyu 负责理解、规划、委派、跟踪和验收；Code、Writer、Minecraft、GameDev、Art 等是复用同一 Runtime 的专业 Agent，而不是平行内核。
 
-不是单独复制一个 Codex，而是在 XMA Runtime 上组合：Code Agent definition + Code Skills + repository Workspace + shell/fs/patch/git/search/MCP tools + Coding-specific context。
+当前 0.1.x 已正式落地 `core/src/agent/` 与 `core/src/skill/` Foundation：AgentDefinition 包含 Brain/Skill/Tool/Workspace/Memory/Delivery/Delegation Policy；Skill 使用 `SKILL.md + skill.json`，并可通过标准 Context Source 进入模型且形成 durable Context Snapshot。详细 Contract 见 `AGENT-PLATFORM.md`。
 
-### Minecraft Agent
+### 当前真实内置 Agent
 
-不是把 Minecraft Host Agent 的 Rust 主循环搬进来，而是在同一 XMA Runtime 上组合：Minecraft Agent definition + server Skills/Knowledge + upstream API tools + Native process/network/file capabilities。
+- `Xiaoyu`：Manager Agent Foundation；
+- `Xiaoyu Code`：第一条 Specialist Foundation。
 
-### Writer / 其他 Agent
+Writer/Minecraft/GameDev/Art 等仍是产品方向，但在拥有真实 Skill/Tool/验收链之前不提前创建空骨架。
 
-同样复用 Session、Provider、Tool、Permission、Workspace、Plugin，不新增平行内核。
+### Skill / Plugin / Knowledge
+
+- Skill = 给模型的专业工作方法、约束、流程和交付标准；
+- Plugin/Tool = 程序能力；
+- Knowledge = 相对稳定的事实资料；
+- 实时事实 = Tool/API。
+
+Skill canonical source 位于根 `skills/`，与用于开发 XMA 的 `.agents/skills/` 完全不同。
+
+### 外部 Host
+
+长期 XMA Agent/Skill 可以通过 Host Adapter 安装到 Codex、Claude Code、DeepSeek Harness、Zcode 等宿主，但 Host 只是 Integration 层：Provider 提供 Brain，Host 承载 Agent，两者不能混淆。Core 不能出现 `codex-agent.ts`、`claude-agent.ts` 等厂商平行 Agent。
 
 ## 12. App Protocol 与 Shell
 

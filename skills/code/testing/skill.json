@@ -1,0 +1,11 @@
+{
+  "id": "code/testing",
+  "name": "Code Testing",
+  "description": "为代码任务选择并执行最小充分的检查、测试和构建验证。",
+  "version": "0.1.0",
+  "requires": {
+    "tools": ["native.process.run"],
+    "brain": ["tool-calling"]
+  },
+  "tags": ["code", "testing"]
+}

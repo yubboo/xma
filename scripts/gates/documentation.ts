@@ -13,6 +13,7 @@ const docs = [
   'docs/architecture/LANGUAGE-OWNERSHIP.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
   'docs/architecture/AGENT-RUNTIME.md',
+  'docs/architecture/AGENT-PLATFORM.md',
   'docs/architecture/WORKSPACE.md',
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/DESKTOP-RUNTIME.md',
@@ -29,7 +30,7 @@ const docs = [
 ]
 for (const file of docs) if (!existsSync(file)) throw new Error(`Required XMA doc missing: ${file}`)
 const agents = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'DeepSeek Harness', 'Electron 41.2.0', 'Tauri 2', 'AGENT-RUNTIME.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.codex/', '.claude/']) {
+for (const marker of ['https://github.com/yubboo/xma.git', '0.1.100', 'XMA-Sync.bat', 'DeepSeek Harness', 'Electron 41.2.0', 'Tauri 2', 'AGENT-RUNTIME.md', 'AGENT-PLATFORM.md', 'WORKSPACE.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', 'skills/', '.codex/', '.claude/']) {
   if (!agents.includes(marker)) throw new Error(`AGENTS.md rule missing: ${marker}`)
 }
 console.log('XMA Documentation Gate PASS')

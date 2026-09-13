@@ -1,0 +1,7 @@
+{
+  "id": "common/verification",
+  "name": "Verification",
+  "description": "要求 Agent 在交付前用与任务匹配的证据验证结果。",
+  "version": "0.1.0",
+  "tags": ["verification", "quality", "common"]
+}

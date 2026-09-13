@@ -1,0 +1,7 @@
+{
+  "id": "common/task-planning",
+  "name": "Task Planning",
+  "description": "把用户目标转成可执行步骤，并在执行过程中根据新事实调整计划。",
+  "version": "0.1.0",
+  "tags": ["planning", "common"]
+}

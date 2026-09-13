@@ -15,7 +15,8 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 - Rust Native/Security Kernel 骨架；
 - XMA Native Plugin Host；
 - DeepSeek Harness / Cordis 插件兼容适配骨架；
-- Minecraft / Code / Writer 三个 Agent 定义，其中 Minecraft 是第一条优先实现线；
+- Agent/Skill Platform Foundation：主 `Xiaoyu` Manager + `Xiaoyu Code` Specialist；未来专业 Agent 不提前创建空骨架；
+- 产品级 `skills/`：首批 Task Planning / Verification / Bug Fixing / Code Testing；
 - `xiaoyu` Terminal CLI/TUI、Desktop、Web、Server 四种 Shell；
 - Desktop：Electron 41.2.0 主运行时 + Tauri 2 备用运行时；
 - Windows 一键环境、同步、GitHub 推送、构建发布入口；
@@ -29,7 +30,8 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 ```text
 apps/       用户入口：CLI / Desktop / Web / Server
 core/       XMA TypeScript 核心
-agents/     专业 Agent
+agents/     Xiaoyu Manager / 已实现专业 Agent
+skills/     XMA 产品级专业 Skill
 plugins/    跨 Agent 插件、Provider、Tool、Integration、兼容层
 native/     Rust Native / Security Kernel
 scripts/    Windows 控制台、同步、GitHub、构建、Gates
@@ -37,6 +39,31 @@ docs/       架构、规则、计划、安全文档
 ```
 
 源码命名固定为：目录/TypeScript 使用小写 kebab-case，Rust 模块使用 snake_case，`.` 只表达 test/config/d 等角色；普通名字优先 1～3 个核心词，并按“同逻辑聚合、不同职责才拆分”的原则组织。详细规则见 `AGENTS.md`、`docs/architecture/DIRECTORY-STRUCTURE.md` 和 `docs/development/DEVELOPMENT-RULES.md`。
+
+## Agent / Skill Platform Foundation
+
+XMA 运行时的专业 Agent 与产品 Skill 现在有正式 canonical Contract：
+
+```text
+Xiaoyu Manager
+  ↓ Task / Delegation
+Xiaoyu Code
+  ↓
+Skills
+  ├─ common/task-planning
+  ├─ common/verification
+  ├─ code/bug-fixing
+  └─ code/testing
+  ↓
+AgentRuntime / Context / Tool / Workspace / Native
+```
+
+Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context Snapshot 保存实际 model-visible 文本；Skill 需要的 Tool/Brain capability 与 Agent 声明不一致时 fail loud。详细见 `docs/architecture/AGENT-PLATFORM.md`。
+
+源码 Terminal 与 portable `xiaoyu` 都会加载同一套 canonical Skills；portable 发行包自带 `skills/`，不会依赖用户机器上的源码仓库。
+
+
+未来 Codex、Claude Code、DeepSeek Harness、Zcode 属于外部 **Host**，Provider 属于模型 **Brain**；二者不会混进 Core Agent 定义。
 
 ## Windows 固定流程
 
@@ -82,7 +109,7 @@ Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provid
 
 ## 当前开发优先级
 
-XMA 0.1.x 当前采用 **Backend/Agent Runtime First**：先完成 Session/Turn/Step、真实 Model Provider、Tool/Permission/Native、Workspace、Plugin/Skill 和 Code/Minecraft 真闭环，再进入完整 Desktop Workbench。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
+XMA 0.1.x 当前采用 **Backend/Agent Runtime First**：Agent/Skill Foundation 已进入代码，下一步按 Credentials/Provider → Process allowlist → Workspace discovery → Xiaoyu Manager Task → Xiaoyu Code 真闭环推进；Minecraft/Writer/GameDev/Art 等在平台闭环后再增加真实专业 Agent。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
 
 上游实现参考固定记录在 `docs/development/UPSTREAM-REFERENCE.md`；项目级 AI 开发入口为根 `AGENTS.md`，并提供 `.agents/`、`.codex/`、`.claude/` 适配目录。
 

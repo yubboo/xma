@@ -8,6 +8,7 @@
 
 - `docs/architecture/PROJECT-ARCHITECTURE.md`；
 - `docs/architecture/AGENT-RUNTIME.md`；
+- `docs/architecture/AGENT-PLATFORM.md`；
 - `docs/architecture/MODEL-PROVIDER.md`；
 - `docs/architecture/PLUGIN-SYSTEM.md`；
 - `docs/development/UPSTREAM-REFERENCE.md`；
@@ -39,7 +40,7 @@
 | 对象 | 固定形式 | 示例 |
 |---|---|---|
 | 产品目录 | 小写 `kebab-case` | `model-provider/`、`deepseek-harness/` |
-| TypeScript / TSX | 小写 `kebab-case` | `agent-registry.ts`、`install-runtime.ts` |
+| TypeScript / TSX | 小写 `kebab-case` | `agent/registry.ts`、`install-runtime.ts` |
 | Rust 模块 | `snake_case` | `host_policy.rs`、`process_guard.rs` |
 | 测试 | `*.test.ts` | `workspace-runtime.test.ts` |
 | 配置代码 | `*.config.ts` | `desktop.config.ts` |
@@ -54,7 +55,7 @@
 - 父目录已经表达领域时去掉重复前缀：`tool/policy.ts` 优于 `tool/tool-policy.ts`；
 - 同一逻辑的 types/constants/helpers 默认留在同一文件；只有不同职责、不同生命周期、不同安全边界或文件持续过大时再拆；
 - 一个只有单个实现文件的普通领域不应为了“整齐”新建文件夹；通常至少出现约 3 个稳定同领域文件才分组；
-- 已分组的 `session/`、`tool/`、Desktop `scripts/electron/` 和 `scripts/gates/` 不得退回重复长文件名；
+- 已分组的 `agent/`、`skill/`、`session/`、`tool/`、Desktop `scripts/electron/` 和 `scripts/gates/` 不得退回重复长文件名；
 - 改名必须同时修复 import、脚本、文档、Gate 和测试，禁止留下兼容别名文件制造两套命名；
 - 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。 Naming Gate 只检查 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存和生成产物；第三方包命名不受 XMA 命名规则约束。
 
@@ -93,6 +94,17 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 能通过 Provider、Tool、Context contributor、Policy、Session projection、Plugin extension point 完成的功能，不得给 Agent Loop 塞专业业务特例。
 
 `if (agentId === 'minecraft')`、`if (provider === 'claude')` 一类分支进入 Core Loop 前必须经过架构评审。
+
+## 4.5 Agent / Skill Platform 规则
+
+- `AgentDefinition` 只描述专业身份与能力组合，不保存 Session 瞬时状态，不绑定具体 Provider/Host。
+- 主 `xiaoyu` 是 Manager Agent；专业 Agent 复用同一 Runtime。新增专业 Agent 前必须至少有真实 Skill/Tool/验收链，禁止空骨架。
+- 产品级 Skill 固定放根 `skills/<domain>/<skill>/SKILL.md + skill.json`；`.agents/skills/` 只服务于开发 XMA 的 AI 编程工具，两者不得混用。
+- Skill 是模型工作方法，不是程序能力；需要文件、进程、Browser/API 时必须声明并使用 Tool/Plugin。
+- Agent 绑定 Skill 时，Skill 所需 Tool/Brain capability 必须由 Agent 显式声明，缺失时 fail loud。
+- Agent/Skill model-visible 内容必须通过 Context Assembly 并形成 durable snapshot，不能在 Shell/UI 中临时拼 Prompt。
+- Multi-Agent 委派使用稳定 `AgentTask` / Delegation Policy；后续 durable Task Store 也必须保留 requester/assigned Agent/Workspace/objective/result/verification。
+- Codex、Claude Code、DeepSeek Harness、Zcode 等属于外部 Host；Host Adapter 不得污染 Core Agent 定义。
 
 ## 5. Provider 开发规则
 

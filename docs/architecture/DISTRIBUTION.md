@@ -24,6 +24,7 @@ xiaoyu-<os>-<arch>/
 ├─ app/            bundled CLI / Server JavaScript
 ├─ web/            已构建 Web Shell
 ├─ native/         Rust Native Kernel
+├─ skills/         XMA 产品级 canonical Skills
 ├─ VERSION
 └─ bundle.json
 ```
@@ -40,7 +41,8 @@ Node 在 0.1.x 第一批作为私有 Runtime 一起分发；未来可以评估 N
 ├─ runtime\
 ├─ app\
 ├─ web\
-└─ native\
+├─ native\
+└─ skills\
 ```
 
 只把 `%LOCALAPPDATA%\Programs\Xiaoyu\bin` 加入 **User PATH**。程序文件和用户数据必须分开；Session/状态默认进入 `%LOCALAPPDATA%\Xiaoyu\state`，配置/凭据后续由专门 Config/Credentials Service 管理。
@@ -96,6 +98,7 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - `xiaoyu server / web` 发行入口；
 - Home / 文件系统根目录风险确认，只允许“退出”或“仅本次信任”；
 - Workspace Session 绑定到正式 Agent Runtime；
+- `Xiaoyu Code` 当前会加载根 `skills/` 的 canonical Skills，并通过 `agent/skills` Context Source 进入正式 Context Assembly；portable launcher 使用 `XIAOYU_SKILLS_HOME` 指向随包分发的 `skills/`，普通用户不依赖源码仓库读取 Skill；
 - Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 新增 OpenAI-compatible Base URL、模型 ID、API Key **环境变量名**，执行 Brain Ready Probe、远程模型列表和模型切换；`XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续作为只读兼容 Profile。`brain.json` 永远只保存 Credential Reference，不保存 Secret 值，也不写入 Session；
 - 未配置 Provider 时明确显示未就绪，禁止伪造模型回复；
 - 如果 bundled/development Native Kernel 可用，Terminal 注册 `native.fs.read_text` / `native.fs.write_text`：读取按 standard policy 直接允许，写入必须在 TUI 显示 Tool Approval，并支持 deny / allow-once / allow-session；

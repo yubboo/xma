@@ -12,17 +12,22 @@ XMA 不再把一次 Agent 执行理解为“复制一个 messages 数组然后 w
 
 ### AgentDefinition
 
-描述专业身份和能力组合，不保存一次会话的瞬时状态：
+描述专业身份和能力组合，不保存一次会话的瞬时状态。0.1.x 第一版正式 Contract 位于 `core/src/agent/contract.ts`，包含：
 
-- `agentId` / display name；
-- system instruction sections；
-- 默认 Skill / Knowledge catalog；
-- Tool / Plugin capability set；
-- Workspace policy；
-- 默认 Provider Profile；
-- 专业 Agent 自己的业务配置。
+- stable `id/name/version`；
+- `manager | specialist` kind；
+- Skill bindings；
+- Tool requirements；
+- Brain required/preferred capabilities；
+- Workspace / Memory policy；
+- Delivery/verification policy；
+- Delegation policy。
 
-Minecraft / Code / Writer 的差异应该主要来自 AgentDefinition、Plugin、Skill、Knowledge 和 Tool，而不是复制三套 Loop。
+`AgentDefinition` 不绑定具体模型厂商，也不把专业工作流写成 Core 决策树。当前真正创建的内置 Agent 只有 `Xiaoyu Manager` 与 `Xiaoyu Code`；Writer/Minecraft 等在拥有真实 Skill/Tool 实现前不提前留空骨架。详细见 `AGENT-PLATFORM.md`。
+
+### Skill Context
+
+产品级 Skill 位于根 `skills/`，每个 Skill 使用 `SKILL.md + skill.json`。`SkillRegistry.resolveForAgent()` 校验 Agent 声明的 Tool/Brain 能力能覆盖 Skill 要求；`createAgentSkillContextSource()` 再通过标准 Context Assembly 把 Agent identity、Delivery Policy 和绑定 Skills 注入模型。实际可见文本随后进入 durable `context/snapshot`，因此 Skill 仍满足 **Model-visible ⇔ reconstructable**。
 
 ### Session
 

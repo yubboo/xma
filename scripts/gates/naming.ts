@@ -121,6 +121,12 @@ function walkDocs(dir: string): void {
 walkDocs('docs')
 
 const requiredGroupedPaths = [
+  'core/src/agent/contract.ts',
+  'core/src/agent/registry.ts',
+  'core/src/agent/delegation.ts',
+  'core/src/skill/contract.ts',
+  'core/src/skill/registry.ts',
+  'core/src/skill/loader.ts',
   'core/src/session/contract.ts',
   'core/src/session/store.ts',
   'core/src/session/export.ts',
@@ -145,6 +151,9 @@ for (const path of requiredGroupedPaths) {
 }
 
 const forbiddenLegacyPaths = [
+  'core/src/agent-registry.ts',
+  'agents/minecraft/agent.ts',
+  'agents/writer/agent.ts',
   'core/src/session.ts',
   'core/src/session-store.ts',
   'core/src/session-export.ts',

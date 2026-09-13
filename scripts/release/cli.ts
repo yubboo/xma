@@ -1,7 +1,7 @@
 /**
  * 文件作用：生成 XMA `xiaoyu` 跨平台 CLI/Server/Web portable staging，供平台发布脚本压缩成最终安装资产。
  * 关联模块：dist/cli、dist/server、dist/web、native/runtime、scripts/install、release manifest。
- * 当前实现：复制内置 Node Runtime、CLI/Server/Web、Rust Native Kernel、xiaoyu/xma launcher 与 VERSION 到 `.cache/release/cli`。
+ * 当前实现：复制内置 Node Runtime、CLI/Server/Web、Rust Native Kernel、产品 Skills、xiaoyu/xma launcher 与 VERSION 到 `.cache/release/cli`。
  * 职责边界：本文件只生成当前平台 staging；ZIP/tar.gz、签名、公证和各平台安装包必须由对应平台发布流程完成。
  */
 
@@ -41,22 +41,23 @@ for (const required of [cliBuild, serverBuild, webBuild, nativeBuild, process.ex
 }
 
 await rm(stageRoot, { recursive: true, force: true })
-for (const dir of ['bin', 'runtime', 'app', 'web', 'native']) await mkdir(path.join(stageRoot, dir), { recursive: true })
+for (const dir of ['bin', 'runtime', 'app', 'web', 'native', 'skills']) await mkdir(path.join(stageRoot, dir), { recursive: true })
 
 await cp(cliBuild, path.join(stageRoot, 'app', 'cli.js'))
 await cp(serverBuild, path.join(stageRoot, 'app', 'server.js'))
 await cp(webBuild, path.join(stageRoot, 'web'), { recursive: true })
 await cp(process.execPath, path.join(stageRoot, 'runtime', nodeName))
 await cp(nativeBuild, path.join(stageRoot, 'native', nativeName))
+await cp(path.join(root, 'skills'), path.join(stageRoot, 'skills'), { recursive: true })
 await writeFile(path.join(stageRoot, 'VERSION'), `${version}\n`, 'utf8')
 await writeFile(path.join(stageRoot, 'bundle.json'), `${JSON.stringify({ schemaVersion: 1, product: 'xiaoyu', version, os, arch: cpu }, null, 2)}\n`, 'utf8')
 
 if (os === 'windows') {
-  const launcher = '@echo off\r\nset "XIAOYU_HOME=%~dp0.."\r\nset "XIAOYU_NATIVE_RUNTIME=%XIAOYU_HOME%\\native\\xma-native-runtime.exe"\r\n"%XIAOYU_HOME%\\runtime\\node.exe" "%XIAOYU_HOME%\\app\\cli.js" %*\r\n'
+  const launcher = '@echo off\r\nset "XIAOYU_HOME=%~dp0.."\r\nset "XIAOYU_NATIVE_RUNTIME=%XIAOYU_HOME%\\native\\xma-native-runtime.exe"\r\nset "XIAOYU_SKILLS_HOME=%XIAOYU_HOME%\\skills"\r\n"%XIAOYU_HOME%\\runtime\\node.exe" "%XIAOYU_HOME%\\app\\cli.js" %*\r\n'
   await writeFile(path.join(stageRoot, 'bin', 'xiaoyu.cmd'), launcher, 'utf8')
   await writeFile(path.join(stageRoot, 'bin', 'xma.cmd'), launcher, 'utf8')
 } else {
-  const launcher = '#!/bin/sh\nset -eu\nXIAOYU_HOME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexport XIAOYU_HOME\nexport XIAOYU_NATIVE_RUNTIME="$XIAOYU_HOME/native/xma-native-runtime"\nexec "$XIAOYU_HOME/runtime/node" "$XIAOYU_HOME/app/cli.js" "$@"\n'
+  const launcher = '#!/bin/sh\nset -eu\nXIAOYU_HOME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexport XIAOYU_HOME\nexport XIAOYU_NATIVE_RUNTIME="$XIAOYU_HOME/native/xma-native-runtime"\nexport XIAOYU_SKILLS_HOME="$XIAOYU_HOME/skills"\nexec "$XIAOYU_HOME/runtime/node" "$XIAOYU_HOME/app/cli.js" "$@"\n'
   for (const name of ['xiaoyu', 'xma']) {
     const launcherPath = path.join(stageRoot, 'bin', name)
     await writeFile(launcherPath, launcher, 'utf8')

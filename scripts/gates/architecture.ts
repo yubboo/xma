@@ -11,6 +11,12 @@ const required = [
   'AGENTS.md',
   '.cargo/config.toml',
   'core/src/agent.ts',
+  'core/src/agent/contract.ts',
+  'core/src/agent/registry.ts',
+  'core/src/agent/delegation.ts',
+  'core/src/skill/contract.ts',
+  'core/src/skill/registry.ts',
+  'core/src/skill/loader.ts',
   'core/src/plugin.ts',
   'core/src/runtime.ts',
   'core/src/session/contract.ts',
@@ -34,6 +40,7 @@ const required = [
   'docs/architecture/PROJECT-ARCHITECTURE.md',
   'docs/architecture/DIRECTORY-STRUCTURE.md',
   'docs/architecture/AGENT-RUNTIME.md',
+  'docs/architecture/AGENT-PLATFORM.md',
   'docs/architecture/WORKSPACE.md',
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
@@ -41,12 +48,22 @@ const required = [
   'docs/development/UPSTREAM-REFERENCE.md',
   'scripts/gates/naming.ts',
   'docs/security/NATIVE-CAPABILITIES.md',
+  'agents/xiaoyu/agent.ts',
+  'agents/code/agent.ts',
+  'skills/common/task-planning/SKILL.md',
+  'skills/common/task-planning/skill.json',
+  'skills/common/verification/SKILL.md',
+  'skills/common/verification/skill.json',
+  'skills/code/bug-fixing/SKILL.md',
+  'skills/code/bug-fixing/skill.json',
+  'skills/code/testing/SKILL.md',
+  'skills/code/testing/skill.json',
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
 
 
 const directoryDoc = readFileSync('docs/architecture/DIRECTORY-STRUCTURE.md', 'utf8')
-for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/session/contract.ts', 'apps/desktop/scripts/electron/install-runtime.ts']) {
+for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/agent/contract.ts', 'core/src/skill/loader.ts', 'core/src/session/contract.ts', 'apps/desktop/scripts/electron/install-runtime.ts']) {
   if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
 }
 const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
@@ -55,9 +72,29 @@ for (const marker of ['pnpm gate:naming', '同一逻辑的 types/constants/helpe
 }
 
 const runtimeDoc = readFileSync('docs/architecture/AGENT-RUNTIME.md', 'utf8')
-for (const marker of ['Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline']) {
+for (const marker of ['AgentDefinition', 'Skill Context', 'Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline']) {
   if (!runtimeDoc.includes(marker)) throw new Error(`XMA Agent Runtime architecture marker missing: ${marker}`)
 }
+const agentPlatformDoc = readFileSync('docs/architecture/AGENT-PLATFORM.md', 'utf8')
+for (const marker of ['Xiaoyu Manager', 'AgentDefinition', 'Skill', 'AgentTask', 'Host']) {
+  if (!agentPlatformDoc.includes(marker)) throw new Error(`XMA Agent Platform architecture marker missing: ${marker}`)
+}
+const agentContract = readFileSync('core/src/agent/contract.ts', 'utf8')
+for (const marker of ['AgentDefinition', 'AgentBrainCapability', 'AgentDelegationPolicy', 'AgentDeliveryPolicy']) {
+  if (!agentContract.includes(marker)) throw new Error(`XMA Agent Platform core marker missing: ${marker}`)
+}
+const skillRegistry = readFileSync('core/src/skill/registry.ts', 'utf8')
+for (const marker of ['class SkillRegistry', 'resolveForAgent', 'createAgentSkillContextSource', "id: 'agent/skills'"]) {
+  if (!skillRegistry.includes(marker)) throw new Error(`XMA Skill Platform core marker missing: ${marker}`)
+}
+const delegationSource = readFileSync('core/src/agent/delegation.ts', 'utf8')
+for (const marker of ['AgentTask', 'AgentDelegationService', 'cannot delegate tasks']) {
+  if (!delegationSource.includes(marker)) throw new Error(`XMA Agent delegation marker missing: ${marker}`)
+}
+for (const forbidden of ['agents/minecraft/agent.ts', 'agents/writer/agent.ts', 'core/src/agent-registry.ts']) {
+  if (existsSync(forbidden)) throw new Error(`XMA Agent Platform must not keep obsolete empty/legacy skeleton: ${forbidden}`)
+}
+
 const workspaceDoc = readFileSync('docs/architecture/WORKSPACE.md', 'utf8')
 for (const marker of ['WorkspaceBinding', 'descriptorDigest', 'workspace/access-granted', 'workspace/access-revoked', 'workspace/access-used', '其他 Agent → 目标 Workspace → deny']) {
   if (!workspaceDoc.includes(marker)) throw new Error(`XMA Workspace architecture marker missing: ${marker}`)

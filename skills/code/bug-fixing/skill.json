@@ -1,0 +1,11 @@
+{
+  "id": "code/bug-fixing",
+  "name": "Bug Fixing",
+  "description": "面向软件缺陷定位、最小修复和回归验证的专业工作方法。",
+  "version": "0.1.0",
+  "requires": {
+    "tools": ["native.fs.read_text", "native.fs.write_text"],
+    "brain": ["tool-calling"]
+  },
+  "tags": ["code", "debugging"]
+}

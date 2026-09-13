@@ -10,7 +10,8 @@ XMA 0.1.x 处于平台出生期。当前优先级是把 Agent Runtime、真实 P
 xma/
 ├─ apps/       # CLI / Desktop / Web / Server 四种产品入口
 ├─ core/       # XMA TypeScript Agent 平台核心
-├─ agents/     # Minecraft / Code / Writer 等专业 Agent
+├─ agents/     # Xiaoyu Manager / Code 等已实现 Agent
+├─ skills/     # XMA 产品级 Skill（SKILL.md + skill.json）
 ├─ plugins/    # Provider / Tool / Integration / Compatibility
 ├─ native/     # Rust Native / Security Kernel
 ├─ scripts/    # 开发、构建、同步、GitHub、Gates
@@ -29,13 +30,20 @@ xma/
 
 ```text
 core/src/
-├─ agent.ts
-├─ agent-registry.ts          # Agent 当前只有两个核心文件，暂不建单文件式目录
+├─ agent.ts                   # legacy runAgent 迁移兼容
+├─ agent/                     # Agent identity / registry / delegation
+│  ├─ contract.ts
+│  ├─ registry.ts
+│  └─ delegation.ts
+├─ skill/                     # 产品 Skill metadata / registry / loader
+│  ├─ contract.ts
+│  ├─ registry.ts
+│  └─ loader.ts
 ├─ runtime.ts
 ├─ context.ts
 ├─ workspace.ts
 ├─ provider.ts
-├─ session/                   # 已有 3 个稳定且职责不同的 Session 模块
+├─ session/                   # Durable Session Contract / Store / Export
 │  ├─ contract.ts
 │  ├─ store.ts
 │  └─ export.ts
@@ -59,15 +67,39 @@ core/src/
 
 例如：`session/store.ts`、`tool/policy.ts`、`apps/desktop/scripts/electron/install-runtime.ts` 都优于重复写成 `session/session-store.ts`、`tool/tool-policy.ts`、`install-electron-runtime.ts`。
 
-## 4. agents/
+## 4. agents/ 与 skills/
 
-一个 Agent 表示一个专业身份与能力组合：
+`agents/` 保存 XMA 内置专业身份；`skills/` 保存运行时给专业 Agent/模型读取的产品级 Skill。两者不是一回事。
 
-- `agents/code/`：Coding Agent 场景知识与能力组合；
-- `agents/minecraft/`：Minecraft 场景知识与能力组合；
-- `agents/writer/`：Writer 场景知识与能力组合。
+当前真实结构：
 
-专业业务不能写进 Core Agent Loop。
+```text
+agents/
+├─ xiaoyu/
+│  └─ agent.ts
+└─ code/
+   └─ agent.ts
+
+skills/
+├─ common/
+│  ├─ task-planning/
+│  │  ├─ SKILL.md
+│  │  └─ skill.json
+│  └─ verification/
+└─ code/
+   ├─ bug-fixing/
+   └─ testing/
+```
+
+规则：
+
+- Agent = 专业身份与能力组合；
+- Skill = 给模型的专业工作方法/约束/交付标准；
+- Plugin/Tool = 程序能力；
+- `.agents/skills/` 是开发 XMA 的 AI 工具上下文，与根 `skills/` 产品能力严格分离；
+- Writer/Minecraft/GameDev/Art 等未来 Agent 在拥有真实 Skill/Tool 实现前不创建空目录。
+
+详细 Contract 见 `docs/architecture/AGENT-PLATFORM.md`。
 
 ## 5. plugins/
 
@@ -175,6 +207,17 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 
 不能因为参考项目拆了很多包，就机械复制其目录规模。
 
+
+## 当前 Agent / Skill Foundation 关键源码归属
+
+- `core/src/agent/contract.ts`：AgentDefinition / Brain / Workspace / Memory / Delivery / Delegation Policy；
+- `core/src/agent/registry.ts`：Agent Registry；
+- `core/src/agent/delegation.ts`：AgentTask / delegation validation；
+- `core/src/skill/contract.ts`：Skill metadata Contract；
+- `core/src/skill/loader.ts`：`skill.json + SKILL.md` 安全加载；
+- `core/src/skill/registry.ts`：Agent↔Skill 绑定校验与 model-visible Context Source；
+- `agents/xiaoyu/`、`agents/code/`：当前真实内置 Agent；
+- `skills/common/`、`skills/code/`：当前真实产品 Skills。
 
 ## 当前 Stage C / D 关键源码归属
 

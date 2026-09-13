@@ -2,7 +2,7 @@
 
 ## 1. 当前定位
 
-0.1.0 是**可测试的平台骨架 + Windows/Desktop 工程通路验证版本**，不是已经具备完整 Agent 产品能力的正式版。
+0.1.0 是**可测试的平台骨架 + Agent/Skill Foundation + Windows/Desktop 工程通路验证版本**，不是已经具备完整 Agent 产品能力的正式版。
 
 本轮开发优先级已经明确调整为：**底层 Agent Runtime 与真实 Model Provider 优先，复杂 Desktop UI 后置。** 当前 Desktop 只要求能启动、能打包、能验证 Shell/Runtime 通路；完整 Codex 风格三栏 Workbench 作为后续目标记录在 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
@@ -39,7 +39,12 @@
 - effect/disposer；
 - emit/parallel/serial/bail/waterfall 基础事件语义；
 - Rust stdio JSON-RPC Runtime 骨架；
-- Minecraft / Code / Writer Agent 身份骨架；
+- Agent Platform Foundation：正式 `AgentDefinition`、Agent Registry、manager/specialist、Brain/Skill/Tool/Workspace/Memory/Delivery/Delegation Policy；
+- Skill Platform Foundation：`skill.json + SKILL.md` Loader/Registry、Agent↔Skill requirements 校验、`agent/skills` model-visible Context Source；
+- Terminal 的 `Xiaoyu Code` 已把首批 canonical Skills 接入正式 Context Assembly；portable bundle 随包复制 `skills/` 并由 `XIAOYU_SKILLS_HOME` 定位；
+- 当前内置真实 Agent 只保留 `Xiaoyu Manager` 与 `Xiaoyu Code`，不再提前创建 Writer/Minecraft 空骨架；
+- 首批产品 Skills：`common/task-planning`、`common/verification`、`code/bug-fixing`、`code/testing`；
+- Agent Task delegation Contract：Manager 可创建经过 Registry/Policy 校验的 specialist Task，普通 specialist 默认 deny；
 - `xiaoyu` 持续 Terminal TUI + Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
@@ -67,6 +72,9 @@
 - process executable 已完成“绝对路径 + canonical identity + 不经 PATH”第一版；仍缺可执行文件内容/句柄级 TOCTOU identity hardening；
 - Workspace persistence / repo metadata / instructions / explicit rebind migration（ownership/grant 第一版已落地）；
 - App Protocol / Event Stream；
+- Xiaoyu Manager durable Task Store / Scheduler / result verification；
+- Host Contract/Adapter 与 Codex/Claude Code/DeepSeek Harness/Zcode capability negotiation/conformance；
+- 用户级 Agent/Skill 安装、签名/来源/版本管理；
 - DSH Tool/LLM/Session/Skill bridge 与 Conformance Tests。
 
 ## 4. 尚未完成，禁止过度宣称
@@ -76,9 +84,9 @@
 - 完整 Session/Memory/Context；
 - 完整 Rust Workspace Sandbox：process tree / PTY / network / executable content identity；（FS 与 absolute-path direct process 最小 capability 已有第一版）
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
+- Xiaoyu Manager 真正多 Agent 调度闭环；
 - Xiaoyu Code 真实 coding 闭环；
-- Minecraft 真实开服闭环；
-- Writer Agent 产品闭环；
+- Minecraft / Writer / GameDev / Art 等未来专业 Agent 产品闭环；
 - 完整三栏 Desktop Workbench；
 - Desktop 安装包跨平台实装验证。
 
@@ -110,17 +118,17 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-Stage C 已经由用户 Windows `[7]` 完成真实 Rust 验证；Stage D 第一批 Workspace ownership/binding/grant/scope 已进入代码。当前插入 Distribution + Terminal Runtime 第一批，让 XMA 具备真实安装与持续终端入口，然后继续 Stage D：
+Agent/Skill Platform Foundation 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
 
-1. Windows 实机验收 Safe Prompt（白块/反色必须归零）+ Terminal Brain Profile → Brain Ready → 模型选择 → 一句话文件任务闭环；
-2. Windows `xiaoyu` portable/installer E2E：构建、安装、PATH、doctor、升级；
-3. OS Keychain Credentials，把 Terminal Provider 从“环境变量引用”升级到可安全录入 Secret；
-4. Terminal `process.run` absolute executable allowlist 配置 + Approval；文件 read/write + Approval 第一批已完成；
-5. Linux/macOS release workflow 与对应 installer E2E（各平台原生构建，不伪造跨平台）；
-6. Workspace persistence + repo/project metadata + instructions discovery；
-7. large Tool output attachment + compaction / Session fork；
-8. App Protocol Workspace/Approval Handler + process-tree / PTY/ConPTY。
+1. **OS Credentials + Provider 产品化**：安全录入 Secret、Provider Profile、Brain Ready、Model Catalog、默认模型，不把 API Key 写入 Session/JSON/Git；
+2. **Process executable registry / absolute allowlist / Approval**：把已存在的 Rust `process.spawn` 安全链接到产品配置面，先支持明确绝对路径的 node/pnpm/git/cargo/python 等；
+3. **Workspace persistence + discovery**：repo/project metadata、Git identity、`AGENTS.md/CLAUDE.md` instructions discovery、显式 rebind/migration；
+4. **Xiaoyu Manager durable Task/Delegation**：Task Store、父子任务、状态、结果与验收，不做“多个 Agent 随意聊天”；
+5. **Xiaoyu Code 真闭环**：读规则 → 查代码 → 修改 → 运行测试 → 观察失败 → 再修 → Git diff/验证证据；
+6. **App Protocol Handler + process tree / PTY/ConPTY**，让 CLI/Desktop/Web/Server 继续共享一套 Runtime；
+7. **Plugin/Host Compatibility**：先选一个外部 Host 做完整 Adapter + conformance，再扩 Codex/Claude Code/DeepSeek Harness/Zcode；
+8. Code Agent 证明平台后，再增加 Minecraft/Writer/GameDev/Art 等真实专业 Agent，不提前创建空目录。
 
-完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
+完整 Workbench UI 仍后置；现有 UI 参考继续由 `DESKTOP-WORKBENCH.md` 保存。
 
 详细分阶段出口见 `DEVELOPMENT-PLAN.md`。

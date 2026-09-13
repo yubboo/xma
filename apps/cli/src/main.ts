@@ -2,7 +2,7 @@
 /**
  * 文件作用：XMA `xiaoyu` 命令的产品入口，解析参数并把 Terminal Shell 接到正式 Agent Runtime。
  * 关联模块：tui.ts、core Runtime/Workspace/Session、OpenAI-compatible Provider、Server/Web 发行入口。
- * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、用户级非 Secret Brain Profile/环境兼容 Provider、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
+ * 当前实现：xiaoyu TUI、Workspace 安全确认、持久 Session、Xiaoyu Code Agent/Skill Context、用户级非 Secret Brain Profile/环境兼容 Provider、Rust-backed 文件 ToolSet/Approval 与 bundled server/web 启动。
  * 职责边界：本文件只做 Product Launcher；Agent 推理、Tool 安全、Provider 协议和 Native 权限必须继续由 Core/Plugin/Rust 层实现。
  */
 
@@ -14,23 +14,30 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import {
+  AgentRegistry,
   AgentRuntime,
+  ContextRegistry,
   EnvironmentCredentialResolver,
   JsonlSessionStore,
   ProviderRegistry,
+  SkillLoader,
+  SkillRegistry,
   StdioNativeClient,
   ToolRegistry,
   WorkspaceRegistry,
+  createAgentSkillContextSource,
   type Disposer,
   type RuntimeLiveEvent,
   type ToolApprovalProvider,
 } from '../../../core/src/index.ts'
 import { OpenAiCompatibleAdapter } from '../../../plugins/providers/openai-compatible.ts'
 import { registerNativeTools } from '../../../plugins/tools/native.ts'
+import { codeAgent } from '../../../agents/code/agent.ts'
+import { xiaoyuAgent } from '../../../agents/xiaoyu/agent.ts'
 import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalBackend } from './tui.ts'
 import { TerminalBrainStore, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 
-const AGENT_ID = 'xiaoyu.code'
+const AGENT_ID = codeAgent.id
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 
 export interface ParsedArgs {
@@ -101,6 +108,28 @@ function stateRoot(): string {
   return path.join(process.env.XDG_STATE_HOME ?? path.join(homedir(), '.local', 'state'), 'xiaoyu')
 }
 
+function skillsRoot(): string {
+  const configured = process.env.XIAOYU_SKILLS_HOME?.trim()
+  if (configured) return path.resolve(configured)
+  return path.resolve(moduleDir, '../../../skills')
+}
+
+async function createProductContext(): Promise<ContextRegistry> {
+  const agents = new AgentRegistry()
+  agents.register(xiaoyuAgent)
+  agents.register(codeAgent)
+  agents.validateDelegationTargets()
+
+  const loader = new SkillLoader(skillsRoot())
+  const skills = new SkillRegistry()
+  const ids = [...new Set([...xiaoyuAgent.skills, ...codeAgent.skills])]
+  for (const id of ids) skills.register(await loader.load(id))
+
+  const context = new ContextRegistry()
+  context.register(createAgentSkillContextSource(agents, skills))
+  return context
+}
+
 function nativeExecutable(): string | undefined {
   const configured = process.env.XIAOYU_NATIVE_RUNTIME?.trim()
   if (configured) return path.resolve(configured)
@@ -128,9 +157,17 @@ function doctorItems(workspace: string, brainStore: TerminalBrainStore): readonl
   const brainDetail = active
     ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据环境变量未设置' : ''}`
     : '未配置 Provider'
+  const skillHome = skillsRoot()
+  const skillReady = [
+    'common/task-planning/SKILL.md',
+    'common/verification/SKILL.md',
+    'code/bug-fixing/SKILL.md',
+    'code/testing/SKILL.md',
+  ].every(relative => existsSync(path.join(skillHome, ...relative.split('/'))))
   return [
     { label: 'Node Runtime', ok: Number(process.versions.node.split('.')[0]) >= 22, detail: `v${process.versions.node}` },
     { label: 'Workspace', ok: true, detail: workspace },
+    { label: 'Agent Skills', ok: skillReady, detail: skillReady ? skillHome : `缺少内置 Skill：${skillHome}` },
     { label: 'Session Store', ok: true, detail: path.join(stateRoot(), 'sessions') },
     { label: 'Brain', ok: brainReady, detail: brainDetail },
     { label: 'Native Kernel', ok: nativeExists, detail: nativeExists ? native : '未找到 Native Runtime；文件 Tool 将保持不可用' },
@@ -144,7 +181,8 @@ async function createBackend(workspace: string, currentVersion: string): Promise
 
   const sessions = path.join(stateRoot(), 'sessions')
   await mkdir(sessions, { recursive: true })
-  const runtime = new AgentRuntime(new JsonlSessionStore(sessions), { workspaces, requireWorkspace: true })
+  const context = await createProductContext()
+  const runtime = new AgentRuntime(new JsonlSessionStore(sessions), { context, workspaces, requireWorkspace: true })
   const session = await runtime.createSession({ agentId: AGENT_ID, workspaceId: id })
   const tools = new ToolRegistry()
   const brainStore = new TerminalBrainStore()

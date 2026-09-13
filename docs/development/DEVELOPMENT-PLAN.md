@@ -4,7 +4,7 @@
 
 0.1.x 的目标不是把界面做得像一个完成品，而是让 XMA 成为**真正可持续工作的多 Provider Agent Platform**：真实模型能够持续多轮推理、调用受控工具、恢复 Session、操作 Workspace，并通过 Rust Native Kernel 安全执行本地副作用。
 
-开发顺序固定为：**底层 Runtime → 真实 Provider → Tool/Permission/Native → Session/Workspace/Context → Plugin/Compatibility → Code Agent → Minecraft Agent → Desktop Workbench。**
+开发顺序固定为：**底层 Runtime → Provider/Tool/Workspace 基础 → Agent/Skill Platform → Credentials/Provider 产品化 → Process/Workspace 产品化 → Xiaoyu Manager → Xiaoyu Code 真闭环 → Plugin/Host 兼容 → 其他专业 Agent → Desktop Workbench。**
 
 UI 当前只维持开发壳和 Host 通路验证，不提前投入复杂工作台细节。完整三栏布局目标见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
@@ -197,6 +197,42 @@ XMA 长期参考：
 - 大输出不会无限塞入模型 Context；
 - 导出无 Secret。
 
+## 6.1 插入批次：Agent + Skill Platform Foundation
+
+### 目标
+
+把“XMA 是多专业 Agent 平台”从产品描述变成稳定 Core Contract，同时避免提前创建一堆空 Agent。
+
+### 当前落地（本批次）
+
+- `core/src/agent/contract.ts`：正式 `AgentDefinition`，包含 manager/specialist、Skills、Tools、Brain capability、Workspace、Memory、Delivery、Delegation Policy；
+- `core/src/agent/registry.ts`：不可变 Agent Registry 与基础一致性校验；
+- `core/src/agent/delegation.ts`：`AgentTask` 与 Manager delegation fail-closed Contract；
+- `core/src/skill/contract.ts`：产品 Skill metadata；
+- `core/src/skill/loader.ts`：从 `skills/<domain>/<name>/skill.json + SKILL.md` 安全加载 canonical Skill；
+- `core/src/skill/registry.ts`：Agent↔Skill 绑定、Tool/Brain requirements 校验；
+- `createAgentSkillContextSource()`：Agent identity + Skill 文本通过标准 Context Assembly 进入模型，并由现有 durable `context/snapshot` 记录实际模型可见内容；
+- `xiaoyu` 当前 Code Session 已接 `AgentRegistry + SkillLoader + SkillRegistry`，源码模式读取根 `skills/`，portable 通过 `XIAOYU_SKILLS_HOME` 读取随包 Skills；
+- 内置真实 Agent 只保留 `Xiaoyu Manager` 与 `Xiaoyu Code`；旧 Writer/Minecraft 单文件空骨架删除；
+- 首批 4 个产品 Skills：`common/task-planning`、`common/verification`、`code/bug-fixing`、`code/testing`；
+- 新测试覆盖 Skill 加载、Agent loadout、Context 注入和 delegation deny。
+
+### 明确未完成
+
+- Xiaoyu Manager durable Task Store / Scheduler / 子 Agent 实际执行；
+- Agent 自动 Brain route；
+- 用户安装 Agent/Skill；
+- Codex/Claude Code/DeepSeek Harness/Zcode Host Adapter；
+- Writer/Minecraft/GameDev/Art 等专业 Agent 实现。
+
+### 出口标准
+
+- Agent/Skill canonical definition 有唯一来源；
+- Skill requirement 与 Agent declared capability 不匹配时 fail loud；
+- 模型可见 Skill 通过 Context Assembly，可形成 durable snapshot；
+- Manager 可以创建合规 specialist Task，普通 specialist 默认不能委派；
+- 不为未来功能创建空 Agent/Skill 目录。
+
 ## 6.5 插入批次：Distribution + Terminal Runtime
 
 这批在 Stage D 第二批前优先完成“真正能安装、真正能在终端持续运行”的产品入口，但不改变 Backend First 原则。
@@ -289,9 +325,27 @@ Thread/Turn、Tool Router、approval/sandbox、AGENTS discovery、exec/file-syst
 
 一条真实 Minecraft 用例从自然语言到可验证本地服务器闭环，轨迹、版本事实、下载来源、Native 副作用全部可审计。
 
-## 10. 阶段 H：Desktop Workbench
+## 10. 阶段 H：External Host Adapters
 
-只有 A–F 的核心出口基本完成后才进入复杂 Desktop UI。
+在 XMA Native Runtime + Xiaoyu Code 真闭环证明 Agent/Skill Contract 稳定之后，再开始“把属于用户的 Agent 带到外部宿主”。
+
+### 目标
+
+- 定义稳定 Host Contract / Host Capabilities；
+- Agent/Skill canonical definition 只有一份；
+- Host Adapter 负责格式转换、安装、同步、移除和 capability negotiation；
+- 优先选一个 Host 做完整 Adapter + Conformance，再扩 Codex / Claude Code / DeepSeek Harness / Zcode；
+- Tool/MCP/权限桥不能绕过 XMA Policy/Approval/Native 安全边界。
+
+### 禁止
+
+- 不得为每个 Host 复制一套 `Xiaoyu Code`；
+- 不得把 `codex-agent.ts`、`claude-agent.ts` 等宿主特例写进 Core；
+- 没有真实安装/运行/卸载 Conformance 证据不得宣称兼容完成。
+
+## 11. 阶段 I：Desktop Workbench
+
+只有 Runtime/Provider/Tool/Workspace/Agent-Skill/Code 等核心出口基本完成后才进入复杂 Desktop UI。
 
 ### 已锁定产品方向
 
@@ -314,13 +368,13 @@ Thread/Turn、Tool Router、approval/sandbox、AGENTS discovery、exec/file-syst
 - renderer 不获得任意 Node/Rust 权限；
 - Electron 41.2.0 主 / Tauri 2 副继续复用同一 Web UI 与 Core。
 
-## 11. 0.1.x 版本推进原则
+## 12. 0.1.x 版本推进原则
 
 0.1.0 仍是可测试骨架。本版本未冻结期间的修复继续使用 0.1.0 同名包；真正冻结后下一批能力按 `0.1.1...0.1.100` 推进。
 
 版本号不是任务完成的替代品。每个 patch 必须对应可验证增量；不能为了看起来“更新很多”空增版本。
 
-## 12. 0.2.0 进入条件
+## 13. 0.2.0 进入条件
 
 只有 0.1.100 阶段验收完成后进入 0.2.0。最低要求：
 
