@@ -1,7 +1,7 @@
 /**
  * 文件作用：检查 XMA 文件/目录命名与模块粒度基础规则，防止 kebab-case、snake_case、语义点号重新混用。
  * 关联模块：AGENTS.md、docs/architecture/DIRECTORY-STRUCTURE.md、docs/development/DEVELOPMENT-RULES.md、package.json。
- * 当前实现：检查产品目录、TypeScript/PowerShell/Rust/架构文档命名，限制普通名字长度，并锁定 Session/Tool/Electron/Gate 的已完成分组结构。
+ * 当前实现：检查产品目录、TypeScript/PowerShell/Rust/架构文档命名，限制普通名字长度，并锁定 Platform Skeleton、Plugin 功能聚合、Session/Tool/Electron/Gate 的已完成分组结构。
  * 职责边界：Gate 只能检查可机械判断的命名问题；是否应该拆文件仍以“不同逻辑/独立生命周期”架构判断为准，不能靠脚本自动拆包。
  */
 
@@ -131,18 +131,29 @@ function walkDocs(dir: string): void {
 walkDocs('docs')
 
 const requiredGroupedPaths = [
-  'core/src/agent/contract.ts',
-  'core/src/agent/registry.ts',
-  'core/src/agent/delegation.ts',
+  'packages/xma-agent-loop/src/agent/contract.ts',
+  'packages/xma-agent-loop/src/agent/registry.ts',
+  'packages/xma-agent-loop/src/agent/delegation.ts',
+  'packages/xma-ai/src/model/model.ts',
+  'packages/xma-ai/src/provider/provider.ts',
+  'packages/xma-context/src/assembly/context.ts',
+  'packages/xma-context/src/workspace/workspace.ts',
+  'packages/xma-session/src/contract.ts',
+  'packages/xma-session/src/store.ts',
+  'packages/xma-session/src/export.ts',
+  'packages/xma-tools/src/router.ts',
+  'packages/xma-tools/src/policy.ts',
+  'packages/xma-tools/src/schema.ts',
+  'packages/xma-native/src/client.ts',
+  'plugins/deepseek/catalog.ts',
+  'plugins/native-tools/contract.ts',
+  'plugins/native-tools/filesystem.ts',
+  'plugins/native-tools/process.ts',
+  'plugins/native-tools/plugin.ts',
+  'plugins/dsh-compat/index.ts',
   'core/src/skill/contract.ts',
   'core/src/skill/registry.ts',
   'core/src/skill/loader.ts',
-  'core/src/session/contract.ts',
-  'core/src/session/store.ts',
-  'core/src/session/export.ts',
-  'core/src/tool/router.ts',
-  'core/src/tool/policy.ts',
-  'core/src/tool/schema.ts',
   'apps/desktop/scripts/electron/build.ts',
   'apps/desktop/scripts/electron/dev.ts',
   'apps/desktop/scripts/electron/install-runtime.ts',
@@ -161,6 +172,12 @@ for (const path of requiredGroupedPaths) {
 }
 
 const forbiddenLegacyPaths = [
+  'plugins/providers',
+  'plugins/tools',
+  'plugins/compat',
+  'plugins/examples',
+  'agents/xiaoyu/agent.ts',
+  'agents/code/agent.ts',
   'core/src/agent-registry.ts',
   'agents/minecraft/agent.ts',
   'agents/writer/agent.ts',

@@ -7,13 +7,16 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
   "include": [
     "apps/**/*.ts",
     "core/**/*.ts",
+    "packages/**/*.ts",
     "agents/**/*.ts",
     "plugins/**/*.ts",
     "scripts/**/*.ts"

@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 XMA Plugin Host 与 DeepSeek Harness 基础兼容 Contract。
- * 关联模块：core/src/plugin.ts、plugins/compat/deepseek-harness/index.ts。
+ * 关联模块：core/src/plugin.ts、plugins/dsh-compat。
  * 当前实现：service proxy、inject、effect、事件分发、对象/函数插件和 unmount 回归测试。
  * 职责边界：这里只证明基础 Contract；不代表所有 DeepSeek Harness 专属 Service 已兼容。
  */
@@ -8,7 +8,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { XmaPluginHost } from '../src/plugin.ts'
-import { adaptDeepSeekHarnessPlugin } from '../../plugins/compat/deepseek-harness/index.ts'
+import { adaptDeepSeekHarnessPlugin } from 'xma-plugin-dsh'
 
 test('XMA plugin host provides services through ctx.<service> and tears effects down', async () => {
   const host = new XmaPluginHost()

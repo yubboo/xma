@@ -8,7 +8,7 @@
 
 ## 1.1 `xma-agent-loop` 目标与迁移原则
 
-长期 Agent Loop 归属 `packages/xma-agent-loop/`。当前 `core/src/runtime.ts` 仍是 0.1.x 可运行实现，在迁移期间作为 compatibility facade/bridge 保留，不做一次性推倒重写。
+长期 Agent Loop 归属 `packages/xma-agent-loop/`。当前 `packages/xma-agent-loop/src/runtime.ts` 仍是 0.1.x 可运行实现，在迁移期间作为 compatibility facade/bridge 保留，不做一次性推倒重写。
 
 `xma-agent-loop` 必须优先吸收 Pi 已验证的语义：streaming message lifecycle、text/thinking/toolcall 增量、Tool Result 回同一模型、parallel/sequential tool execution、cancellation、steering/follow-up、错误结算与可扩展 next-turn preparation。XMA 自己增加的 Session durable facts、Workspace identity、Approval、Rust capabilities 通过稳定 extension seam 接入，而不是把特例继续塞进主循环。
 
@@ -20,7 +20,7 @@ XMA 不再把一次 Agent 执行理解为“复制一个 messages 数组然后 w
 
 ### AgentDefinition
 
-描述专业身份和能力组合，不保存一次会话的瞬时状态。0.1.x 第一版正式 Contract 位于 `core/src/agent/contract.ts`，包含：
+描述专业身份和能力组合，不保存一次会话的瞬时状态。0.1.x 第一版正式 Contract 位于 `packages/xma-agent-loop/src/agent/contract.ts`，包含：
 
 - stable `id/name/version`；
 - `manager | specialist` kind；
@@ -145,7 +145,7 @@ Terminal/Host 对 `model/text-delta` 与 Provider 允许公开的 `model/reasoni
 
 ## 5. Context Assembly
 
-Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `core/src/context.ts` 已落地第一版 `ContextRegistry`：每个 Source 有稳定 `id`、可选 `order`、可释放注册；组装按 `order + id` 确定性排序，默认 64 KiB 字符硬上限，超限直接失败，不静默截断；组装结果生成 SHA-256 digest。Runtime 在每个 Step 前组装 Context，只有有效 digest 变化时才追加 `context/snapshot` durable event；从非空变为空时显式写入空快照清除旧 Context。
+Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `packages/xma-context/src/assembly/context.ts` 已落地第一版 `ContextRegistry`：每个 Source 有稳定 `id`、可选 `order`、可释放注册；组装按 `order + id` 确定性排序，默认 64 KiB 字符硬上限，超限直接失败，不静默截断；组装结果生成 SHA-256 digest。Runtime 在每个 Step 前组装 Context，只有有效 digest 变化时才追加 `context/snapshot` durable event；从非空变为空时显式写入空快照清除旧 Context。
 
 正式 Context Assembly 继续遵守：
 
@@ -162,7 +162,7 @@ Context 不是把所有 Markdown 一股脑拼进 Prompt。当前 `core/src/conte
 
 ## 5.1 Session Export / Redaction / Migration
 
-当前 `core/src/session/export.ts` 已提供第一版安全导出 Contract：`SessionExportEnvelope` 带独立 export version；调用方可把 Credentials Service 已知 Secret 临时交给 `SessionRedactor`，递归清理 user/assistant/tool/context/turn 文本与 JSON 数据，且不修改原 Session。带 redactor 的导出明确标记 `redacted: true`，它是安全分享投影，不承诺保持原始 digest 的可重放一致性。
+当前 `packages/xma-session/src/export.ts` 已提供第一版安全导出 Contract：`SessionExportEnvelope` 带独立 export version；调用方可把 Credentials Service 已知 Secret 临时交给 `SessionRedactor`，递归清理 user/assistant/tool/context/turn 文本与 JSON 数据，且不修改原 Session。带 redactor 的导出明确标记 `redacted: true`，它是安全分享投影，不承诺保持原始 digest 的可重放一致性。
 
 `SessionMigrationRegistry` 只允许 `vN → vN+1` 相邻单向升级，拒绝 future format 与隐式 downgrade。当前 `SESSION_FORMAT_VERSION = 1` 没有历史已发布格式，因此默认 migration registry 为空；**它尚未接入 JSONL Store generation 发布流程**，不能写成“持久格式迁移已经完成”。
 
@@ -216,9 +216,9 @@ resolve call
 
 ### 当前 0.1.0 落地
 
-`core/src/tool/router.ts` 已把 Tool Registry 生成的 Schema 与真实 Runtime 一起冻结到同一个 `ToolPlan`；每个 Step 只创建一次 Plan，并把 `toolPlanId + tools[]` 写入 `step/start`。Registry 在模型请求之后发生增删，不会改变该 Step 的 Router。`core/src/tool/schema.ts` 在 Policy 之前做 fail-loud 参数校验，普通参数错误变成 `TOOL_INVALID_ARGUMENTS` 返回模型自纠。
+`packages/xma-tools/src/router.ts` 已把 Tool Registry 生成的 Schema 与真实 Runtime 一起冻结到同一个 `ToolPlan`；每个 Step 只创建一次 Plan，并把 `toolPlanId + tools[]` 写入 `step/start`。Registry 在模型请求之后发生增删，不会改变该 Step 的 Router。`packages/xma-tools/src/schema.ts` 在 Policy 之前做 fail-loud 参数校验，普通参数错误变成 `TOOL_INVALID_ARGUMENTS` 返回模型自纠。
 
-`core/src/tool/policy.ts` 已提供 standard/paranoid/auto Policy、单调 Security Guard、allow-once/allow-session/deny Approval 与 Session cache。没有 Host Approval Provider 时，write/execute/network 默认 fail closed。`parallel-safe` 调用可在同一批次并行；`exclusive` 调用形成 barrier。
+`packages/xma-tools/src/policy.ts` 已提供 standard/paranoid/auto Policy、单调 Security Guard、allow-once/allow-session/deny Approval 与 Session cache。没有 Host Approval Provider 时，write/execute/network 默认 fail closed。`parallel-safe` 调用可在同一批次并行；`exclusive` 调用形成 barrier。
 
 
 ## 7. Permission / Approval / Capability
@@ -315,14 +315,14 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 
 当前第一版已经不再只有 `messages[] + runAgent()`：
 
-- `core/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume、Context Assembly 与 Turn/Step driver；
-- `core/src/session/contract.ts`：durable event Contract、模型消息投影与历史 Step 请求重建；
-- `core/src/session/store.ts`：Memory / JSONL Store；
-- `core/src/session/export.ts`：安全导出、Secret redaction 与相邻 migration Contract；
-- `core/src/context.ts`：Context Source Registry、确定性组装、硬上限与 digest；
-- `core/src/provider.ts`：Provider Profile/Credential/Capability/Catalog/Registry/Probe Contract；
+- `packages/xma-agent-loop/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume、Context Assembly 与 Turn/Step driver；
+- `packages/xma-session/src/contract.ts`：durable event Contract、模型消息投影与历史 Step 请求重建；
+- `packages/xma-session/src/store.ts`：Memory / JSONL Store；
+- `packages/xma-session/src/export.ts`：安全导出、Secret redaction 与相邻 migration Contract；
+- `packages/xma-context/src/assembly/context.ts`：Context Source Registry、确定性组装、硬上限与 digest；
+- `packages/xma-ai/src/provider/provider.ts`：Provider Profile/Credential/Capability/Catalog/Registry/Probe Contract；
 - `core/src/app-protocol.ts`：Host command/result/event envelope 第一版；
-- `core/src/tool/router.ts`：结构化 Tool Result 和普通异常/取消归一化。
+- `packages/xma-tools/src/router.ts`：结构化 Tool Result 和普通异常/取消归一化。
 
 第一版 durable event 已包含：`session/created`、`workspace/access-granted`、`workspace/access-revoked`、`workspace/access-used`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/approval`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、`toolPlanId`、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。Approval 是审计事实，不进入模型消息投影；原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
 

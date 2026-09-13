@@ -1,0 +1,12 @@
+{
+  "name": "xma-plugin-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "xma-plugin": "workspace:*"
+  }
+}

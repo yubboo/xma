@@ -21,7 +21,7 @@
     "gate:docs": "tsx scripts/gates/documentation.ts",
     "check": "pnpm typecheck && pnpm test && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
     "build:web": "vite build apps/web --outDir ../../dist/web --emptyOutDir",
-    "build:cli": "tsup apps/cli/src/main.ts --format esm --platform node --out-dir dist/cli --no-external @earendil-works/pi-tui --no-external chalk --no-external get-east-asian-width --no-external marked --no-external mime-types --no-external mime-db",
+    "build:cli": "tsup apps/cli/src/main.ts --format esm --platform node --out-dir dist/cli --no-external @earendil-works/pi-tui --no-external chalk --no-external get-east-asian-width --no-external marked --no-external mime-types --no-external mime-db --no-external xma-agent-loop --no-external xma-ai --no-external xma-context --no-external xma-core-compat --no-external xma-native --no-external xma-plugin --no-external xma-session --no-external xma-tools --no-external xma-plugin-deepseek --no-external xma-plugin-native-tools --no-external xma-agent-code --no-external xma-agent-xiaoyu",
     "build:server": "tsup apps/server/src/main.ts --format esm --platform node --out-dir dist/server",
     "build:desktop": "pnpm --dir apps/desktop run build:electron",
     "build": "pnpm build:web && pnpm build:cli && pnpm build:server",

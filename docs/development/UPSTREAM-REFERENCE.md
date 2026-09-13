@@ -131,7 +131,7 @@ Codex 当前大量细粒度 crate 不作为 XMA 的机械目录模板。XMA 已�
 
 XMA 已批准稳定 `xma-*` package family，因此不再把“DSH 包很多”本身当成拒绝理由；但仍只按 XMA 的稳定 capability seam 建包，不机械复制每个 workspace package。
 
-DSH compatibility 迁移期从 `plugins/compat/deepseek-harness/` 继续演进，稳定目标为 `xma-plugin-dsh`。兼容必须按 Contract / Service / Package / Behavior 分级，并由 Conformance Tests 证明；真实副作用仍受 XMA Rust Kernel 强制。
+DSH compatibility 固定从自包含的 `plugins/dsh-compat/` 继续演进，其 workspace package 名为 `xma-plugin-dsh`。它是兼容插件而不是新的 Platform Core 目录；兼容必须按 Contract / Service / Package / Behavior 分级，并由 Conformance Tests 证明；真实副作用仍受 XMA Rust Kernel 强制。
 
 ## 7. MiMo Code 参考图谱
 
@@ -262,7 +262,7 @@ DeepSeek 产品入口以目标厂商**当前官方 API 文档**为实时 Contrac
 
 ### 本批拒绝项
 
-- 不把 Provider HTTP JSON 放进 `core/src/runtime.ts`；
+- 不把 Provider HTTP JSON 放进 `packages/xma-agent-loop/src/runtime.ts`；
 - 不依据模型名/品牌猜 capability；
 - 不把 API Key 写入 Provider Profile、Session 或测试 fixture；
 - 不把本地 mock server 测试写成“外部厂商已 Ready”；

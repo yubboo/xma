@@ -11,9 +11,9 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 
 ## 当前 0.1.0 骨架
 
-- TypeScript Agent/Core 基础 Contract；
+- Platform Skeleton v1：`xma-ai / xma-agent-loop / xma-plugin / xma-tools / xma-session / xma-context / xma-native` 稳定 workspace packages；
 - Rust Native/Security Kernel 骨架；
-- XMA Native Plugin Host；
+- Everything is a Plugin 基础 Host + 自包含 `deepseek / native-tools / dsh-compat` 插件；
 - DeepSeek Harness / Cordis 插件兼容适配骨架；
 - Agent/Skill Platform Foundation：主 `Xiaoyu` Manager + `Xiaoyu Code` Specialist；未来专业 Agent 不提前创建空骨架；
 - 产品级 `skills/`：首批 Task Planning / Verification / Bug Fixing / Code Testing；
@@ -29,16 +29,17 @@ XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都
 
 ```text
 apps/       用户入口：CLI / Desktop / Web / Server
-core/       XMA TypeScript 核心
 agents/     Xiaoyu Manager / 已实现专业 Agent
+packages/   稳定 xma-* Agent Platform 能力
+plugins/    具体 Provider / Tool / Compatibility / 领域插件（一个插件一个目录）
 skills/     XMA 产品级专业 Skill
-plugins/    跨 Agent 插件、Provider、Tool、Integration、兼容层
 native/     Rust Native / Security Kernel
+core/       0.1.x Compatibility Facade only
 scripts/    Windows 控制台、同步、GitHub、构建、Gates
 docs/       架构、规则、计划、安全文档
 ```
 
-源码命名固定为：目录/TypeScript 使用小写 kebab-case，Rust 模块使用 snake_case，`.` 只表达 test/config/d 等角色；普通名字优先 1～3 个核心词，并按“同逻辑聚合、不同职责才拆分”的原则组织。详细规则见 `AGENTS.md`、`docs/architecture/DIRECTORY-STRUCTURE.md` 和 `docs/development/DEVELOPMENT-RULES.md`。
+源码采用“适度分层、功能聚合、位置可预测”的规则；跨 package/plugin/agent 只走稳定公共入口，禁止 `../../..` 穿越物理目录。找代码先看根 `CODEMAP.md`；最近工程变更与下一步看 `docs/development/UPDATE-LOG.md`。完整规则见 `AGENTS.md`、`docs/architecture/DIRECTORY-STRUCTURE.md` 和 `docs/development/DEVELOPMENT-RULES.md`。
 
 ## Agent / Skill Platform Foundation
 
@@ -99,7 +100,7 @@ xiaoyu server        Headless Server（发行包）
 xiaoyu web           本地 Web + Server（发行包）
 ```
 
-Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provider` 可以保存 OpenAI-compatible Base URL、Model 与 API Key **环境变量引用**，执行 Brain Ready Probe、读取模型列表并切换模型；`XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续作为兼容配置。Secret 不写入 `brain.json` 或 Session。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
+Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provider` 可以配置真实 Provider Profile；当前首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留。Secret 默认通过 OS Credentials 稳定别名保存，环境变量路径继续兼容；`brain.json` 只保存引用，不写 Secret。Brain Ready 会做真实 catalog/text/tool round trip Probe。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
 
 发行架构、Windows `%LOCALAPPDATA%\Programs\Xiaoyu`、Linux/macOS `~/.local` 合同与一键安装 bootstrap 见 `docs/architecture/DISTRIBUTION.md`。公网 `irm/curl` 安装命令只有在 Release/域名真实部署后才算可用。
 
@@ -109,7 +110,7 @@ Terminal 已接正式 Workspace/Session Runtime。按 `Ctrl+P → Brain / Provid
 
 ## 当前开发优先级
 
-XMA 0.1.x 当前采用 **Backend/Agent Runtime First**：Agent/Skill Foundation 已进入代码，下一步按 Credentials/Provider → Process allowlist → Workspace discovery → Xiaoyu Manager Task → Xiaoyu Code 真闭环推进；Minecraft/Writer/GameDev/Art 等在平台闭环后再增加真实专业 Agent。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
+XMA 0.1.x 当前采用 **Backend/Agent Runtime First + Upstream-first**：Platform Skeleton v1 已完成，下一步先按固定 Pi commit 做 Agent Engine 行为级研究并吸收进 `xma-agent-loop/xma-ai`，随后推进 DSH Plugin conformance、完整 Process/Shell Tool Surface、Session/Context/Memory、Task/Subagent/Workflow 与 Xiaoyu Code 真闭环；Minecraft/Writer/GameDev/Art 等在通用平台闭环后再增加真实专业 Agent。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
 
 上游实现参考固定记录在 `docs/development/UPSTREAM-REFERENCE.md`；项目级 AI 开发入口为根 `AGENTS.md`，并提供 `.agents/`、`.codex/`、`.claude/` 适配目录。
 

@@ -5,10 +5,10 @@
  * 职责边界：Registry 不执行 Tool、不决定任务策略；Skill 文本只通过 Context Assembly 进入模型，并由 Session durable snapshot 保存实际可见内容。
  */
 
-import type { AgentDefinition } from '../agent/contract.ts'
-import { AgentRegistry } from '../agent/registry.ts'
-import type { ContextSource } from '../context.ts'
-import type { Disposer } from '../types.ts'
+import type { AgentDefinition } from 'xma-agent-loop'
+import { AgentRegistry } from 'xma-agent-loop'
+import type { ContextSource } from 'xma-context'
+import type { Disposer } from 'xma-plugin'
 import type { LoadedSkill, SkillDefinition } from './contract.ts'
 
 function cloneSkill(skill: LoadedSkill): LoadedSkill {

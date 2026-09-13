@@ -5,37 +5,56 @@
  * 职责边界：Gate 只做静态契约检查，不能替代真实测试。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 
 const required = [
   'AGENTS.md',
+  'CODEMAP.md',
+  'docs/development/UPDATE-LOG.md',
+  'packages/xma-ai/package.json',
+  'packages/xma-agent-loop/package.json',
+  'packages/xma-plugin/package.json',
+  'packages/xma-tools/package.json',
+  'packages/xma-session/package.json',
+  'packages/xma-context/package.json',
+  'packages/xma-native/package.json',
+  'core/package.json',
+  'plugins/deepseek/package.json',
+  'plugins/native-tools/package.json',
+  'plugins/dsh-compat/package.json',
+  'agents/xiaoyu/package.json',
+  'agents/code/package.json',
   '.cargo/config.toml',
   'core/src/agent.ts',
-  'core/src/agent/contract.ts',
-  'core/src/agent/registry.ts',
-  'core/src/agent/delegation.ts',
+  'packages/xma-agent-loop/src/agent/contract.ts',
+  'packages/xma-agent-loop/src/agent/registry.ts',
+  'packages/xma-agent-loop/src/agent/delegation.ts',
   'core/src/skill/contract.ts',
   'core/src/skill/registry.ts',
   'core/src/skill/loader.ts',
-  'core/src/plugin.ts',
-  'core/src/runtime.ts',
-  'core/src/session/contract.ts',
-  'core/src/session/export.ts',
-  'core/src/context.ts',
+  'packages/xma-plugin/src/plugin.ts',
+  'packages/xma-agent-loop/src/runtime.ts',
+  'packages/xma-session/src/contract.ts',
+  'packages/xma-session/src/export.ts',
+  'packages/xma-context/src/assembly/context.ts',
   'core/src/workspace.ts',
-  'core/src/provider.ts',
-  'core/src/tool/schema.ts',
-  'core/src/tool/policy.ts',
-  'core/src/tool/router.ts',
-  'core/src/native.ts',
-  'plugins/providers/builtin.ts',
-  'plugins/providers/catalog.ts',
-  'plugins/providers/openai-compatible.ts',
-  'plugins/tools/native.ts',
+  'packages/xma-ai/src/provider/provider.ts',
+  'packages/xma-tools/src/schema.ts',
+  'packages/xma-tools/src/policy.ts',
+  'packages/xma-tools/src/router.ts',
+  'packages/xma-native/src/client.ts',
+  'plugins/deepseek/plugin.ts',
+  'plugins/deepseek/catalog.ts',
+  'packages/xma-ai/src/openai-compatible.ts',
+  'plugins/native-tools/contract.ts',
+  'plugins/native-tools/filesystem.ts',
+  'plugins/native-tools/process.ts',
+  'plugins/native-tools/plugin.ts',
   'apps/desktop/scripts/electron/build.ts',
   'apps/desktop/electron-builder.json',
   'apps/desktop/src-tauri/tauri.conf.json',
-  'plugins/compat/deepseek-harness/index.ts',
+  'plugins/dsh-compat/index.ts',
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
   'docs/architecture/PROJECT-ARCHITECTURE.md',
@@ -50,8 +69,8 @@ const required = [
   'docs/development/UPSTREAM-REFERENCE.md',
   'scripts/gates/naming.ts',
   'docs/security/NATIVE-CAPABILITIES.md',
-  'agents/xiaoyu/agent.ts',
-  'agents/code/agent.ts',
+  'agents/xiaoyu/runtime/agent.ts',
+  'agents/code/runtime/agent.ts',
   'skills/common/task-planning/SKILL.md',
   'skills/common/task-planning/skill.json',
   'skills/common/verification/SKILL.md',
@@ -83,7 +102,7 @@ for (const marker of [
 
 
 const directoryDoc = readFileSync('docs/architecture/DIRECTORY-STRUCTURE.md', 'utf8')
-for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'core/src/agent/contract.ts', 'core/src/skill/loader.ts', 'core/src/session/contract.ts', 'apps/desktop/scripts/electron/install-runtime.ts']) {
+for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'Feature Cluster Rule', 'Predictable Location Rule', 'Stable Import Rule', 'plugins/deepseek/', 'packages/xma-agent-loop/', 'CODEMAP.md', 'UPDATE-LOG.md']) {
   if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
 }
 const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
@@ -99,7 +118,7 @@ const agentPlatformDoc = readFileSync('docs/architecture/AGENT-PLATFORM.md', 'ut
 for (const marker of ['Xiaoyu Manager', 'AgentDefinition', 'Skill', 'AgentTask', 'Host']) {
   if (!agentPlatformDoc.includes(marker)) throw new Error(`XMA Agent Platform architecture marker missing: ${marker}`)
 }
-const agentContract = readFileSync('core/src/agent/contract.ts', 'utf8')
+const agentContract = readFileSync('packages/xma-agent-loop/src/agent/contract.ts', 'utf8')
 for (const marker of ['AgentDefinition', 'AgentBrainCapability', 'AgentDelegationPolicy', 'AgentDeliveryPolicy']) {
   if (!agentContract.includes(marker)) throw new Error(`XMA Agent Platform core marker missing: ${marker}`)
 }
@@ -107,7 +126,7 @@ const skillRegistry = readFileSync('core/src/skill/registry.ts', 'utf8')
 for (const marker of ['class SkillRegistry', 'resolveForAgent', 'createAgentSkillContextSource', "id: 'agent/skills'", 'Canonical Chinese self-name: 小鱼']) {
   if (!skillRegistry.includes(marker)) throw new Error(`XMA Skill Platform core marker missing: ${marker}`)
 }
-const delegationSource = readFileSync('core/src/agent/delegation.ts', 'utf8')
+const delegationSource = readFileSync('packages/xma-agent-loop/src/agent/delegation.ts', 'utf8')
 for (const marker of ['AgentTask', 'AgentDelegationService', 'cannot delegate tasks']) {
   if (!delegationSource.includes(marker)) throw new Error(`XMA Agent delegation marker missing: ${marker}`)
 }
@@ -125,39 +144,41 @@ for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Pro
 }
 
 
-const contextSource = readFileSync('core/src/context.ts', 'utf8')
+const contextSource = readFileSync('packages/xma-context/src/assembly/context.ts', 'utf8')
 for (const marker of ['class ContextRegistry', 'maxCharacters', 'sha256', 'sourceId', 'workspaceAccess', 'authorizeWorkspaceAccess']) {
   if (!contextSource.includes(marker)) throw new Error(`XMA Context architecture marker missing: ${marker}`)
 }
-const sessionSource = readFileSync('core/src/session/contract.ts', 'utf8')
+const sessionSource = readFileSync('packages/xma-session/src/contract.ts', 'utf8')
 for (const marker of ["type: 'context/snapshot'", 'contextDigest', 'requestContextForStep', 'requestMessagesForStep', 'providerContinuation', "type: 'workspace/access-granted'", "type: 'workspace/access-revoked'", "type: 'workspace/access-used'"]) {
   if (!sessionSource.includes(marker)) throw new Error(`XMA Session reconstruction marker missing: ${marker}`)
 }
-const workspaceSource = readFileSync('core/src/workspace.ts', 'utf8')
-for (const marker of ['class WorkspaceRegistry', 'WorkspaceBinding', 'descriptorDigest', 'bindOwned', 'verifyBinding', 'class WorkspaceToolSecurityGuard']) {
+const workspaceSource = readFileSync('packages/xma-context/src/workspace/workspace.ts', 'utf8')
+for (const marker of ['class WorkspaceRegistry', 'WorkspaceBinding', 'descriptorDigest', 'bindOwned', 'verifyBinding']) {
   if (!workspaceSource.includes(marker)) throw new Error(`XMA Workspace core marker missing: ${marker}`)
 }
-const exportSource = readFileSync('core/src/session/export.ts', 'utf8')
+const workspaceGuardSource = readFileSync('packages/xma-tools/src/workspace-guard.ts', 'utf8')
+if (!workspaceGuardSource.includes('class WorkspaceToolSecurityGuard')) throw new Error('XMA Workspace Tool Guard marker missing')
+const exportSource = readFileSync('packages/xma-session/src/export.ts', 'utf8')
 for (const marker of ['SessionExportEnvelope', 'redacted: boolean', 'SessionMigrationRegistry', 'delete clone.providerContinuation']) {
   if (!exportSource.includes(marker)) throw new Error(`XMA Session export/migration marker missing: ${marker}`)
 }
-const providerSource = readFileSync('core/src/provider.ts', 'utf8')
+const providerSource = readFileSync('packages/xma-ai/src/provider/provider.ts', 'utf8')
 for (const marker of ['ProviderRegistry', 'ProviderCapabilities', 'CredentialReference', 'BrainReadyProbeResult', 'ProviderRequestError', 'providerId']) {
   if (!providerSource.includes(marker)) throw new Error(`XMA Provider architecture marker missing: ${marker}`)
 }
-const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', 'utf8')
+const providerAdapter = readFileSync('packages/xma-ai/src/openai-compatible.ts', 'utf8')
 for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(', 'provider-continuation', 'reasoning_content', 'reasoningContentToolContinuation', 'createToolWireCodec', 'TOOL_WIRE_NAME_PATTERN']) {
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
 }
-const providerCatalog = readFileSync('plugins/providers/catalog.ts', 'utf8')
+const providerCatalog = readFileSync('plugins/deepseek/catalog.ts', 'utf8')
 for (const marker of ['DEEPSEEK_PROVIDER_ID', 'CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID', 'https://api.deepseek.com', 'modelCatalogDiscovery', 'thinkingMode', 'reasoningContentToolContinuation', 'toolProbeThinkingMode']) {
   if (!providerCatalog.includes(marker)) throw new Error(`XMA Provider Catalog marker missing: ${marker}`)
 }
-const toolsSource = readFileSync('core/src/tool/router.ts', 'utf8')
+const toolsSource = readFileSync('packages/xma-tools/src/router.ts', 'utf8')
 for (const marker of ['class ToolPlan', 'class ToolRouter', 'createPlan()', 'validateToolArguments', 'dispatchMany', 'Workspace-scoped tool requires a bound Session Workspace', 'Cross-workspace tool access requires durable Workspace access auditing']) {
   if (!toolsSource.includes(marker)) throw new Error(`XMA ToolPlan architecture marker missing: ${marker}`)
 }
-const policySource = readFileSync('core/src/tool/policy.ts', 'utf8')
+const policySource = readFileSync('packages/xma-tools/src/policy.ts', 'utf8')
 for (const marker of ['DefaultToolPolicy', 'ToolSecurityGuard', 'ToolApprovalProvider', 'allow-session']) {
   if (!policySource.includes(marker)) throw new Error(`XMA Tool Policy architecture marker missing: ${marker}`)
 }
@@ -170,11 +191,16 @@ for (const marker of ['Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 
   if (!cliTuiSource.includes(marker)) throw new Error(`XMA CLI Provider failure-containment marker missing: ${marker}`)
 }
 
-const nativeBridge = readFileSync('core/src/native.ts', 'utf8')
+const nativeBridge = readFileSync('packages/xma-native/src/client.ts', 'utf8')
 for (const marker of ['NativeCapabilityKind', 'NativeHostPolicy', 'issueCapability', 'runProcess', 'shell: false', '绝对可执行文件身份白名单']) {
   if (!nativeBridge.includes(marker)) throw new Error(`XMA Native bridge marker missing: ${marker}`)
 }
-const nativeTools = readFileSync('plugins/tools/native.ts', 'utf8')
+const nativeTools = [
+  'plugins/native-tools/contract.ts',
+  'plugins/native-tools/filesystem.ts',
+  'plugins/native-tools/process.ts',
+  'plugins/native-tools/plugin.ts',
+].map(path => readFileSync(path, 'utf8')).join('\n')
 for (const marker of ['native.fs.read_text', 'native.fs.write_text', 'native.process.run', 'issueCapability', 'programs: [program]', 'workspaceAccess', 'workspaceId']) {
   if (!nativeTools.includes(marker)) throw new Error(`XMA Native tool marker missing: ${marker}`)
 }
@@ -186,11 +212,11 @@ const nativeRuntime = readFileSync('native/runtime/src/main.rs', 'utf8')
 for (const marker of ['configure_policy', 'take_capability', 'fs::canonicalize', 'canonicalize_program', 'Command::new', 'process/run', 'absolute executable path']) {
   if (!nativeRuntime.includes(marker)) throw new Error(`XMA Native runtime security marker missing: ${marker}`)
 }
-const runtimeSource = readFileSync('core/src/runtime.ts', 'utf8')
+const runtimeSource = readFileSync('packages/xma-agent-loop/src/runtime.ts', 'utf8')
 if (runtimeSource.includes('chat/completions') || runtimeSource.includes('Authorization')) {
   throw new Error('XMA Core Runtime must not contain provider-specific HTTP/auth protocol details')
 }
-const modelSource = readFileSync('core/src/model.ts', 'utf8')
+const modelSource = readFileSync('packages/xma-ai/src/model/model.ts', 'utf8')
 for (const marker of ['providerContinuation', "type: 'provider-continuation'"]) {
   if (!modelSource.includes(marker)) throw new Error(`XMA Model provider-continuation marker missing: ${marker}`)
 }
@@ -198,7 +224,7 @@ if (modelSource.includes('chat/completions') || modelSource.includes('x-api-key'
   throw new Error('XMA model Contract must remain provider-neutral')
 }
 
-const agents = readFileSync('core/src/agent.ts', 'utf8')
+const agents = readFileSync('packages/xma-agent-loop/src/legacy-run-agent.ts', 'utf8')
 if (!agents.includes('provider.stream') || !agents.includes('createPlan()') || !agents.includes('createRouter()')) {
   throw new Error('XMA Agent Loop must remain Model -> frozen ToolPlan/Router -> Observation -> Model')
 }
@@ -213,9 +239,155 @@ for (const marker of ['Everything is a Plugin', 'xma-plugin', 'xma-plugin-dsh', 
   if (!pluginDoc.includes(marker)) throw new Error(`XMA Plugin architecture marker missing: ${marker}`)
 }
 
-const compat = readFileSync('plugins/compat/deepseek-harness/index.ts', 'utf8')
+const compat = readFileSync('plugins/dsh-compat/index.ts', 'utf8')
 for (const marker of ['inject', 'apply(context']) if (!compat.includes(marker)) throw new Error(`DeepSeek Harness compatibility marker missing: ${marker}`)
 
+
+
+const platformPackages = [
+  'xma-ai',
+  'xma-agent-loop',
+  'xma-plugin',
+  'xma-tools',
+  'xma-session',
+  'xma-context',
+  'xma-native',
+] as const
+for (const name of platformPackages) {
+  const packageFile = `packages/${name}/package.json`
+  const manifest = JSON.parse(readFileSync(packageFile, 'utf8')) as { name?: string; exports?: Record<string, string> }
+  if (manifest.name !== name) throw new Error(`XMA platform package name mismatch: ${packageFile}`)
+  if (!manifest.exports?.['.']) throw new Error(`XMA platform package must expose a public root entry: ${packageFile}`)
+}
+
+const workspaceManifests = [
+  ...platformPackages.map(name => `packages/${name}/package.json`),
+  'core/package.json',
+  'agents/xiaoyu/package.json',
+  'agents/code/package.json',
+  'plugins/deepseek/package.json',
+  'plugins/native-tools/package.json',
+  'plugins/dsh-compat/package.json',
+  'apps/cli/package.json',
+]
+for (const packageFile of workspaceManifests) {
+  const manifest = JSON.parse(readFileSync(packageFile, 'utf8')) as {
+    name?: string
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+    peerDependencies?: Record<string, string>
+  }
+  const declared = {
+    ...(manifest.dependencies ?? {}),
+    ...(manifest.devDependencies ?? {}),
+    ...(manifest.peerDependencies ?? {}),
+  }
+  for (const [dependency, version] of Object.entries(declared)) {
+    if ((dependency.startsWith('xma-') || dependency.startsWith('@xma/')) && version !== 'workspace:*') {
+      throw new Error(`XMA workspace dependency must use workspace:*: ${packageFile} -> ${dependency}=${version}`)
+    }
+  }
+}
+
+const workspaceRoots = [
+  ...platformPackages.map(name => `packages/${name}`),
+  'core',
+  'agents/xiaoyu',
+  'agents/code',
+  'plugins/deepseek',
+  'plugins/native-tools',
+  'plugins/dsh-compat',
+  'apps/cli',
+]
+for (const root of workspaceRoots) {
+  const packageFile = `${root}/package.json`
+  const manifest = JSON.parse(readFileSync(packageFile, 'utf8')) as {
+    name?: string
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+    peerDependencies?: Record<string, string>
+  }
+  const declared = new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+    ...Object.keys(manifest.peerDependencies ?? {}),
+  ])
+  for (const path of walkTypeScript(root)) {
+    const source = readFileSync(path, 'utf8')
+    for (const match of source.matchAll(/(?:from\s+|import\s*\()\s*['"]([^'"]+)['"]/g)) {
+      const specifier = match[1]!
+      const dependency = specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0]!
+      if (!(dependency.startsWith('xma-') || dependency.startsWith('@xma/'))) continue
+      if (dependency === manifest.name) continue
+      if (!declared.has(dependency)) {
+        throw new Error(`XMA workspace ghost dependency: ${packageFile} imports ${dependency} in ${path} but does not declare it`)
+      }
+    }
+  }
+}
+
+const forbiddenLegacyDirectories = [
+  'plugins/providers',
+  'plugins/tools',
+  'plugins/compat',
+  'plugins/examples',
+]
+for (const path of forbiddenLegacyDirectories) {
+  if (existsSync(path)) throw new Error(`XMA plugin ownership regression: legacy directory must stay removed: ${path}`)
+}
+
+const coreFacadeChecks: readonly [string, string][] = [
+  ['core/src/model.ts', "from 'xma-ai'"],
+  ['core/src/provider.ts', "from 'xma-ai'"],
+  ['core/src/plugin.ts', "from 'xma-plugin'"],
+  ['core/src/runtime.ts', "from 'xma-agent-loop'"],
+  ['core/src/context.ts', "from 'xma-context'"],
+  ['core/src/native.ts', "from 'xma-native'"],
+  ['core/src/session/contract.ts', "from 'xma-session'"],
+  ['core/src/tool/router.ts', "from 'xma-tools'"],
+]
+for (const [path, marker] of coreFacadeChecks) {
+  const source = readFileSync(path, 'utf8')
+  if (!source.includes(marker) || source.split('\n').length > 12) {
+    throw new Error(`XMA core compatibility facade must remain thin: ${path}`)
+  }
+}
+
+function walkTypeScript(dir: string): string[] {
+  const files: string[] = []
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name)
+    const stat = statSync(path)
+    if (stat.isDirectory()) {
+      if (['node_modules', '.cache', 'dist', 'build'].includes(name)) continue
+      files.push(...walkTypeScript(path))
+    } else if (name.endsWith('.ts') || name.endsWith('.tsx')) files.push(path)
+  }
+  return files
+}
+for (const root of ['apps', 'agents', 'core', 'packages', 'plugins']) {
+  for (const path of walkTypeScript(root)) {
+    const source = readFileSync(path, 'utf8')
+    for (const match of source.matchAll(/(?:from\s+|import\s*\()\s*['"]([^'"]+)['"]/g)) {
+      const specifier = match[1]!
+      if (specifier.startsWith('../../')) {
+        throw new Error(`XMA Stable Import Rule: deep relative import is forbidden: ${path} -> ${specifier}`)
+      }
+      if (/^xma-[^/]+\/src\//.test(specifier)) {
+        throw new Error(`XMA Stable Import Rule: package internal src import is forbidden: ${path} -> ${specifier}`)
+      }
+    }
+  }
+}
+
+const codeMap = readFileSync('CODEMAP.md', 'utf8')
+for (const marker of ['packages/xma-agent-loop/', 'plugins/deepseek/', 'plugins/native-tools/', 'docs/development/UPDATE-LOG.md']) {
+  if (!codeMap.includes(marker)) throw new Error(`XMA CODEMAP marker missing: ${marker}`)
+}
+const updateLog = readFileSync('docs/development/UPDATE-LOG.md', 'utf8')
+for (const marker of ['##01', '##02', '##03', '##04', 'Platform Skeleton v1', 'Stable Imports', 'Platform Skeleton 源码归位']) {
+  if (!updateLog.includes(marker)) throw new Error(`XMA UPDATE-LOG marker missing: ${marker}`)
+}
 
 const cargoConfig = readFileSync('.cargo/config.toml', 'utf8')
 if (!cargoConfig.includes('target-dir = ".cache/cargo-target"')) {

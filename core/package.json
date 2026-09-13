@@ -1,0 +1,24 @@
+{
+  "name": "xma-core-compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "xma-agent-loop": "workspace:*",
+    "xma-ai": "workspace:*",
+    "xma-context": "workspace:*",
+    "xma-native": "workspace:*",
+    "xma-plugin": "workspace:*",
+    "xma-session": "workspace:*",
+    "xma-tools": "workspace:*"
+  },
+  "devDependencies": {
+    "xma-agent-code": "workspace:*",
+    "xma-agent-xiaoyu": "workspace:*",
+    "xma-plugin-dsh": "workspace:*",
+    "xma-plugin-native-tools": "workspace:*"
+  }
+}

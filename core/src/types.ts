@@ -1,12 +1,9 @@
 /**
- * 文件作用：定义 XMA Core 内最基础、最稳定的公共类型。
- * 关联模块：plugin.ts、agent.ts、model.ts、tool/router.ts、workspace.ts。
- * 当前实现：JSON 值、释放函数、服务键等最小类型。
- * 职责边界：不要在这里加入 Minecraft、Writer 或具体厂商模型类型。
+ * 文件作用：保留旧 Core 通用类型入口，转发到拥有真实 Contract 的稳定 package。
+ * 关联模块：xma-ai、xma-plugin、core/src/index.ts。
+ * 当前实现：只导出历史公开类型别名。
+ * 职责边界：禁止把新的跨域类型继续堆回 core/types。
+ * @deprecated 新代码必须直接使用对应稳定 package 公共入口。
  */
-
-export type JsonPrimitive = string | number | boolean | null
-export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue }
-export type JsonObject = { [key: string]: JsonValue }
-export type Disposer = () => void | Promise<void>
-export type ServiceKey = string
+export type { JsonPrimitive, JsonValue, JsonObject } from 'xma-ai'
+export type { Disposer, ServiceKey } from 'xma-plugin'

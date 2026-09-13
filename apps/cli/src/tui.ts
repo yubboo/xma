@@ -10,7 +10,7 @@ import path from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
-import type { ToolApprovalDecision, ToolApprovalRequest } from '../../../core/src/tool/policy.ts'
+import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
 
 const ESC = '\u001b['

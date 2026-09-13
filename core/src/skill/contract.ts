@@ -5,7 +5,7 @@
  * 职责边界：Skill 不是 Plugin/Tool，也不保存 Secret、Session 或模型厂商配置；真正程序能力必须由 Tool/Plugin 提供。
  */
 
-import type { AgentBrainCapability } from '../agent/contract.ts'
+import type { AgentBrainCapability } from 'xma-agent-loop'
 
 export interface SkillRequirements {
   tools?: readonly string[]

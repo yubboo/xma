@@ -13,37 +13,23 @@ import { homedir, platform } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
-import {
-  AgentRegistry,
-  AgentRuntime,
-  ContextRegistry,
-  CompositeCredentialResolver,
-  EnvironmentCredentialResolver,
-  JsonlSessionStore,
-  ProviderRegistry,
-  SkillLoader,
-  SkillRegistry,
-  StdioNativeClient,
-  ToolRegistry,
-  WorkspaceRegistry,
-  createAgentSkillContextSource,
-  type CredentialStoreStatus,
-  type Disposer,
-  type NativeRuntimeStatus,
-  type RuntimeLiveEvent,
-  type ToolApprovalProvider,
-} from '../../../core/src/index.ts'
-import { NativeCredentialStore } from '../../../plugins/providers/credentials.ts'
+import { AgentRegistry, AgentRuntime, type RuntimeLiveEvent } from 'xma-agent-loop'
+import { CompositeCredentialResolver, EnvironmentCredentialResolver, OpenAiCompatibleAdapter, ProviderRegistry, type CredentialStoreStatus } from 'xma-ai'
+import { ContextRegistry, WorkspaceRegistry } from 'xma-context'
+import { NativeCredentialStore, StdioNativeClient, type NativeRuntimeStatus } from 'xma-native'
+import type { Disposer } from 'xma-plugin'
+import { JsonlSessionStore } from 'xma-session'
+import { ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
+import { SkillLoader, SkillRegistry, createAgentSkillContextSource } from 'xma-core-compat'
 import {
   CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
   builtinProviderCatalogEntry,
   listBuiltinProviderCatalog,
   providerCatalogDisplayName,
-} from '../../../plugins/providers/catalog.ts'
-import { OpenAiCompatibleAdapter } from '../../../plugins/providers/openai-compatible.ts'
-import { registerNativeTools } from '../../../plugins/tools/native.ts'
-import { codeAgent } from '../../../agents/code/agent.ts'
-import { xiaoyuAgent } from '../../../agents/xiaoyu/agent.ts'
+} from 'xma-plugin-deepseek'
+import { registerNativeTools } from 'xma-plugin-native-tools'
+import { codeAgent } from 'xma-agent-code'
+import { xiaoyuAgent } from 'xma-agent-xiaoyu'
 import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalAgentMode, type TerminalBackend, type TerminalReasoningEffort } from './tui.ts'
 import { TerminalBrainStore, osCredentialKey, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 

@@ -33,7 +33,7 @@ Professional Agents
 
 ## 3. AgentDefinition
 
-`core/src/agent/contract.ts` 是 Agent 身份的单一 Core Contract。AgentDefinition 至少表达：
+`packages/xma-agent-loop/src/agent/contract.ts` 是 Agent 身份的单一 Core Contract。AgentDefinition 至少表达：
 
 - stable `id/name/version`；
 - `manager | specialist` kind；
@@ -102,7 +102,7 @@ code/testing
 
 ## 6. Task / Delegation
 
-Multi-Agent 不能靠几个 Agent 随意互发字符串。`core/src/agent/delegation.ts` 定义第一版 `AgentTask`：
+Multi-Agent 不能靠几个 Agent 随意互发字符串。`packages/xma-agent-loop/src/agent/delegation.ts` 定义第一版 `AgentTask`：
 
 - requester（user / agent）；
 - assigned Agent；

@@ -98,7 +98,7 @@ XMA 对应：
 XMA 对应：
 
 - `xma-plugin`
-- `xma-plugin-dsh`
+- `xma-plugin-dsh`（兼容插件 package 名，物理位置 `plugins/dsh-compat/`，不等于新的 Platform Core 目录）
 - Capability graph
 - Plugin lifecycle
 
@@ -189,27 +189,26 @@ MCHA 继续作为“模型决策 → 工具执行 → Observation → 同一模�
 xma-<capability>
 ```
 
-首批核心包建议：
+Platform Skeleton v1 首批核心包已经落地：
 
 ```text
 packages/
 ├─ xma-agent-loop/      # Agent Turn/Step/Tool loop
 ├─ xma-ai/              # Model / Provider / streaming abstraction
 ├─ xma-plugin/          # Plugin Context / Service / Event / Effect / lifecycle
-├─ xma-session/         # Durable Session / event log / projection
 ├─ xma-tools/           # Tool definition / plan / router / policy facade
+├─ xma-session/         # Durable Session / event log / projection
+├─ xma-context/         # Context Assembly / Workspace identity / grant
 └─ xma-native/          # TypeScript ↔ Rust Kernel capability bridge
 ```
 
-第二批：
+后续只有进入真实开发阶段才创建：
 
 ```text
-packages/
-├─ xma-context/
-├─ xma-memory/
-├─ xma-task/
-├─ xma-subagent/
-└─ xma-workflow/
+xma-memory
+xma-task
+xma-subagent
+xma-workflow
 ```
 
 能力成熟后再增加：
@@ -221,7 +220,9 @@ xma-artifact
 xma-mcp
 xma-git
 xma-search
-xma-plugin-dsh
+
+# DSH compatibility 当前保持自包含插件：
+plugins/dsh-compat/   # workspace package name: xma-plugin-dsh
 ```
 
 ### 5.2 Package 的真正含义
@@ -484,6 +485,8 @@ Security Kernel
 
 ### Stage 0：文档与 Gate 先换轨
 
+**状态：已完成。** 文档/Gate 换轨后又完成 Platform Skeleton v1：首批 `xma-*` workspace package、插件按本体聚合、`core/` Compatibility Facade、`CODEMAP.md` 与 Stable Import Gate 已落地。这里不代表 Pi Agent Loop 的行为级吸收已完成。
+
 先更新架构规则，避免代码改到一半又被旧 Gate 判错。
 
 重点废除/修订：
@@ -508,9 +511,9 @@ Security Kernel
 迁移：
 
 ```text
-core/src/model.ts
-core/src/provider.ts
-core/src/runtime.ts
+packages/xma-ai/src/model/model.ts
+packages/xma-ai/src/provider/provider.ts
+packages/xma-agent-loop/src/runtime.ts
 ```
 
 逐步变成：
@@ -534,7 +537,7 @@ packages/xma-agent-loop/
 
 ### Stage 2：`xma-plugin`
 
-把现有 `core/src/plugin.ts` 升级成正式 Plugin Runtime：
+把现有 `packages/xma-plugin/src/plugin.ts` 升级成正式 Plugin Runtime：
 
 - Service Context；
 - inject；
@@ -544,7 +547,7 @@ packages/xma-agent-loop/
 - lifecycle；
 - plugin-owned capability registration。
 
-随后建设 `xma-plugin-dsh` Conformance。
+随后在 `plugins/dsh-compat/`（workspace package `xma-plugin-dsh`）建设 Conformance。
 
 ### Stage 3：`xma-tools` + Process/Shell
 

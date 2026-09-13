@@ -65,7 +65,7 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 ### 4.1 Agent / Skill Platform 硬规则（锁死）
 
 - 主 Xiaoyu 是 Manager Agent，长期负责计划、委派、跟踪和验收；专业 Agent 复用同一 AgentRuntime，不得复制平行内核。
-- AgentDefinition canonical Contract 位于 `core/src/agent/`；产品 Skill canonical Contract 位于 `core/src/skill/`，实际内容位于根 `skills/`。
+- AgentDefinition / Agent Registry / Delegation canonical Contract 位于 `packages/xma-agent-loop/`；产品 Skill 内容位于根 `skills/`，迁移期 Skill Loader/Registry 仍由 `core/` Compatibility Facade 承载，后续只允许继续迁出。
 - Skill 必须通过 Context Assembly 进入模型；动态 model-visible Skill/Agent 文本必须形成 durable Context Snapshot，禁止 UI 临时 state 偷偷注入。
 - Skill metadata 声明需要的 Tool/Brain capability；Agent 绑定不满足要求时必须 fail loud。
 - Multi-Agent 任务必须使用稳定 Task/Delegation Contract；禁止多个 Agent 依赖无法审计的随意字符串互聊。
@@ -83,7 +83,7 @@ XMA Plugin Runtime 同时支持两条路径：
 1. **XMA Native Plugin**：XMA 自己的稳定 Plugin Contract；
 2. **DeepSeek Harness / Cordis Compatibility**：以真实 DSH/Cordis 行为为兼容目标，不只模仿 API 外形。兼容分 Contract / Service / Package / Behavior 四级，并由 Conformance Tests 证明。
 
-兼容层不得让 Rust Kernel 依赖 DSH 内部源码。迁移期适配仍位于 `plugins/compat/deepseek-harness/`；稳定 package 目标为 `packages/xma-plugin-dsh/`。
+兼容层不得让 Rust Kernel 依赖 DSH 内部源码。当前兼容插件位于 `plugins/dsh-compat/`，对外 package 名为 `xma-plugin-dsh`；兼容必须由 Contract / Service / Package / Behavior 分级和 Conformance Test 证明。
 
 **Everything is a Plugin 不等于 Everything can bypass security。** 任何真实文件、进程、网络、系统副作用都必须走 `xma-tools / capability → Policy / Approval → xma-native → Rust Security Kernel`。插件不得用 Node `child_process`、无约束 `fs` 等方式绕过 Native policy。
 
@@ -101,7 +101,7 @@ XMA Plugin Runtime 同时支持两条路径：
 - `scripts/`：开发、同步、构建、发布、Gate；
 - `docs/`：架构、计划、规则、安全文档。
 
-首批稳定 package family：`xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-native`；第二批再进入 `xma-context`、`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`。
+Platform Skeleton v1 已建立：`xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-context`、`xma-native`。`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`、`xma-browser`、`xma-computer`、`xma-artifact` 只有进入真实开发阶段才允许创建，禁止空 package 占位。
 
 `xma-*` 表示 **XMA ownership of interface / source / test / release**，不表示必须从零发明内部实现。成熟上游已经解决的问题必须先研究再实现。普通 helper 仍留在所属 package 内，禁止把 Everything is a Plugin 误解成微包地狱。
 
@@ -120,7 +120,26 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - 顶层固定启动器 `XMA.bat`、`XMA-GitHub.bat`、`XMA-Sync.bat` 以及 Windows `xma-*.ps1` 属于稳定外部入口，保留既有产品前缀，不按父目录去重；
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
-当前已经达到分组规模并固定的结构包括：`core/src/agent/{contract,registry,delegation}.ts`、`core/src/skill/{contract,registry,loader}.ts`、`core/src/session/{contract,store,export}.ts`、`core/src/tool/{router,policy,schema}.ts`、`apps/desktop/scripts/electron/`、`scripts/gates/`。
+当前平台主要 ownership 已迁到：`packages/xma-agent-loop/`、`packages/xma-ai/`、`packages/xma-plugin/`、`packages/xma-tools/`、`packages/xma-session/`、`packages/xma-context/`、`packages/xma-native/`；插件按本体聚合在 `plugins/deepseek/`、`plugins/native-tools/`、`plugins/dsh-compat/`。`core/` 只允许 Compatibility Facade 与尚未迁出的薄层。
+
+### 6.2 目录可发现性与稳定导入（锁死）
+
+- **Predictable Location Rule**：看到能力名应能基本猜到主要目录；根 `CODEMAP.md` 必须实时维护“能力 → 目录”索引。
+- **Feature Cluster Rule**：模块内部按真实功能簇分类，例如 `provider/`、`streaming/`、`process/`、`filesystem/`、`persistence/`；禁止主要按 `classes/interfaces/helpers/utils` 分类。
+- **Shallow Structure Rule**：默认优先 `领域 / 功能簇 / 文件`；只有平台差异、独立生命周期或复杂子系统才允许继续加深，禁止无意义单文件目录链。
+- **Plugin Cohesion Rule**：一个插件优先完整共置在 `plugins/<plugin>/`；不得把同一个插件按 Provider/Tool/Context/Session 类型拆散到多个顶层目录。
+- 同一功能只有 1～3 个小文件时优先平铺；约 4～6 个稳定同类文件或出现真实子系统边界时再建功能目录。
+- 跨 `apps/`、`agents/`、`packages/`、`plugins/`、`core/` 的代码只允许通过稳定公共 package 名导入；禁止 `../../`、`../../../`、`../../../../` 等路径穿越感知另一 ownership 的物理位置。
+- package / plugin / agent 的公共入口必须由 `package.json -> exports` 暴露；依赖方必须用 `workspace:*` 声明依赖。禁止从 `xma-ai/src/...`、`xma-tools/src/...` 等内部路径偷穿 package 边界。
+- 同一 package 内允许 `./` 和必要的 `../` 短相对引用；出现 `../../` 应优先重新检查目录或 ownership。
+- `misc/`、`common/`、`helpers/`、`utils/` 不得成为大型垃圾桶目录。
+
+### 6.3 实时工程更新记录（锁死）
+
+- `docs/development/UPDATE-LOG.md` 是给后续 AI / 开发者恢复工程上下文的固定入口；每完成一批可独立说明的改动必须实时追加。
+- 条目编号只增不改，固定使用 `##01`、`##02`、`##03`……；每条至少说明：目的、当前架构、锁定规范、主要变更、验证状态与下一步。
+- UPDATE-LOG 不是 Git commit 或用户发行说明的替代品；它必须使用专业、直白、长期可理解的文件名和术语，禁止创建 AI 自己都难以解释的临时 Markdown 名称。
+- 目录 ownership、公共 package、Stable Import 或核心开发规则变化时，必须同步更新 `CODEMAP.md`、相关架构文档和 UPDATE-LOG。
 
 ## 7. 中文注释与文件说明（强制）
 
@@ -138,24 +157,26 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 开发前必须优先阅读：
 
 1. `AGENTS.md`
-2. `docs/architecture/PROJECT-ARCHITECTURE.md`
-3. `docs/architecture/AGENT-ENGINE-STRATEGY.md`
-4. `docs/architecture/DIRECTORY-STRUCTURE.md`
-5. `docs/architecture/LANGUAGE-OWNERSHIP.md`
-6. `docs/architecture/AGENT-RUNTIME.md`
-7. `docs/architecture/AGENT-PLATFORM.md`
-8. `docs/architecture/WORKSPACE.md`
-9. `docs/architecture/MODEL-PROVIDER.md`
-10. `docs/architecture/PLUGIN-SYSTEM.md`
-11. `docs/architecture/DESKTOP-RUNTIME.md`
-12. `docs/architecture/DESKTOP-WORKBENCH.md`
-13. `docs/architecture/DISTRIBUTION.md`
-14. `docs/development/DEVELOPMENT-RULES.md`
-15. `docs/development/DEVELOPMENT-PLAN.md`
-16. `docs/development/PROJECT-STATUS.md`
-17. `docs/development/UPSTREAM-REFERENCE.md`
-18. `docs/development/VERSIONING-AND-RELEASES.md`
-19. `docs/development/WINDOWS-WORKFLOW.md`
+2. `CODEMAP.md`
+3. `docs/development/UPDATE-LOG.md`
+4. `docs/architecture/PROJECT-ARCHITECTURE.md`
+5. `docs/architecture/AGENT-ENGINE-STRATEGY.md`
+6. `docs/architecture/DIRECTORY-STRUCTURE.md`
+7. `docs/architecture/LANGUAGE-OWNERSHIP.md`
+8. `docs/architecture/AGENT-RUNTIME.md`
+9. `docs/architecture/AGENT-PLATFORM.md`
+10. `docs/architecture/WORKSPACE.md`
+11. `docs/architecture/MODEL-PROVIDER.md`
+12. `docs/architecture/PLUGIN-SYSTEM.md`
+13. `docs/architecture/DESKTOP-RUNTIME.md`
+14. `docs/architecture/DESKTOP-WORKBENCH.md`
+15. `docs/architecture/DISTRIBUTION.md`
+16. `docs/development/DEVELOPMENT-RULES.md`
+17. `docs/development/DEVELOPMENT-PLAN.md`
+18. `docs/development/PROJECT-STATUS.md`
+19. `docs/development/UPSTREAM-REFERENCE.md`
+20. `docs/development/VERSIONING-AND-RELEASES.md`
+21. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 

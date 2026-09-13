@@ -1,0 +1,15 @@
+{
+  "name": "xma-agent-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "xma-ai": "workspace:*",
+    "xma-context": "workspace:*",
+    "xma-session": "workspace:*",
+    "xma-tools": "workspace:*"
+  }
+}

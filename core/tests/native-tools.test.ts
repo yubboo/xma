@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证 Native Tool Adapter 只通过 Capability Bridge 访问文件/进程，并受 ToolRouter Approval 约束。
- * 关联模块：plugins/tools/native.ts、core/src/native.ts、core/src/tool/router.ts、native/runtime。
+ * 关联模块：plugins/native-tools、core/src/native.ts、core/src/tool/router.ts、native/runtime。
  * 当前实现：最小 Capability scope、读工具直通、写工具 Approval、进程白名单注册条件与参数转发测试。
  * 职责边界：Fake NativeClient 只验证 TypeScript 桥接；路径真实 canonical confinement 和进程 enforcement 由 Rust Kernel 负责。
  */
@@ -21,7 +21,7 @@ import type {
 } from '../src/native.ts'
 import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
 import { ToolRegistry } from '../src/tool/router.ts'
-import { registerNativeTools } from '../../plugins/tools/native.ts'
+import { registerNativeTools } from 'xma-plugin-native-tools'
 
 class FakeNativeClient implements NativeClient {
   grants: NativeCapabilityGrant[] = []

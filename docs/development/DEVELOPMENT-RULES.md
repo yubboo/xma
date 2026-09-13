@@ -2,7 +2,7 @@
 
 ## 1. 每次开发前
 
-任何 AI / 开发者修改 XMA 前必须先读根 `AGENTS.md`，再按任务阅读架构、插件、版本、上游参考和 Windows Workflow 文档。
+任何 AI / 开发者修改 XMA 前必须先读根 `AGENTS.md`、`CODEMAP.md` 与 `docs/development/UPDATE-LOG.md`，先知道当前能力位置、最近一批工程变更和未完成边界，再按任务阅读架构、插件、版本、上游参考和 Windows Workflow 文档。
 
 涉及 Agent Runtime / Provider / Tool / Plugin / Session / Workspace 的非机械改动，必须至少阅读：
 
@@ -67,6 +67,12 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 - 同一逻辑的 types/constants/helpers 默认留在同一文件；只有不同职责、不同生命周期、不同安全边界或文件持续过大时再拆；
 - 一个只有单个实现文件的普通领域不应为了“整齐”新建文件夹；通常至少出现约 3 个稳定同领域文件才分组；
 - 已分组的 `agent/`、`skill/`、`session/`、`tool/`、Desktop `scripts/electron/` 和 `scripts/gates/` 不得退回重复长文件名；
+- **Feature Cluster Rule**：目录表达真实功能簇，不按 `types/utils/helpers/common` 这类语言语法或垃圾桶概念组织主要代码；同一功能簇文件数量/复杂度达到实际需要时再分目录；
+- **Predictable Location Rule**：看到能力名应基本能猜到主要目录；能力 ownership 变化必须同步更新根 `CODEMAP.md`；
+- **Shallow Structure Rule**：常规源码优先保持 `领域 / 功能簇 / 文件`，禁止为单个文件制造多层目录链；超过常规深度必须有平台差异、独立生命周期或复杂子系统理由；
+- **Plugin Cohesion Rule**：一个插件的 Provider/Tool/Context/Service/配置与生命周期优先共置在 `plugins/<plugin>/`，不得先按 capability type 把同一插件拆散；
+- **Stable Import Rule**：跨 `apps/agents/packages/plugins/core` ownership 只走稳定 package/public entry；禁止 `../../` 及更深路径穿越另一个 ownership，也禁止 `xma-*/src/...` 这种绕过 exports 的内部导入；同一模块内部只保留短 `./` 或必要单层 `../`；
+- Workspace package 依赖必须在对应 `package.json` 显式声明 `workspace:*`，禁止依赖 pnpm hoist 偶然可见；
 - 改名必须同时修复 import、脚本、文档、Gate 和测试，禁止留下兼容别名文件制造两套命名；
 - 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。 Naming Gate 只检查 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存和生成产物；第三方包命名不受 XMA 命名规则约束。
 

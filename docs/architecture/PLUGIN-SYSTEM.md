@@ -4,7 +4,7 @@
 
 XMA 正式采用 **Everything is a Plugin**：Provider、Tool、Context Source、Memory、Session Projection、Approval Policy、Sandbox Provider、Subagent、Workflow、Browser、Computer、Artifact、Search/MCP/Git、UI Extension、Telemetry 等能力默认经 Plugin / Capability seam 挂载。Agent Loop 只拥有最小稳定生命周期，不承载产品特例。
 
-长期插件 Runtime 归属 `packages/xma-plugin/`，其语义第一参考 DeepSeek Harness / Cordis：稳定 `ctx.<service>`、`inject`、`apply(ctx)`、effect/disposer、typed events、scope、mount/unmount/reload。当前 `core/src/plugin.ts` 与 `plugins/compat/deepseek-harness/` 是迁移期实现。
+插件 Runtime 已归属 `packages/xma-plugin/`，其语义第一参考 DeepSeek Harness / Cordis：稳定 `ctx.<service>`、`inject`、`apply(ctx)`、effect/disposer、typed events、scope、mount/unmount/reload。当前代码已经完成 Platform Skeleton ownership 迁移，但 `packages/xma-plugin/src/plugin.ts` 仍只是最小实现；`plugins/dsh-compat/` 也只代表基础 Contract seam，后续必须靠 Conformance Tests 逐级补齐。
 
 兼容目标分四级：Contract Compatible、Service Compatible、Package Compatible、Behavior Compatible。只有通过相应 Conformance Tests 才能宣称对应兼容等级。
 
@@ -115,7 +115,7 @@ XMA 以 DeepSeek Harness 当前 Cordis 插件约定为重要兼容目标，包�
 - plugin mount/unmount/reload；
 - Service registration 的可逆性。
 
-迁移期兼容适配固定放 `plugins/compat/deepseek-harness/`；通过 Contract/Service conformance 后，稳定兼容包目标为 `packages/xma-plugin-dsh/`。XMA 自身 Service 可以提供 DSH bridge，但 XMA Core 不 import DSH 私有包实现。
+DSH 兼容适配固定聚合在 `plugins/dsh-compat/`，当前 workspace package 名为 `xma-plugin-dsh`，它是一个自包含 compatibility plugin/realm，而不是新的 Platform Core 目录；是否未来升级成独立稳定 `packages/xma-*` 能力包只由真实第三方包兼容需求决定，不提前创建空包。XMA 自身 Service 可以提供 DSH bridge，但 XMA Core 不 import DSH 私有包实现。
 
 ## 9. 兼容性等级
 

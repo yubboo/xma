@@ -7,7 +7,7 @@
 
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentBrainCapability } from '../agent/contract.ts'
+import type { AgentBrainCapability } from 'xma-agent-loop'
 import type { LoadedSkill, SkillDefinition, SkillRequirements } from './contract.ts'
 
 const SKILL_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)+$/

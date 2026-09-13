@@ -12,7 +12,9 @@
 
 新的长期主线：`xma-ai + xma-agent-loop`（Pi 第一参考）→ `xma-plugin` / DSH compatibility → `xma-tools` + Process/Shell → Session/Context/Memory（DSH + MiMo）→ Task/Subagent/Workflow → Browser/Computer/Artifact。Model Intelligence Preservation 同时生效：强模型保留任务判断权，Skill 用于增强知识与方法，不替模型写死思考流程。
 
-当前批次只更新文档与 Gate，Runtime 大迁移尚未开始；因此下面“已实现的骨架证据”仍准确描述现有代码。正式战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`。
+Platform Skeleton v1 已进入源码：`xma-ai / xma-agent-loop / xma-plugin / xma-tools / xma-session / xma-context / xma-native` 成为稳定 workspace package，DeepSeek / Native Tools / DSH compatibility 按插件本体聚合，`core/` 已收缩为 Compatibility Facade。**这只完成 ownership/目录/稳定入口迁移，尚未开始 Pi Agent Loop 的行为级吸收或大规模 Runtime 语义重写。** 正式战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`，快速定位见根 `CODEMAP.md`，实时工程变更见 `docs/development/UPDATE-LOG.md`。
+
+Platform Skeleton v1 当前已完成本地收口验证：平台源码 targeted strict typecheck 通过；57 个可离线执行测试通过；9 项静态 Gate 通过。由于当前沙箱没有完整 pnpm/Electron/pi-tui/Rust 工具链，完整 `pnpm check`、TUI 依赖测试与 Cargo/Windows 实机验证仍以用户 Windows `[7] 全量检查` 为最终权威，不能用本地部分验证替代。
 
 ## 2. 已实现的骨架证据
 
@@ -70,7 +72,7 @@
 
 ## 3. 当前架构已确定但尚未完成的底层
 
-以下条目是现有 0.1.x 基线仍需补齐的能力；在架构 Pivot 后，它们会按 `xma-*` package 迁移主线重新排序，而不是继续无边界扩建单体 Core：
+以下条目是现有 0.1.x 基线仍需补齐的能力；Platform Skeleton 已把主要 ownership 迁到 `xma-*` packages，后续在这些稳定边界内继续实现，不再回流到单体 `core/`：
 
 - Session Store generation migration / fork（export/redaction/纯 migration Contract 已有第一版）；
 - system-message reconciliation / compaction（Context Assembly/durable snapshot 已有第一版）；
@@ -133,17 +135,17 @@ XMA 当前固定五条参考线：
 
 ## 7. 下一开发批次
 
-Agent/Skill Platform Foundation 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
+Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
 
-1. **Provider Catalog + DeepSeek Official 真实 E2E**：品牌/协议分离、多 Profile、DeepSeek 官方入口、真实 `/models`、`/model` 与强化 Probe 已落地；下一步先在用户 Windows 上验证 API Key → Credential Manager → 重启 → 动态 model catalog → text/tool round trip → 实际 Agent Turn，形成第一份真实品牌 Provider 证据；
-2. **OS Credentials 其余平台验收**：在 macOS Keychain / Linux Secret Service 分别完成真实写入→重启→读取→Probe→删除；
-3. **Process executable registry / absolute allowlist / Approval**：把已存在的 Rust `process.spawn` 安全链接到产品配置面，先支持明确绝对路径的 node/pnpm/git/cargo/python 等；
-4. **Workspace persistence + discovery**：repo/project metadata、Git identity、`AGENTS.md/CLAUDE.md` instructions discovery、显式 rebind/migration；
-5. **Xiaoyu Manager durable Task/Delegation**：Task Store、父子任务、状态、结果与验收，不做“多个 Agent 随意聊天”；
-6. **Xiaoyu Code 真闭环**：读规则 → 查代码 → 修改 → 运行测试 → 观察失败 → 再修 → Git diff/验证证据；
-7. **App Protocol Handler + process tree / PTY/ConPTY**，让 CLI/Desktop/Web/Server 继续共享一套 Runtime；
-8. **Plugin/Host Compatibility**：先选一个外部 Host 做完整 Adapter + conformance，再扩 Codex/Claude Code/DeepSeek Harness/Zcode；
-9. Code Agent 证明平台后，再增加 Minecraft/Writer/GameDev/Art 等真实专业 Agent，不提前创建空目录。
+1. **Pi Agent Engine 行为研究与 `xma-agent-loop` 吸收**：按固定 Pi commit 审阅真实 Agent Loop / streaming / tool execution / steering / follow-up / parallel execution 源码与测试；在不改变 Provider Truth Contract、Rust Security Kernel 的前提下，逐项替换当前简化 loop 语义；
+2. **`xma-ai` Provider seam 收敛 + DeepSeek Official 真实 E2E**：保留当前品牌/Profile/OS Credential/真实 catalog 与 Probe，先在用户 Windows 上形成 API Key → Credential Manager → 重启 → 动态 model catalog → text/tool round trip → 实际 Agent Turn 证据；
+3. **`xma-plugin` + DSH compatibility**：补 Service/Event/Effect/lifecycle transaction 与 conformance，不把 DSH 私有实现硬塞进 Core；
+4. **完整 Tool Surface / Process/Shell/Git**：把 Rust `process.spawn` 的安全能力接到真实 coding 工作面，完成 executable registry、Approval、取消/进程树等；
+5. **Session / Context / Memory**：在现有 `xma-session/xma-context` 上吸收 DSH/MiMo 的 compaction、reconstruction、checkpoint/memory 思路；
+6. **Task / Subagent / Workflow**：先建立 durable Task/Delegation/verification，再增加并行 specialist 与 deterministic workflow；
+7. **Xiaoyu Code 真闭环**：读规则 → 查代码 → 修改 → 运行测试 → 观察失败 → 再修 → Git diff/验证证据；
+8. **Browser / Computer / Artifact + Host Compatibility**：在通用 Agent Engine/Tool/Session 稳定后扩展；
+9. Code Agent 证明平台后，再增加 Minecraft/Writer/GameDev/Art 等真实专业 Agent；Minecraft 第一参考固定为 MCHA，不提前创建空目录。
 
 完整 Workbench UI 仍后置；现有 UI 参考继续由 `DESKTOP-WORKBENCH.md` 保存。
 

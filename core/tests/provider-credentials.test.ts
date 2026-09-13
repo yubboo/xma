@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { NativeClient } from '../src/native.ts'
-import { NativeCredentialStore } from '../../plugins/providers/credentials.ts'
+import { NativeCredentialStore } from 'xma-native'
 
 function fakeNative(overrides: Partial<NativeClient> = {}): NativeClient {
   return {

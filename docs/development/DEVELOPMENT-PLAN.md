@@ -4,9 +4,9 @@
 
 0.1.x 的目标不是把界面做得像一个完成品，而是让 XMA 成为**真正可持续工作的多 Provider Agent Platform**：真实模型能够持续多轮推理、调用受控工具、恢复 Session、操作 Workspace，并通过 Rust Native Kernel 安全执行本地副作用。
 
-2026-09-13 架构换轨后的主线固定为：**Docs/Gates → `xma-ai + xma-agent-loop` → `xma-plugin` + DSH compatibility → `xma-tools` + Process/Shell → `xma-session/xma-context/xma-memory` → `xma-task/xma-subagent/xma-workflow` → Browser/Computer/Artifact → 专业 Agent 扩展 → Desktop Workbench。**
+2026-09-13 架构换轨后的主线固定为：**Docs/Gates → Platform Skeleton v1 → `xma-ai + xma-agent-loop` 行为级吸收 → `xma-plugin` + DSH compatibility → `xma-tools` + Process/Shell → `xma-session/xma-context/xma-memory` → `xma-task/xma-subagent/xma-workflow` → Browser/Computer/Artifact → 专业 Agent 扩展 → Desktop Workbench。**
 
-现有 Stage A-D 代码与测试不是作废，而是迁移基线：逐步被新的 `xma-*` packages 吸收/桥接，直到 Host 全部切换后再收缩 legacy `core/`。
+现有 Stage A-D 代码与测试不是作废。Platform Skeleton v1 已把主要 Contract/Runtime ownership 归入新的 `xma-*` packages，并把 `core/` 收缩为 Compatibility Facade；下一步是在这些边界内吸收成熟上游行为，而不是继续搬目录。
 
 UI 当前只维持开发壳和 Host 通路验证，不提前投入复杂工作台细节。完整三栏布局目标见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
@@ -24,11 +24,12 @@ XMA 强制执行 Upstream-first / No Blind Reinvention：
 
 ## 2.1 2026-09-13 Agent Platform Architecture Pivot
 
-第一批只做文档/Gate 换轨，不在同一批偷偷重写 Runtime。随后依次执行：
+文档/Gate 换轨与 **Platform Skeleton v1** 已完成：稳定 package、插件 ownership、Compatibility Facade、CODEMAP、Stable Import Rule 已进入源码。这里的“完成”只指骨架/ownership，不代表 Pi/DSH/MiMo 行为吸收完成。后续依次执行：
 
 ```text
-Stage P1  xma-ai + xma-agent-loop
-Stage P2  xma-plugin + xma-plugin-dsh conformance
+Stage S0  Platform Skeleton v1                         DONE（目录/ownership/稳定入口）
+Stage P1  xma-ai + xma-agent-loop                    NEXT（Pi 行为级吸收）
+Stage P2  xma-plugin + DSH compatibility conformance
 Stage P3  xma-tools + Process/Shell/Git 完整工作面
 Stage P4  xma-session + xma-context + xma-memory
 Stage P5  xma-task + xma-subagent + xma-workflow
@@ -106,7 +107,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 - `EnvironmentCredentialResolver / MemoryCredentialResolver / CompositeCredentialResolver` 已实现请求时 Secret 解析；
 - `CredentialStore` + `NativeCredentialStore` 已增加 `os` CredentialReference；Rust Native Runtime 已实现 Windows Credential Manager、macOS Keychain、Linux Secret Service（存在 `secret-tool` 时）读/写/删 bridge；
 - Terminal Provider 默认使用掩码 API Key 输入 → OS Credentials → Profile 只存稳定别名；`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 身份并可同时保存多个独立 Profile；v1/v2 只作为显式迁移输入兼容读取；
-- `plugins/providers/catalog.ts` 已建立真实 Provider Catalog 第一版：只展示已实现产品路径的品牌，首个入口为 DeepSeek Official + 自定义 OpenAI-compatible；未实现品牌不画假卡片；
+- `plugins/deepseek/catalog.ts` 已建立真实 Provider Catalog 第一版：只展示已实现产品路径的品牌，首个入口为 DeepSeek Official + 自定义 OpenAI-compatible；未实现品牌不画假卡片；
 - DeepSeek Official 使用官方 endpoint preset，模型通过真实 `/models` 动态发现；`/model` 可切换当前 Profile 的真实 model ID，切换后重新 Probe；真实 Agent Turn 显式启用 thinking/high reasoning，并按协议要求 durable round-trip `reasoning_content` continuation，避免 Tool Result 回传后丢失模型推理上下文；当前 DeepSeek named/`required` tool choice 与 thinking 不兼容，因此确定性 Brain Ready Tool 子探针只在探针请求中关闭 thinking，实际 Agent Turn 不降级；
 - Profile 静态拒绝 `Authorization` / `X-Api-Key` 等 Secret-bearing Header；
 - `ProviderCapabilities / ModelDescriptor / ProviderRequestError / BrainReadyProbeResult` 已进入 Core；
@@ -165,12 +166,12 @@ Stage P6  Browser + Computer + Artifact capabilities
 
 ### 当前落地（本批次）
 
-- `core/src/tool/schema.ts`：模型参数在进入 Policy 前做最小 JSON Schema fail-loud 校验；
-- `core/src/tool/router.ts`：Registry → frozen ToolPlan → 同源 ToolRouter，模型 Schema 与可执行 Runtime 不漂移；
-- `core/src/tool/policy.ts`：standard/paranoid/auto、monotonic Guard、allow-once/allow-session/deny；
+- `packages/xma-tools/src/schema.ts`：模型参数在进入 Policy 前做最小 JSON Schema fail-loud 校验；
+- `packages/xma-tools/src/router.ts`：Registry → frozen ToolPlan → 同源 ToolRouter，模型 Schema 与可执行 Runtime 不漂移；
+- `packages/xma-tools/src/policy.ts`：standard/paranoid/auto、monotonic Guard、allow-once/allow-session/deny；
 - durable `tool/approval` 审计事件；
 - `parallel-safe` batch + `exclusive` barrier；
-- `core/src/native.ts` + `plugins/tools/native.ts`：TypeScript Capability Bridge 与 Native Tool Adapter；
+- `packages/xma-native/src/client.ts` + `plugins/native-tools/{filesystem,process,plugin}.ts`：TypeScript Capability Bridge 与按功能聚合的 Native Tool Adapter；
 - Rust Host Policy：Native 初始化时锁定最大 roots/programs/resource limits，后续 capability 只能申请子集；
 - Rust `filesystem.read` / `filesystem.write`：真实 canonical path confinement、大小硬上限、一次性 capability lease；
 - Rust `process.spawn`：Host Policy 只接受绝对可执行文件路径，Host/lease/execute 三阶段 canonical identity 核对；单次 lease 只下放本次程序；cwd confinement、argv 分离无 shell、超时与输出上限；
@@ -228,9 +229,9 @@ Stage P6  Browser + Computer + Artifact capabilities
 
 ### 当前落地（本批次）
 
-- `core/src/agent/contract.ts`：正式 `AgentDefinition`，包含 manager/specialist、Skills、Tools、Brain capability、Workspace、Memory、Delivery、Delegation Policy；
-- `core/src/agent/registry.ts`：不可变 Agent Registry 与基础一致性校验；
-- `core/src/agent/delegation.ts`：`AgentTask` 与 Manager delegation fail-closed Contract；
+- `packages/xma-agent-loop/src/agent/contract.ts`：正式 `AgentDefinition`，包含 manager/specialist、Skills、Tools、Brain capability、Workspace、Memory、Delivery、Delegation Policy；
+- `packages/xma-agent-loop/src/agent/registry.ts`：不可变 Agent Registry 与基础一致性校验；
+- `packages/xma-agent-loop/src/agent/delegation.ts`：`AgentTask` 与 Manager delegation fail-closed Contract；
 - `core/src/skill/contract.ts`：产品 Skill metadata；
 - `core/src/skill/loader.ts`：从 `skills/<domain>/<name>/skill.json + SKILL.md` 安全加载 canonical Skill；
 - `core/src/skill/registry.ts`：Agent↔Skill 绑定、Tool/Brain requirements 校验；
@@ -290,7 +291,7 @@ Windows/Linux/macOS 各自平台构建的资产至少完成：install → 新终
 
 ### 实现
 
-- 将现有 `core/src/plugin.ts` 渐进迁移到 `packages/xma-plugin/`；
+- 在已建立的 `packages/xma-plugin/` 边界内，把当前最小 Plugin Host 渐进补齐为完整 lifecycle/service/event/effect Runtime；
 - XMA Plugin scope/lifecycle transaction；
 - stable Service Registry；
 - typed event maps；

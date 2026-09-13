@@ -7,10 +7,11 @@
 ## 开工前
 
 1. 阅读 `AGENTS.md`。
-2. 阅读 `docs/architecture/PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PLUGIN-SYSTEM.md`。
-3. 阅读 `docs/development/DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`UPSTREAM-REFERENCE.md`。
-4. 若涉及 Terminal/安装/发布，额外阅读 `docs/architecture/DISTRIBUTION.md`、`WINDOWS-WORKFLOW.md` 与 `VERSIONING-AND-RELEASES.md`。
-5. 先判断修改属于 TypeScript Agent/业务层还是 Rust Native/Security 层；不允许语言职责漂移。
+2. 阅读根 `CODEMAP.md` 与 `docs/development/UPDATE-LOG.md`，先确认能力位置、最新工程批次和未完成边界。
+3. 阅读 `docs/architecture/PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PLUGIN-SYSTEM.md`。
+4. 阅读 `docs/development/DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`UPSTREAM-REFERENCE.md`。
+5. 若涉及 Terminal/安装/发布，额外阅读 `docs/architecture/DISTRIBUTION.md`、`WINDOWS-WORKFLOW.md` 与 `VERSIONING-AND-RELEASES.md`。
+6. 先判断修改属于 TypeScript Agent/业务层还是 Rust Native/Security 层；不允许语言职责漂移。
 
 ## 实施纪律
 
@@ -29,10 +30,12 @@
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
 - 命名遵循 XMA 统一规则：目录/TS 用小写 kebab-case，Rust 用 snake_case，`.` 只用于 test/config/d 等语义角色；普通名字 1～3 个核心词，父目录去重，同逻辑不碎拆，完成前运行 `pnpm gate:naming`。
+- 目录遵循 Feature Cluster / Predictable Location / Plugin Cohesion：适度分层、按真实功能聚合；能力 ownership 变化同步 `CODEMAP.md`。
+- 跨 `apps/agents/packages/plugins/core` ownership 只走稳定公共 package 入口，禁止 `../../` 及更深路径穿越，也禁止 `xma-*/src/...` 内部导入；workspace 依赖显式写 `workspace:*`。
 
 ## 完成前
 
 - 运行与变更面匹配的 typecheck/test/Gate；不能运行的检查要明确说明原因。
 - Provider/Native/跨平台能力没有真实 E2E 就不能宣称完成。
-- 修改架构时同步文档和 Gate。
+- 修改架构时同步文档和 Gate；目录/公共 package/Stable Import/阶段变化还必须追加 `UPDATE-LOG.md` 下一个 `##NN` 编号并更新 `CODEMAP.md`。
 - 未冻结 0.1.0 修正仍交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix/final/v2/new。

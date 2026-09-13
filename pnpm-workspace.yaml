@@ -1,5 +1,9 @@
 packages:
   - "apps/*"
+  - "agents/*"
+  - "packages/*"
+  - "plugins/*"
+  - "core"
 
 # pnpm 11 默认阻止依赖包执行 install/postinstall 脚本。
 # XMA 通用环境只需要 esbuild 的 Native Binary；Electron Runtime 由 XMA Desktop 安装器显式按需处理，

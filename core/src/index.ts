@@ -1,29 +1,19 @@
 /**
- * 文件作用：XMA Core 的统一公共导出入口。
- * 关联模块：apps/*、agents/*、plugins/*。
- * 当前实现：集中导出 Agent Runtime、Session、Model、Plugin、Tool、Workspace 与 App Protocol API。
- * 职责边界：上层应用尽量从本文件导入，减少对 Core 内部文件布局的耦合。
+ * 文件作用：XMA 0.1.x 迁移期 Compatibility Facade 公共入口。
+ * 关联模块：packages/xma-*、apps/*、仍待迁移的 Skill/App Protocol 模块。
+ * 当前实现：把已迁移平台能力转发到稳定 xma-* package，同时保留尚未迁移的兼容 API。
+ * 职责边界：新平台能力不得继续实现在 core/；core 只允许兼容转发与未迁移薄层。
  */
 
-export * from './agent.ts'
-export * from './agent/contract.ts'
-export * from './agent/registry.ts'
-export * from './agent/delegation.ts'
+export * from 'xma-agent-loop'
+export * from 'xma-ai'
+export * from 'xma-context'
+export * from 'xma-native'
+export * from 'xma-plugin'
+export * from 'xma-session'
+export * from 'xma-tools'
+
 export * from './app-protocol.ts'
-export * from './session/export.ts'
-export * from './provider.ts'
-export * from './context.ts'
-export * from './model.ts'
-export * from './native.ts'
-export * from './plugin.ts'
-export * from './runtime.ts'
-export * from './session/contract.ts'
-export * from './session/store.ts'
 export * from './skill/contract.ts'
 export * from './skill/loader.ts'
 export * from './skill/registry.ts'
-export * from './tool/router.ts'
-export * from './tool/policy.ts'
-export * from './tool/schema.ts'
-export * from './types.ts'
-export * from './workspace.ts'

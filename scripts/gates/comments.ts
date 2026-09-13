@@ -8,7 +8,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const roots = ['core/src', 'agents', 'plugins', 'apps/cli/src', 'apps/server/src', 'apps/desktop/src', 'apps/desktop/scripts', 'apps/desktop/src-tauri', 'native/protocol/src', 'native/runtime/src']
+const roots = ['core/src', 'packages', 'agents', 'plugins', 'apps/cli/src', 'apps/server/src', 'apps/desktop/src', 'apps/desktop/scripts', 'apps/desktop/src-tauri', 'native/protocol/src', 'native/runtime/src']
 const files: string[] = []
 function walk(dir: string): void {
   for (const name of readdirSync(dir)) {

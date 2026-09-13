@@ -1,6 +1,6 @@
 /**
  * 文件作用：管理 Xiaoyu Terminal 的 Brain/Provider 用户配置，并把非 Secret 配置转换为 Core Provider Profile。
- * 关联模块：main.ts、tui.ts、core/provider.ts、plugins/providers/openai-compatible.ts、Provider OS Credentials Service。
+ * 关联模块：main.ts、tui.ts、xma-ai、xma-plugin-deepseek、Provider OS Credentials Service。
  * 当前实现：多 Profile JSON Store、真实 Provider 品牌/Adapter 身份、模型选择、OS/环境变量凭据引用和旧版 XIAOYU_* 配置兼容。
  * 职责边界：本文件绝不持久化 API Key 等 Secret；brain.json 只保存 CredentialReference，Secret 必须由 Credentials Service 解析。
  */
@@ -8,10 +8,10 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { ProviderProfile } from '../../../core/src/provider.ts'
-import type { JsonObject } from '../../../core/src/types.ts'
-import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID } from '../../../plugins/providers/catalog.ts'
-import { OPENAI_COMPATIBLE_ADAPTER_ID } from '../../../plugins/providers/openai-compatible.ts'
+import type { ProviderProfile } from 'xma-ai'
+import type { JsonObject } from 'xma-ai'
+import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID } from 'xma-plugin-deepseek'
+import { OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
 
 export const BRAIN_CONFIG_FORMAT_VERSION = 3
 export const ENVIRONMENT_PROFILE_ID = 'environment'

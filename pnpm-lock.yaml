@@ -8,7 +8,6 @@ overrides:
   yauzl: ^3.3.1
 
 importers:
-
   .:
     devDependencies:
       '@types/node':
@@ -26,13 +25,47 @@ importers:
       vite:
         specifier: ^7.1.5
         version: 7.3.6(@types/node@24.13.4)(jiti@2.7.0)(tsx@4.23.13)
-
   apps/cli:
     dependencies:
       '@earendil-works/pi-tui':
         specifier: 0.74.0
         version: 0.74.0
-
+      xma-agent-loop:
+        specifier: workspace:*
+        version: link:../../packages/xma-agent-loop
+      xma-ai:
+        specifier: workspace:*
+        version: link:../../packages/xma-ai
+      xma-context:
+        specifier: workspace:*
+        version: link:../../packages/xma-context
+      xma-core-compat:
+        specifier: workspace:*
+        version: link:../../core
+      xma-native:
+        specifier: workspace:*
+        version: link:../../packages/xma-native
+      xma-plugin:
+        specifier: workspace:*
+        version: link:../../packages/xma-plugin
+      xma-session:
+        specifier: workspace:*
+        version: link:../../packages/xma-session
+      xma-tools:
+        specifier: workspace:*
+        version: link:../../packages/xma-tools
+      xma-plugin-deepseek:
+        specifier: workspace:*
+        version: link:../../plugins/deepseek
+      xma-plugin-native-tools:
+        specifier: workspace:*
+        version: link:../../plugins/native-tools
+      xma-agent-code:
+        specifier: workspace:*
+        version: link:../../agents/code
+      xma-agent-xiaoyu:
+        specifier: workspace:*
+        version: link:../../agents/xiaoyu
   apps/desktop:
     dependencies:
       '@tauri-apps/api':
@@ -48,10 +81,119 @@ importers:
       electron-builder:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.1.0)
-
   apps/server: {}
-
   apps/web: {}
+  agents/code:
+    dependencies:
+      xma-agent-loop:
+        specifier: workspace:*
+        version: link:../../packages/xma-agent-loop
+  agents/xiaoyu:
+    dependencies:
+      xma-agent-loop:
+        specifier: workspace:*
+        version: link:../../packages/xma-agent-loop
+  core:
+    dependencies:
+      xma-agent-loop:
+        specifier: workspace:*
+        version: link:../packages/xma-agent-loop
+      xma-ai:
+        specifier: workspace:*
+        version: link:../packages/xma-ai
+      xma-context:
+        specifier: workspace:*
+        version: link:../packages/xma-context
+      xma-native:
+        specifier: workspace:*
+        version: link:../packages/xma-native
+      xma-plugin:
+        specifier: workspace:*
+        version: link:../packages/xma-plugin
+      xma-session:
+        specifier: workspace:*
+        version: link:../packages/xma-session
+      xma-tools:
+        specifier: workspace:*
+        version: link:../packages/xma-tools
+    devDependencies:
+      xma-agent-code:
+        specifier: workspace:*
+        version: link:../agents/code
+      xma-agent-xiaoyu:
+        specifier: workspace:*
+        version: link:../agents/xiaoyu
+      xma-plugin-dsh:
+        specifier: workspace:*
+        version: link:../plugins/dsh-compat
+      xma-plugin-native-tools:
+        specifier: workspace:*
+        version: link:../plugins/native-tools
+  packages/xma-agent-loop:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../xma-ai
+      xma-context:
+        specifier: workspace:*
+        version: link:../xma-context
+      xma-session:
+        specifier: workspace:*
+        version: link:../xma-session
+      xma-tools:
+        specifier: workspace:*
+        version: link:../xma-tools
+  packages/xma-ai: {}
+  packages/xma-context: {}
+  packages/xma-native:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../xma-ai
+  packages/xma-plugin: {}
+  packages/xma-session:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../xma-ai
+      xma-context:
+        specifier: workspace:*
+        version: link:../xma-context
+      xma-tools:
+        specifier: workspace:*
+        version: link:../xma-tools
+  packages/xma-tools:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../xma-ai
+      xma-context:
+        specifier: workspace:*
+        version: link:../xma-context
+  plugins/deepseek:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../../packages/xma-ai
+      xma-plugin:
+        specifier: workspace:*
+        version: link:../../packages/xma-plugin
+  plugins/dsh-compat:
+    dependencies:
+      xma-plugin:
+        specifier: workspace:*
+        version: link:../../packages/xma-plugin
+  plugins/native-tools:
+    dependencies:
+      xma-ai:
+        specifier: workspace:*
+        version: link:../../packages/xma-ai
+      xma-native:
+        specifier: workspace:*
+        version: link:../../packages/xma-native
+      xma-tools:
+        specifier: workspace:*
+        version: link:../../packages/xma-tools
 
 packages:
 

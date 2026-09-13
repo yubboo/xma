@@ -60,13 +60,13 @@ packages/   稳定 xma-* Agent Platform packages
 core/       0.1.x compatibility facade / 尚未迁出的 Core
 agents/     Xiaoyu Manager / Code / 已实现专业 Agent
 skills/     XMA 产品级专业 Skill（SKILL.md + skill.json）
-plugins/    迁移期 Provider、Tool、Integration、兼容层与产品插件
+plugins/    具体 Provider/Tool/Compatibility/领域插件；按插件本体强内聚
 native/     Rust Native / Security / Performance Kernel
 scripts/    开发、同步、构建、发布、Gate
 docs/       架构、规则、计划、安全文档
 ```
 
-首批稳定包边界为 `xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-session`、`xma-tools`、`xma-native`；后续按能力成熟度加入 `xma-context`、`xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow`。逻辑上仍只有一个 XMA Runtime。
+Platform Skeleton v1 的首批稳定包边界为 `xma-agent-loop`、`xma-ai`、`xma-plugin`、`xma-tools`、`xma-session`、`xma-context`、`xma-native`；后续只在真实能力进入开发阶段时加入 `xma-memory`、`xma-task`、`xma-subagent`、`xma-workflow` 等，禁止空 package 占位。逻辑上仍只有一个 XMA Runtime。
 
 仓库根还允许 `.agents/`、`.codex/`、`.claude/` 和 `CLAUDE.md` 这类**开发者 AI 上下文**。它们不是产品 Runtime 目录，不保存用户会话、Workspace 或 Secret。
 
@@ -115,12 +115,12 @@ packages/
   xma-agent-loop/      Turn / Step / Tool loop
   xma-ai/              Model / Provider / streaming abstraction
   xma-plugin/          Context / Service / Event / Effect / lifecycle
-  xma-session/         durable Session / event log / projection
   xma-tools/           Tool definition / plan / router / policy facade
+  xma-session/         durable Session / event log / projection
+  xma-context/         Context Assembly / Workspace identity / grant
   xma-native/          TypeScript ↔ Rust capability bridge
 
-  # 第二阶段
-  xma-context/
+  # 进入真实开发阶段后再创建
   xma-memory/
   xma-task/
   xma-subagent/
@@ -129,7 +129,7 @@ packages/
 
 `xma-*` 表示 XMA 拥有稳定接口、源码、测试和发布责任，**不表示必须从零发明实现**。`xma-agent-loop` 第一参考 Pi Agent Core；`xma-ai` 第一参考 Pi AI；`xma-plugin` 第一参考 DeepSeek Harness/Cordis；Context/Memory/Task/Subagent/Workflow 重点研究 MiMo Code 与 DSH。完整策略见 `AGENT-ENGINE-STRATEGY.md`。
 
-0.1.x 采用兼容迁移：现有 `core/src/{runtime,provider,model,context,...}` 继续工作并逐步成为 facade/re-export；所有 Host 切到新 packages 之前不得一次性删除 Core。命名仍遵循短、可辨识、不重复父目录；Everything is a Plugin 不得演变成微包地狱。
+0.1.x 已完成 Platform Skeleton ownership 迁移：`core/src/{runtime,provider,model,context,native,session,tool,...}` 中已迁出的入口只保留 facade/re-export；Skill/App Protocol 等尚未迁出的薄层可以暂留，但 Core 只能缩小不能重新扩张。命名仍遵循短、可辨识、不重复父目录；Everything is a Plugin 不得演变成微包地狱。
 
 ## 6. Session 是事实源
 

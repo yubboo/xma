@@ -4,11 +4,11 @@
 
 XMA 的核心理念是 **Model is replaceable. Agent is ours.** Provider 层必须让 GPT、Claude、Gemini、DeepSeek、MiMo、本地模型和未来 Provider 可以替换，而不要求 Agent Loop 到处写 `if provider === ...`。
 
-当前 0.1.0 已落地第一版 Provider 平台 Contract：`core/src/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`plugins/providers/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family；`plugins/providers/catalog.ts` 把用户看到的真实 Provider 品牌与底层协议 Adapter 分离。首个品牌产品入口是 **DeepSeek Official**，使用官方 endpoint、OS Credentials 与动态 `/models`；它复用 OpenAI-compatible transport 的前提是目标官方 API 实际兼容，而不是因为品牌名相似。当前本地协议测试仍**不能**替代 DeepSeek 外部真实凭据 E2E，未取得真实 E2E 前不得宣称 Product Ready。
+当前 0.1.0 已落地第一版 Provider 平台 Contract：`packages/xma-ai/src/provider/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`packages/xma-ai/src/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family；`plugins/deepseek/catalog.ts` 把用户看到的真实 Provider 品牌与底层协议 Adapter 分离。首个品牌产品入口是 **DeepSeek Official**，使用官方 endpoint、OS Credentials 与动态 `/models`；它复用 OpenAI-compatible transport 的前提是目标官方 API 实际兼容，而不是因为品牌名相似。当前本地协议测试仍**不能**替代 DeepSeek 外部真实凭据 E2E，未取得真实 E2E 前不得宣称 Product Ready。
 
 ## 1.1 `xma-ai` 长期边界
 
-长期 Model/Provider/streaming 基础抽象归属 `packages/xma-ai/`；现有 `core/src/model.ts`、`core/src/provider.ts` 与 `plugins/providers/*` 在迁移期继续工作并逐步桥接。`xma-ai` 第一参考 **Pi AI** 的多 Provider、streaming 与统一消息/工具事件实现，同时必须保留 XMA 自己的 Provider Profile、OS Credential、Provider/Model Truth Contract、Brain Ready Probe 与品牌身份/协议 Adapter 分层。
+Model/Provider/streaming 基础抽象已经归属 `packages/xma-ai/`；具体品牌实现按插件本体聚合，DeepSeek 位于 `plugins/deepseek/`。Platform Skeleton 只完成 ownership 迁移，`xma-ai` 后续仍要以 **Pi AI** 为第一参考吸收成熟多 Provider、streaming 与统一消息/工具事件语义，同时保留 XMA 自己的 Provider Profile、OS Credential、Provider/Model Truth Contract、Brain Ready Probe 与品牌身份/协议 Adapter 分层。
 
 目标不是把所有厂商裁成最低公分母，而是建立统一基础事件后允许 Adapter 保留 provider-specific continuation、thinking、usage、tool semantics。上游实现只能作为成熟参考，实际外部 Provider Contract 仍以厂商当前官方协议与真实 E2E 为准。
 
@@ -37,11 +37,11 @@ ProviderDescriptor
 ## 2.1 当前代码落点（0.1.0）
 
 ```text
-core/src/model.ts                         统一 ModelRequest / ModelEvent / ModelProvider
-core/src/provider.ts                      Profile / Credential / Capability / Catalog / Registry / Probe
-plugins/providers/catalog.ts              真实 Provider 品牌目录 / preset；品牌身份与协议 Adapter 分离
-plugins/providers/openai-compatible.ts    第一条真实 HTTP/SSE transport family
-plugins/providers/builtin.ts              内建 Provider service 装配，不内置任何 Secret
+packages/xma-ai/src/model/model.ts                         统一 ModelRequest / ModelEvent / ModelProvider
+packages/xma-ai/src/provider/provider.ts                      Profile / Credential / Capability / Catalog / Registry / Probe
+plugins/deepseek/catalog.ts              真实 Provider 品牌目录 / preset；品牌身份与协议 Adapter 分离
+packages/xma-ai/src/openai-compatible.ts    第一条真实 HTTP/SSE transport family
+plugins/deepseek/plugin.ts              内建 Provider service 装配，不内置任何 Secret
 core/tests/provider-openai-compatible.test.ts
                                          本地协议级 Conformance 起点
 ```

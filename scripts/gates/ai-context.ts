@@ -9,6 +9,8 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const required = [
   'AGENTS.md',
+  'CODEMAP.md',
+  'docs/development/UPDATE-LOG.md',
   'CLAUDE.md',
   '.agents/README.md',
   '.agents/skills/xma-development/SKILL.md',
@@ -68,7 +70,7 @@ for (const marker of [
 }
 
 const agents = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['AGENT-ENGINE-STRATEGY.md', 'AGENT-RUNTIME.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.agents/skills/', '.codex/', '.claude/', 'Model-visible', 'Upstream-first', 'xma-agent-loop', 'Everything is a Plugin']) {
+for (const marker of ['AGENT-ENGINE-STRATEGY.md', 'AGENT-RUNTIME.md', 'MODEL-PROVIDER.md', 'DISTRIBUTION.md', 'UPSTREAM-REFERENCE.md', '.agents/skills/', '.codex/', '.claude/', 'Model-visible', 'Upstream-first', 'xma-agent-loop', 'Everything is a Plugin', 'CODEMAP.md', 'UPDATE-LOG.md']) {
   if (!agents.includes(marker)) throw new Error(`XMA AI Context Gate: AGENTS.md new architecture rule missing: ${marker}`)
 }
 

@@ -1,6 +1,6 @@
 /**
  * 文件作用：验证第一条 OpenAI-compatible Adapter 的统一 Provider Contract 与真实 HTTP/SSE 行为。
- * 关联模块：core/src/provider.ts、model.ts、plugins/providers/openai-compatible.ts。
+ * 关联模块：core/src/provider.ts、model.ts、packages/xma-ai/src/openai-compatible.ts。
  * 当前实现：Profile/Secret 边界、Model Catalog、Provider-safe Tool wire name 双向映射、文本/Reasoning/Tool Call/Usage、thinking continuation、取消、错误归一化和 Brain Ready Probe 测试。
  * 职责边界：这里使用本机 mock HTTP server 证明协议实现，不代表任何外部厂商已通过真实账号 E2E 或可被标记为产品 Ready。
  */
@@ -15,7 +15,7 @@ import {
   ProviderRequestError,
   type ProviderProfile,
 } from '../src/provider.ts'
-import { OpenAiCompatibleAdapter, OPENAI_COMPATIBLE_ADAPTER_ID } from '../../plugins/providers/openai-compatible.ts'
+import { OpenAiCompatibleAdapter, OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
 
 async function readJson(request: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []

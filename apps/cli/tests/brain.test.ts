@@ -10,8 +10,8 @@ import {
   osCredentialKey,
   profileToProvider,
 } from '../src/brain.ts'
-import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID, DEEPSEEK_PROVIDER_ID, builtinProviderCatalogEntry } from '../../../plugins/providers/catalog.ts'
-import { OPENAI_COMPATIBLE_ADAPTER_ID } from '../../../plugins/providers/openai-compatible.ts'
+import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID, DEEPSEEK_PROVIDER_ID, builtinProviderCatalogEntry } from 'xma-plugin-deepseek'
+import { OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
 
 function customProfileFields() {
   return { providerId: CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID, adapterId: OPENAI_COMPATIBLE_ADAPTER_ID }
