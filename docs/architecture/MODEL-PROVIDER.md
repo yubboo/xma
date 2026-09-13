@@ -62,7 +62,7 @@ Provider 产品层必须保证“用户配置什么真实模型，Xiaoyu 就由�
 
 当前 DeepSeek Catalog entry 使用官方 `https://api.deepseek.com`，通过真实 `/models` 获取账号当前可用 model ID；preset 中的默认模型只负责首次 Profile bootstrap，模型选择页随后以 API 返回结果为准。DeepSeek 的品牌身份始终保留为 `providerId = deepseek`，即使底层 transport 复用 OpenAI-compatible Adapter，也不会把用户看到的 Provider 伪装成“Generic OpenAI”。
 
-Terminal 支持多个 Provider Profile；DeepSeek 可分别保存“个人账号 / 工作账号”等独立 Profile。API Key 默认只写 OS Credentials，`brain.json` 保存稳定 Credential Reference。`/model` 从当前 Profile 的真实 model catalog 切换模型，切换后重新执行 Brain Ready Probe。DeepSeek preset 当前对**真实 Agent Turn**显式启用 thinking，并使用 high reasoning effort；这些请求参数属于 Provider Profile 的 Adapter option，不进入 Core Agent Loop。当前 DeepSeek API 在 thinking 模式下不接受 named/`required` `tool_choice`，因此 Brain Ready 的确定性 Tool Call 子探针会**仅在该探针请求中**关闭 thinking；这不是对实际 Agent Turn 的能力降级，外部真实验收仍必须覆盖 thinking + tools 的自然 Tool Call 闭环。
+Terminal 支持多个 Provider Profile；DeepSeek 可分别保存多个独立 Profile。API Key 默认只写 OS Credentials，`brain.json` 保存稳定 Credential Reference。品牌 Provider 首次配置主路径固定为 API Key → 真实 `/models` 模型选择 → 推理强度 → Brain Ready；`/model` 可再次切换当前 Profile 的真实 model catalog。DeepSeek 对**真实 Agent Turn**显式启用 thinking；reasoning effort 由用户在 `Default / high / max` 中选择并持久化为非 Secret Profile option，Default 表示不强制 `reasoning_effort`，由真实 Provider 决定默认强度。当前 DeepSeek API 在 thinking 模式下不接受 named/`required` `tool_choice`，因此 Brain Ready 的确定性 Tool Call 子探针会**仅在该探针请求中**关闭 thinking；这不是对实际 Agent Turn 的能力降级，外部真实验收仍必须覆盖 thinking + tools 的自然 Tool Call 闭环。
 
 ## 3. Provider Profile 与 Secret
 
@@ -197,7 +197,7 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 5. 记录 first-token / total latency、capability observation、usage availability；
 6. 返回结构化结果供 CLI/Desktop 展示。
 
-只有真实请求成功才能标记 Brain Ready。当前 OpenAI-compatible Adapter 的 `probe()` 会在声明相应 capability 时先读取真实 `/models` 并确认目标 model 存在，再执行最小 text request；若声明 native tool calling，还会执行一次确定性最小 Tool Call，并把 Tool Result 作为 observation 回给同一模型要求其继续响应。Provider 可以为**探针本身**声明最小兼容 override；DeepSeek 当前因为官方 API 不允许 thinking 模式与 named/`required` `tool_choice` 同时使用，Tool Call 子探针临时设为 `thinking: disabled`，但普通 text probe 与实际 Agent Turn 仍使用 Profile 的真实 thinking/high 配置。对于真实 DeepSeek thinking + tools Agent Turn，Adapter 会保存并回传协议要求的 `reasoning_content` continuation；Core 只看 opaque `providerContinuation`，不会把它当普通消息文本。Terminal 只在当前 `profileId + modelId` 的真实 Probe 成功后显示 Brain Ready；重启后首次实际发送会重新验证，而不是把“配置文件存在”当成 Ready。本地测试服务器只验证协议实现，不构成任何外部厂商 Ready 证据。
+只有真实请求成功才能标记 Brain Ready。当前 OpenAI-compatible Adapter 的 `probe()` 会在声明相应 capability 时先读取真实 `/models` 并确认目标 model 存在，再执行最小 text request；若声明 native tool calling，还会执行一次确定性最小 Tool Call，并把 Tool Result 作为 observation 回给同一模型要求其继续响应。Provider 可以为**探针本身**声明最小兼容 override；DeepSeek 当前因为官方 API 不允许 thinking 模式与 named/`required` `tool_choice` 同时使用，Tool Call 子探针临时设为 `thinking: disabled`，但普通 text probe 与实际 Agent Turn 仍使用 Profile 的真实 thinking 与用户选择的 reasoning effort 配置。对于真实 DeepSeek thinking + tools Agent Turn，Adapter 会保存并回传协议要求的 `reasoning_content` continuation；Core 只看 opaque `providerContinuation`，不会把它当普通消息文本。Terminal 只在当前 `profileId + modelId` 的真实 Probe 成功后显示 Brain Ready；重启后首次实际发送会重新验证，而不是把“配置文件存在”当成 Ready。本地测试服务器只验证协议实现，不构成任何外部厂商 Ready 证据。
 
 ## 11. Provider 实现顺序
 

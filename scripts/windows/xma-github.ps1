@@ -1,13 +1,16 @@
 ﻿<#
 文件作用：XMA GitHub 纯 Git 推送助手，只负责仓库安全检查、远端同步、提交和 Push。
 关联模块：XMA-GitHub.bat、.gitignore、yubboo/xma、GitHub Actions。
-当前实现：初始化/校正远端、Git 可提交文件安全扫描、禁止文件二次拦截、fetch/pull、commit、push。
+当前实现：拒绝源码包目录 Git 操作、初始化/校正长期工作目录远端、Git 可提交文件安全扫描、禁止文件二次拦截、fetch/pull、commit、push。
 职责边界：本脚本严禁安装依赖、下载运行时、执行 pnpm install/cargo fetch 或修改开发环境；代码编译测试由开发控制台和 GitHub Actions 负责。
 #>
 
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RepoUrl = 'https://github.com/yubboo/xma.git'
+$ExpectedWorkRoot = if ($env:XMA_TARGET_ROOT) { $env:XMA_TARGET_ROOT } else { 'H:\一键部署\xma' }
+$PackageManifest = Join-Path $Root '.xma-package\source-manifest.json'
+$SyncState = Join-Path $Root '.xma\source-sync.json'
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
@@ -18,7 +21,28 @@ function Header {
   Write-Host '====================================================================' -ForegroundColor DarkCyan
   Write-Host "  XMA $ProjectVersion GitHub 一键推送助手" -ForegroundColor Cyan
   Write-Host '  Repo: https://github.com/yubboo/xma.git' -ForegroundColor DarkGray
+  Write-Host "  Worktree: $Root" -ForegroundColor DarkGray
   Write-Host '====================================================================' -ForegroundColor DarkCyan
+}
+
+
+function Assert-GitWorkDirectory {
+  if (Test-Path -LiteralPath $PackageManifest -PathType Leaf) {
+    Write-Host '[阻止] 当前目录是 XMA 正式源码包/解压目录，不允许在这里初始化或推送 Git。' -ForegroundColor Red
+    Write-Host "  当前目录：$Root" -ForegroundColor Yellow
+    Write-Host "  Git 工作目录：$ExpectedWorkRoot" -ForegroundColor Green
+    Write-Host '  正确流程：XMA-Sync.bat → 进入 Git 工作目录 → XMA-GitHub.bat → [1] 一键推送。' -ForegroundColor Cyan
+    if (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container) {
+      Write-Host "[检测] 这个源码包目录已经被误初始化过 .git。可删除：$(Join-Path $Root '.git')" -ForegroundColor Yellow
+      Write-Host '[注意] 只删除源码包目录里的 .git，绝对不要删除长期 Git 工作目录里的 .git。' -ForegroundColor Yellow
+    }
+    throw 'XMA-GitHub 只能在长期 Git 工作目录运行；源码包目录只负责 Source Sync。'
+  }
+
+  # 新工作目录首次初始化必须来自 XMA-Sync；禁止在任意一份源码副本里因为没有 .git 就静默创建仓库。
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container) -and -not (Test-Path -LiteralPath $SyncState -PathType Leaf)) {
+    throw "当前目录既不是现有 Git 仓库，也没有 XMA Source Sync 状态：$Root。请先从正式源码包运行 XMA-Sync.bat。"
+  }
 }
 
 function Assert-GitAvailable {
@@ -30,6 +54,7 @@ function Assert-GitAvailable {
 }
 
 function Ensure-GitRepo {
+  Assert-GitWorkDirectory
   Assert-GitAvailable
   if (-not (Test-Path '.git')) {
     Write-Host '[首次] 正在初始化 XMA Git 仓库...' -ForegroundColor Yellow
@@ -162,6 +187,15 @@ function Push-All {
   Write-Host '[推送] 正在推送到 GitHub...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('push','-u','origin','main')
   Write-Host '[成功] XMA 源码已推送到 GitHub。依赖安装与项目运行不属于此流程。' -ForegroundColor Green
+}
+
+try {
+  Assert-GitWorkDirectory
+} catch {
+  Header
+  Write-Host ''
+  Write-Host "[失败] $($_.Exception.Message)" -ForegroundColor Red
+  exit 2
 }
 
 while ($true) {

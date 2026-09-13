@@ -25,7 +25,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 ## 三个 Windows 入口的职责边界
 
 - `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 `.xma/source-sync-last.txt`，避免只显示 Manifest 总文件数造成“是否真的同步成功”不明确。
-- `XMA-GitHub.bat`：只负责 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。
+- `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。
 - `XMA.bat`：负责本地基础环境、项目运行、检查和构建。
 
 ## XMA.bat 的依赖准备规则
@@ -41,7 +41,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建，确保 `.cache/cargo-target/` 中 Native Runtime 与刚同步的 Rust 源码一致。Cargo 无变化时会直接复用增量结果；严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
+- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建。Windows 使用 `.cache/cargo-target/cli/` 作为独立 CLI build target，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行；旧 Xiaoyu 即使仍占用上一份 exe，也不能阻断新源码构建。严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
 - `[7] 全量检查`：直接使用已经准备好的依赖，Rust check/test 使用 `--offline`；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
@@ -98,3 +98,10 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 - `XMA-Sync.bat` 必须优先使用 Source Manifest，而不是按目录名字猜哪些是源码。即使用户把新 ZIP 覆盖解压到旧目录导致 Source 残留旧文件，Manifest 之外的残留也不得重新同步回 Git 工作目录；`scripts/release/` 等正式源码目录必须正常同步。
 - Source Manifest 同步状态保存在目标工作目录 `.xma/source-sync.json`，只属于本地同步状态，不进入 Git。新增目录不需要修改 Sync 白名单；上一版受管文件若从新 Manifest 消失，则自动视为删除/重命名并清理。
+
+
+## GitHub 助手目录保护
+
+正式源码包目录（例如 `H:\一键部署\xma-0.1.0`）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 Source Sync 的长期目标目录（默认 `H:\一键部署\xma`）。
+
+如果旧版助手曾在源码包目录误执行 `git init`，只清理源码包目录自己的 `.git/`；长期工作目录 `H:\一键部署\xma\.git/` 必须保留。

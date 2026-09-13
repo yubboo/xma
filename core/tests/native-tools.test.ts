@@ -116,6 +116,13 @@ test('native read requests only filesystem.read scope and never uses Approval in
   assert.equal(client.reads[0]?.path, 'read.txt')
 })
 
+test('native Plan toolset can expose read without write', () => {
+  const client = new FakeNativeClient()
+  const registry = new ToolRegistry()
+  registerNativeTools(registry, { client, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'], allowWrite: false })
+  assert.deepEqual(registry.createPlan().modelVisibleSpecs().map(item => item.name), ['native.fs.read_text'])
+})
+
 test('native write fails closed before Capability issuance, then runs only after explicit Approval', async () => {
   const deniedClient = new FakeNativeClient()
   const deniedRegistry = new ToolRegistry()

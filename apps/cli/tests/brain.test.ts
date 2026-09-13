@@ -200,6 +200,29 @@ test('legacy XIAOYU_* environment config remains a read-only compatible Brain pr
   }
 })
 
+test('Brain Store persists user-selected reasoning effort without changing the selected model', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'xma-brain-reasoning-'))
+  const file = path.join(root, 'brain.json')
+  try {
+    const store = new TerminalBrainStore(file)
+    const profile = store.upsert({
+      providerId: DEEPSEEK_PROVIDER_ID,
+      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-model',
+      options: { reasoning: true, thinkingMode: 'enabled' },
+    })
+    const high = store.updateReasoningEffort(profile.id, 'high')
+    assert.equal(high.options?.reasoningEffort, 'high')
+    assert.equal(high.model, 'deepseek-model')
+    const defaults = store.updateReasoningEffort(profile.id, 'default')
+    assert.equal(defaults.options?.reasoningEffort, undefined)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('DeepSeek catalog creates a real official provider profile template without persisting Secret values', () => {
   const preset = builtinProviderCatalogEntry(DEEPSEEK_PROVIDER_ID)
   assert.ok(preset)
@@ -208,7 +231,7 @@ test('DeepSeek catalog creates a real official provider profile template without
   assert.equal(preset.credentialRequired, true)
   assert.equal(preset.options?.reasoning, true)
   assert.equal(preset.options?.thinkingMode, 'enabled')
-  assert.equal(preset.options?.reasoningEffort, 'high')
+  assert.equal(preset.options?.reasoningEffort, undefined)
   assert.equal(preset.options?.reasoningContentToolContinuation, true)
   assert.equal(preset.options?.toolProbeThinkingMode, 'disabled')
   assert.equal(preset.options?.modelCatalogDiscovery, true)

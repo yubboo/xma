@@ -122,6 +122,10 @@ for (const marker of [
   'git.exe',
   'Test-ForbiddenGitPath',
   'Assert-StagedFilesSafe',
+  'Assert-GitWorkDirectory',
+  '.xma-package\\source-manifest.json',
+  '.xma\\source-sync.json',
+  '源码包目录只负责 Source Sync',
   'git.exe ls-files --cached --others --exclude-standard',
   "git.exe' -ArgumentList @('add','-A')",
   "git.exe' -ArgumentList @('push','-u','origin','main')",
@@ -306,8 +310,10 @@ for (const marker of [
   '[4] 运行 · Xiaoyu Terminal            已准备后直接启动',
   'Ensure-CliNativeRuntime',
   "@('build','--package','xma-native-runtime','--offline')",
-  '.cache\\cargo-target\\debug\\xma-native-runtime.exe',
-  'Cargo 离线增量构建，不下载依赖',
+  "Join-Path $Root '.cache\\cargo-target\\cli'",
+  "Join-Path $Root '.cache\\native-runtime\\runs'",
+  '$env:XIAOYU_NATIVE_RUNTIME = $nativeExe',
+  '独立 Cargo target，离线增量构建，不下载依赖',
   '[3] 开发运行 · Desktop',
   'Electron 41.2.0',
   'Tauri 2',
@@ -326,6 +332,10 @@ for (const marker of [
 ]) {
   if (!consoleSource.includes(marker)) throw new Error(`XMA console prepared-dependency/runtime contract missing: ${marker}`)
 }
+if (consoleSource.includes(".cache\\cargo-target\\debug\\xma-native-runtime.exe")) {
+  throw new Error('Xiaoyu Terminal must not execute the shared Cargo target exe directly on Windows; use unique native staging copies.')
+}
+
 for (const forbidden of [
   "@('install','--ignore-scripts')",
   "@('rebuild','esbuild')",

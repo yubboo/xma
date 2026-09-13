@@ -197,6 +197,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ### GitHub 推送职责边界（锁死）
 
 - `XMA-GitHub.bat` / `xma-github.ps1` 是**纯 Git 工具**，只允许执行 Git 仓库初始化/状态、安全扫描、远端同步、暂存、提交、Push。
+- `XMA-GitHub.bat` / `xma-github.ps1` 必须拒绝包含 `.xma-package/source-manifest.json` 的正式源码包/解压目录；首次 `git init` 只允许发生在已经由 `XMA-Sync.bat` 建立 `.xma/source-sync.json` 的长期工作目录。禁止在 `xma-<version>` 源码包目录静默创建第二个 Git 仓库。
 - GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron/Tauri 依赖准备、winget 安装或任何环境准备。
 - 依赖下载和环境安装只允许由 `XMA.bat` 的“一键准备环境”、开发运行或构建发布流程触发。
 - GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `XMA.bat → [1] 一键准备开发环境`，不得擅自安装。
@@ -212,7 +213,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `scripts/install/windows.ps1` 与 `scripts/install/unix.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。
 - portable Terminal bundle 第一批内置 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel；未来可评估 Node SEA，但不能因此破坏可验证升级和安全边界。
 - Terminal 打开 Home/文件系统根目录必须显式警告，默认退出，只允许用户“仅本次信任”；不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
-- Terminal Home/Prompt Dock 必须按终端高度保留可操作留白；命令/设置/Provider/模型等 Overlay 打开时必须进入 modal focus，背景输入区只保留紧凑状态 Dock，并隐藏无关快捷键/提示，禁止 Overlay 与 Prompt 在常见 Windows Terminal 高度下视觉挤压。
+- Terminal Home/Prompt Dock 必须按终端高度保留可操作留白；命令/设置/Provider/模型等 Overlay 打开时必须进入 modal focus，背景输入区只保留紧凑状态 Dock，并隐藏无关快捷键/提示，禁止 Overlay 与 Prompt 在常见 Windows Terminal 高度下视觉挤压。对话区、输入 Dock、快捷键与提示区之间必须保留稳定空行，不能把所有组件堆在底部。Terminal 模式固定支持 `Build → Plan → Compose (legacy)`，Tab / Shift+Tab 循环切换：Build 使用完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具；三者继续使用用户当前选择的同一个真实 Provider/Model，禁止把 Plan 实现成隐藏 Planner。Prompt Dock 必须持续显示 Mode + Provider/Model + Reasoning，并用稳定颜色区分状态。品牌 Provider 首次配置流程优先固定为 API Key → 真实模型 → 推理强度 → Brain Ready，避免无关表单打断主路径。
 - 发行 staging 属于 `.cache/release/`；正式下载资产属于 `dist/release/`；两者都不得提交 Git。
 
 详细合同见 `docs/architecture/DISTRIBUTION.md`。
@@ -241,7 +242,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 
 - `XMA.bat -> [1] 一键准备开发环境` 是首次运行的唯一推荐入口：一次准备系统工具、全部 Workspace JavaScript 依赖元数据、esbuild Native Binary 与 XMA Native Rust crates。
 - `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
-- Web / CLI 在 `[1]` 成功后不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。`[4] Xiaoyu Terminal` 例外必须在启动前执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建：Source Sync 会保留 `.cache/`，因此严禁直接信任缓存中可能来自上一版源码的 Native 可执行文件。该构建只使用 `[1]` 已预取 crates，不允许偷偷联网下载。
+- Web / CLI 在 `[1]` 成功后不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。`[4] Xiaoyu Terminal` 例外必须在启动前执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建：Source Sync 会保留 `.cache/`，因此严禁直接信任缓存中可能来自上一版源码的 Native 可执行文件。Windows CLI 构建必须使用 `.cache/cargo-target/cli/` 独立 target，并把构建结果复制到 `.cache/native-runtime/runs/` 的唯一 staging exe 后再启动，禁止直接运行/覆盖 Cargo target 中可能被旧进程锁定的 exe。该构建只使用 `[1]` 已预取 crates，不允许偷偷联网下载。
 - TypeScript Host 启动 Native Runtime 后必须核对当前产品依赖的 capability 集；缓存/portable Native 缺少 `credential.*` 等必需能力时必须 fail loud 并给出重建/升级提示，禁止降级成“OS Credentials 不可用”后让用户在配置流程里无提示失败。
 - Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/electron/install-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。

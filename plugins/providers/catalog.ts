@@ -40,7 +40,6 @@ const BUILTIN_PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = Object.freeze(
       parallelToolCalls: true,
       reasoning: true,
       thinkingMode: 'enabled',
-      reasoningEffort: 'high',
       reasoningContentToolContinuation: true,
       toolProbeThinkingMode: 'disabled',
       promptCaching: true,

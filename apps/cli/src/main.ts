@@ -44,7 +44,7 @@ import { OpenAiCompatibleAdapter } from '../../../plugins/providers/openai-compa
 import { registerNativeTools } from '../../../plugins/tools/native.ts'
 import { codeAgent } from '../../../agents/code/agent.ts'
 import { xiaoyuAgent } from '../../../agents/xiaoyu/agent.ts'
-import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalBackend } from './tui.ts'
+import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalAgentMode, type TerminalBackend, type TerminalReasoningEffort } from './tui.ts'
 import { TerminalBrainStore, osCredentialKey, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 
 const AGENT_ID = codeAgent.id
@@ -223,7 +223,9 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   const context = await createProductContext()
   const runtime = new AgentRuntime(new JsonlSessionStore(sessions), { context, workspaces, requireWorkspace: true })
   const session = await runtime.createSession({ agentId: AGENT_ID, workspaceId: id })
-  const tools = new ToolRegistry()
+  const buildTools = new ToolRegistry()
+  const planTools = new ToolRegistry()
+  const composeTools = new ToolRegistry()
   const brainStore = new TerminalBrainStore()
   const nativePath = nativeExecutable()
   let nativeClient: StdioNativeClient | undefined
@@ -249,14 +251,27 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     try {
       const status = await nativeClient.status()
       assertCliNativeRuntimeStatus(status)
-      // Terminal 当前只开放文件读写；process.run 在绝对程序白名单配置面完成前保持不注册。
-      disposeNativeTools = registerNativeTools(tools, {
+      // Build 暴露读写；Plan 只暴露只读工具；Compose legacy 不暴露 Workspace 工具。
+      // 三种模式仍使用同一个真实 Provider/Model，只改变冻结 ToolPlan 的权限面，不引入隐藏 Planner。
+      const buildDisposer = registerNativeTools(buildTools, {
         client: nativeClient,
         workspaceId: id,
         allowedRoots: [workspace],
         defaultCwd: workspace,
         allowedPrograms: [],
       })
+      const planDisposer = registerNativeTools(planTools, {
+        client: nativeClient,
+        workspaceId: id,
+        allowedRoots: [workspace],
+        defaultCwd: workspace,
+        allowedPrograms: [],
+        allowWrite: false,
+      })
+      disposeNativeTools = async () => {
+        await planDisposer()
+        await buildDisposer()
+      }
     } catch (error) {
       await nativeClient.close()
       await runtime.closeAll()
@@ -367,6 +382,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const key = activeProbeKey()
       return Boolean(activeProfile) && (activeView()?.credentialReady ?? true) && Boolean(key && brainProbeReadiness.get(key) === true)
     },
+    get reasoningSupported() {
+      return activeProfile?.options?.reasoning === true
+    },
+    get reasoningEffort(): TerminalReasoningEffort {
+      const value = activeProfile?.options?.reasoningEffort
+      return value === 'low' || value === 'high' || value === 'max' ? value : 'default'
+    },
     listBrainProviderCatalog() {
       return listBuiltinProviderCatalog().map(item => ({
         id: item.id,
@@ -455,6 +477,12 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       await refreshBrain()
       return brainStore.list(osCredentialReadiness).find(item => item.id === updated.id)!
     },
+    async selectBrainReasoning(effort: TerminalReasoningEffort) {
+      const profile = requireActiveProfile()
+      const updated = brainStore.updateReasoningEffort(profile.id, effort)
+      await refreshBrain()
+      return brainStore.list(osCredentialReadiness).find(item => item.id === updated.id)!
+    },
     async probeBrain(): Promise<BrainProbeView> {
       const profile = requireActiveProfile()
       const probeKey = `${profile.id}\u0000${profile.model}`
@@ -470,7 +498,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         message: result.ready ? `${profile.displayName} · ${profile.model} 已就绪` : `${result.error?.code ?? 'unknown'} · ${result.error?.message ?? 'Brain Ready 失败'}`,
       }
     },
-    async sendMessage(message, write, signal, approve) {
+    async sendMessage(message, mode: TerminalAgentMode, write, signal, approve) {
       const profile = requireActiveProfile()
       if (!model || !await ensureCredentialReady(profile)) throw new Error(`Brain 未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
       const probeKey = `${profile.id}\u0000${profile.model}`
@@ -487,7 +515,8 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const approvals: ToolApprovalProvider = { request: approve }
       const dispose = runtime.subscribe(listener)
       try {
-        await session.runTurn({ provider: model, tools, input: message, signal, approvals })
+        const modeTools = mode === 'build' ? buildTools : mode === 'plan' ? planTools : composeTools
+        await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals })
       } finally {
         dispose()
       }

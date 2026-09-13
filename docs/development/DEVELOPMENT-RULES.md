@@ -271,6 +271,8 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 `XMA-GitHub.bat` / `xma-github.ps1` 只允许 Git 初始化/状态、安全扫描、远端同步、暂存、提交、Push。
 
+`XMA-GitHub.bat` / `xma-github.ps1` 必须区分“正式源码包目录”和“长期 Git 工作目录”：检测到 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化、fetch/pull、commit、push；首次 `git init` 只允许在已有 `.xma/source-sync.json` 的 Source Sync 目标目录执行。禁止在 `xma-<version>` 解压目录创建第二个仓库。
+
 严禁在 GitHub Helper 中调用：
 
 - `xma-prepare.ps1`；

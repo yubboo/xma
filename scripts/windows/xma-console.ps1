@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
 关联模块：XMA.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖；Web 直接启动；CLI 启动前离线增量构建当前 XMA Native Runtime；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
+当前实现：[1] 一次准备通用开发依赖；Web 直接启动；CLI 启动前在独立 Cargo target 离线增量构建 Native，并以唯一 staging exe 启动；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
 职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -112,26 +112,64 @@ function Start-Web {
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:web')
 }
 
+function Remove-StaleCliNativeRuns {
+  $runDir = Join-Path $Root '.cache\native-runtime\runs'
+  if (-not (Test-Path -LiteralPath $runDir -PathType Container)) { return }
+  foreach ($file in (Get-ChildItem -LiteralPath $runDir -Filter 'xma-native-runtime-*.exe' -File -ErrorAction SilentlyContinue)) {
+    try {
+      Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+    } catch {
+      # 中文说明：仍在运行的旧 Xiaoyu 可能暂时锁住自己的 staging exe；新启动使用不同文件名，不应因此失败。
+    }
+  }
+}
+
 function Ensure-CliNativeRuntime {
   Assert-CliJsDependencies
   if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) {
     throw 'Xiaoyu Terminal 需要 XMA Native Runtime。未检测到 Cargo，请先运行 [1] 一键准备开发环境。'
   }
 
-  Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（Cargo 离线增量构建，不下载依赖）...' -ForegroundColor DarkCyan
-  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--package','xma-native-runtime','--offline')
-
-  $nativeExe = Join-Path $Root '.cache\cargo-target\debug\xma-native-runtime.exe'
-  if (-not (Test-Path -LiteralPath $nativeExe -PathType Leaf)) {
-    throw "XMA Native Runtime 构建结束但未找到：$nativeExe"
+  # 中文说明：Windows 不允许覆盖仍被旧进程占用的 exe。CLI 构建使用独立 Cargo target，运行时再复制到唯一 staging 路径，
+  # 这样并行/旧版 Xiaoyu 只锁住自己的 run copy，不会阻断当前源码的离线增量构建。
+  $cliTargetDir = Join-Path $Root '.cache\cargo-target\cli'
+  $previousCargoTargetDir = $env:CARGO_TARGET_DIR
+  $env:CARGO_TARGET_DIR = $cliTargetDir
+  try {
+    Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（独立 Cargo target，离线增量构建，不下载依赖）...' -ForegroundColor DarkCyan
+    Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--package','xma-native-runtime','--offline') | Out-Host
+  } finally {
+    if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
   }
-  Write-Host "[通过] Xiaoyu Native Runtime 与当前源码一致：$nativeExe" -ForegroundColor Green
+
+  $builtExe = Join-Path $cliTargetDir 'debug\xma-native-runtime.exe'
+  if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
+    throw "XMA Native Runtime 构建结束但未找到：$builtExe"
+  }
+
+  Remove-StaleCliNativeRuns
+  $runDir = Join-Path $Root '.cache\native-runtime\runs'
+  New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+  $runId = "{0}-{1}" -f ([DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff')), $PID
+  $runExe = Join-Path $runDir "xma-native-runtime-$runId.exe"
+  Copy-Item -LiteralPath $builtExe -Destination $runExe -Force
+  Write-Host "[通过] Xiaoyu Native Runtime 与当前源码一致：$runExe" -ForegroundColor Green
+  return $runExe
 }
 
 function Start-Cli {
-  Ensure-CliNativeRuntime
-  Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
+  $nativeExe = Ensure-CliNativeRuntime
+  $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
+  $env:XIAOYU_NATIVE_RUNTIME = $nativeExe
+  try {
+    Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
+    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:cli')
+  } finally {
+    if ($null -eq $previousNativeRuntime) { Remove-Item Env:XIAOYU_NATIVE_RUNTIME -ErrorAction SilentlyContinue } else { $env:XIAOYU_NATIVE_RUNTIME = $previousNativeRuntime }
+    try { Remove-Item -LiteralPath $nativeExe -Force -ErrorAction Stop } catch {
+      Write-Host "[提示] Native staging 仍被进程占用，将在下次启动时再次清理：$nativeExe" -ForegroundColor DarkGray
+    }
+  }
 }
 
 function Start-ElectronDesktop {

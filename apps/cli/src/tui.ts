@@ -21,6 +21,7 @@ const text = `${ESC}38;2;226;226;226m`
 const textSoft = `${ESC}38;2;164;164;164m`
 const textFaint = `${ESC}38;2;98;98;98m`
 const green = `${ESC}38;2;98;202;132m`
+const blue = `${ESC}38;2;111;174;255m`
 const yellow = `${ESC}38;2;224;190;72m`
 const red = `${ESC}38;2;238;94;94m`
 const clearScreen = `${ESC}2J${ESC}H`
@@ -129,6 +130,37 @@ export interface BrainProbeView {
   message: string
 }
 
+
+export type TerminalAgentMode = 'build' | 'plan' | 'compose'
+export type TerminalReasoningEffort = 'default' | 'low' | 'high' | 'max'
+
+export function cycleTerminalAgentMode(current: TerminalAgentMode, direction: 1 | -1 = 1): TerminalAgentMode {
+  const order: readonly TerminalAgentMode[] = ['build', 'plan', 'compose']
+  const index = order.indexOf(current)
+  return order[(index + direction + order.length) % order.length]!
+}
+
+function modeLabel(mode: TerminalAgentMode): string {
+  return mode === 'build' ? 'Build' : mode === 'plan' ? 'Plan' : 'Compose'
+}
+
+function modeColor(mode: TerminalAgentMode): string {
+  return mode === 'build' ? orange : mode === 'plan' ? green : blue
+}
+
+function modeDescription(mode: TerminalAgentMode): string {
+  if (mode === 'build') return '完整工具模式'
+  if (mode === 'plan') return '只读规划模式'
+  return '纯模型对话 · legacy'
+}
+
+function reasoningColor(effort: TerminalReasoningEffort): string {
+  if (effort === 'max') return red
+  if (effort === 'high') return yellow
+  if (effort === 'low') return green
+  return textSoft
+}
+
 export interface BrainProviderCatalogItem {
   id: string
   displayName: string
@@ -144,6 +176,8 @@ export interface TerminalBackend {
   readonly providerLabel: string
   readonly providerConfigured: boolean
   readonly providerReady: boolean
+  readonly reasoningSupported: boolean
+  readonly reasoningEffort: TerminalReasoningEffort
   listBrainProviderCatalog(): readonly BrainProviderCatalogItem[]
   listBrainProfiles(): readonly TerminalBrainProfileView[]
   saveBrainProfile(input: {
@@ -157,9 +191,11 @@ export interface TerminalBackend {
   selectBrain(profileId: string): Promise<TerminalBrainProfileView>
   listBrainModels(): Promise<readonly string[]>
   selectBrainModel(model: string): Promise<TerminalBrainProfileView>
+  selectBrainReasoning(effort: TerminalReasoningEffort): Promise<TerminalBrainProfileView>
   probeBrain(): Promise<BrainProbeView>
   sendMessage(
     input: string,
+    mode: TerminalAgentMode,
     write: (chunk: string) => void,
     signal: AbortSignal,
     approve: (request: ToolApprovalRequest, signal: AbortSignal) => Promise<ToolApprovalDecision>,
@@ -316,10 +352,11 @@ export function terminalHomeLayout(rows: number, overlayOpen = false, tips = tru
   }
 
   const tipRow = tips && safeRows >= 26 ? safeRows - 4 : undefined
-  const hintRow = tipRow === undefined ? safeRows - 3 : tipRow - 2
+  const hintRow = tipRow === undefined ? safeRows - 3 : tipRow - 3
   return {
     logoTop,
-    promptEnd: hintRow - 1,
+    // Prompt 与快捷键、提示区之间保留至少一行空气；高终端再多留一行，避免所有组件堆在底部。
+    promptEnd: hintRow - (tipRow === undefined ? 2 : 3),
     hintRow,
     ...(tipRow === undefined ? {} : { tipRow }),
   }
@@ -367,15 +404,15 @@ function padStyled(value: string, width: number, visibleWidth: (value: string) =
 }
 
 function renderHintLine(width: number): string {
-  const compact = width < 64
+  const compact = width < 66
   const plain = compact
-    ? '/ 命令  ctrl+p 面板  ↑↓ 历史  ctrl+c 中止'
-    : '/ 命令    ctrl+p 命令面板    ↑↓ 历史    shift+enter 换行    ctrl+c 中止'
+    ? 'tab 模式  ctrl+p 设置  / 命令  ctrl+c 中止'
+    : 'tab / shift+tab 切换模式    ctrl+p 设置    / 命令    ↑↓ 历史    ctrl+c 中止'
   const styled = compact
-    ? `${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+p${reset} ${textSoft}面板${reset}  ${bold}↑↓${reset} ${textSoft}历史${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-    : `${bold}/${reset} ${textSoft}命令${reset}    ${bold}ctrl+p${reset} ${textSoft}命令面板${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}shift+enter${reset} ${textSoft}换行${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+    ? `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}设置${reset}  ${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+    : `${bold}tab / shift+tab${reset} ${textSoft}切换模式${reset}    ${bold}ctrl+p${reset} ${textSoft}设置${reset}    ${bold}/${reset} ${textSoft}命令${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
   if (cellWidth(plain) <= width) return styled
-  return `${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+p${reset} ${textSoft}面板${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+  return `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}设置${reset}  ${bold}/${reset} ${textSoft}命令${reset}`
 }
 
 export function commandPaletteOptions(): readonly AutocompleteItem[] {
@@ -865,6 +902,7 @@ class XiaoyuSurface {
   private starPhase = 0
   private settings: TerminalUiSettings = { ...DEFAULT_TERMINAL_UI_SETTINGS }
   private overlayOpen = false
+  private agentMode: TerminalAgentMode = 'build'
 
   constructor(
     private readonly toolkit: PiTuiToolkit,
@@ -911,6 +949,17 @@ class XiaoyuSurface {
       const decision = data === '2' ? 'allow-once' : data === '3' ? 'allow-session' : data === '1' || data === '\u001b' ? 'deny' : undefined
       if (decision) this.resolveApproval(decision)
       return
+    }
+    const hasSlashSuggestions = this.editor.suggestions().length > 0
+    if (!this.overlayOpen && !this.busy && !hasSlashSuggestions) {
+      const backward = this.toolkit.matchesKey(data, 'shift+tab') || data === '\u001b[Z'
+      const forward = this.toolkit.matchesKey(data, 'tab') || data === '\t'
+      if (backward || forward) {
+        this.agentMode = cycleTerminalAgentMode(this.agentMode, backward ? -1 : 1)
+        this.notice = `模式已切换 · ${modeLabel(this.agentMode)} · ${modeDescription(this.agentMode)}`
+        this.tui.requestRender()
+        return
+      }
     }
     this.editor.handleInput(data)
   }
@@ -974,7 +1023,7 @@ class XiaoyuSurface {
     } else {
       // 对话态继续固定底部 Dock；Overlay 打开时同样进入 modal focus，不显示全局快捷键提示。
       const hintRow = this.overlayOpen ? undefined : rows - 2
-      const promptEnd = hintRow === undefined ? rows - 3 : hintRow - 1
+      const promptEnd = hintRow === undefined ? rows - 3 : hintRow - 2
       const promptStart = Math.max(2, promptEnd - promptLines.length + 1)
       place(promptStart, promptLines)
       if (hintRow !== undefined) screen[hintRow] = hintLine
@@ -987,9 +1036,10 @@ class XiaoyuSurface {
         wrapped.forEach((line, index) => transcriptLines.push(`${indent}${index === 0 ? label : spaces(6)}${textFaint}  ${line}${reset}`))
         transcriptLines.push('')
       }
-      const available = Math.max(1, promptStart - 3)
+      const transcriptBottomGap = rows >= 30 ? 4 : 2
+      const available = Math.max(1, promptStart - transcriptBottomGap - 1)
       const visible = transcriptLines.slice(-available)
-      place(Math.max(1, promptStart - 2 - visible.length), visible)
+      place(Math.max(1, promptStart - transcriptBottomGap - visible.length), visible)
     }
 
     if (this.approval) {
@@ -1017,8 +1067,8 @@ class XiaoyuSurface {
     const empty = !this.editor.getText()
     const lines: string[] = []
     const first = inputLines[0] ?? ''
-    lines.push(`${orange}▌${reset} ${empty ? `${first}${textFaint}输入消息…（输入 / 唤起命令）${reset}` : first}`)
-    for (const line of inputLines.slice(1)) lines.push(`${orange}▌${reset} ${line}`)
+    lines.push(`${modeColor(this.agentMode)}▌${reset} ${empty ? `${first}${textFaint}输入消息…（输入 / 唤起命令）${reset}` : first}`)
+    for (const line of inputLines.slice(1)) lines.push(`${modeColor(this.agentMode)}▌${reset} ${line}`)
 
     const suggestions = this.editor.suggestions()
     const selected = this.editor.selectedSuggestionIndex()
@@ -1034,17 +1084,21 @@ class XiaoyuSurface {
       }
     }
 
-    lines.push(`${orange}▌${reset} ${this.renderPromptStatus(bodyWidth)}`)
+    if (suggestions.length === 0) lines.push(`${modeColor(this.agentMode)}▌${reset}`)
+    lines.push(`${modeColor(this.agentMode)}▌${reset} ${this.renderPromptStatus(bodyWidth)}`)
     return lines
   }
 
   private renderPromptStatus(width: number): string {
     const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
     const provider = this.backend.providerLabel
-    const plainAgent = truncateCells(this.backend.agentLabel, 24)
-    const plainProvider = truncateCells(provider, Math.max(8, width - cellWidth(plainAgent) - 16))
-    const styled = `${orange}${bold}Build${reset}${text} · ${plainAgent}${reset}   ${providerDot}${textSoft} ${plainProvider}${reset}`
-    const visible = 8 + cellWidth(plainAgent) + 4 + 1 + cellWidth(plainProvider)
+    const mode = modeLabel(this.agentMode)
+    const effort = this.backend.reasoningSupported ? this.backend.reasoningEffort : 'default'
+    const effortText = this.backend.reasoningSupported ? effort : 'reasoning n/a'
+    const reserved = cellWidth(mode) + cellWidth(effortText) + 12
+    const plainProvider = truncateCells(provider, Math.max(8, width - reserved))
+    const styled = `${modeColor(this.agentMode)}${bold}${mode}${reset}${textSoft} · ${reset}${providerDot} ${text}${plainProvider}${reset}${textSoft} · ${reset}${reasoningColor(effort)}${bold}${effortText}${reset}`
+    const visible = cellWidth(mode) + 3 + 2 + cellWidth(plainProvider) + 3 + cellWidth(effortText)
     return `${styled}${spaces(Math.max(0, width - visible))}`
   }
 
@@ -1106,6 +1160,7 @@ class XiaoyuSurface {
       items.push(
         { value: 'probe', label: 'Brain Ready 测试', description: `${active.displayName} · ${active.model}` },
         { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
+        ...(this.backend.reasoningSupported ? [{ value: 'reasoning', label: '推理强度', description: `当前 ${this.backend.reasoningEffort}` }] : []),
       )
     }
     const providerNames = new Map(this.backend.listBrainProviderCatalog().map(item => [item.id, item.displayName]))
@@ -1149,6 +1204,10 @@ class XiaoyuSurface {
         await this.openModelSelector()
         return
       }
+      if (value === 'reasoning') {
+        this.openReasoningSelector()
+        return
+      }
       if (value.startsWith('select:')) {
         const profile = await this.backend.selectBrain(value.slice('select:'.length))
         this.notice = `Brain 已切换 · ${profile.displayName} · ${profile.model} · 正在验证…`
@@ -1178,7 +1237,7 @@ class XiaoyuSurface {
     })
   }
 
-  private async openModelSelector(): Promise<void> {
+  private async openModelSelector(afterSelect?: (profile: TerminalBrainProfileView) => void): Promise<void> {
     // Provider/Model 配置属于产品交互，任何失败都必须留在 TUI 内提示，禁止未处理 Promise 直接终止 CLI。
     if (!this.backend.providerConfigured) {
       this.notice = 'Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。'
@@ -1199,6 +1258,10 @@ class XiaoyuSurface {
         void this.backend.selectBrainModel(model).then(async profile => {
           this.notice = `模型已切换 · ${profile.displayName} · ${profile.model}`
           this.tui.requestRender()
+          if (afterSelect) {
+            afterSelect(profile)
+            return
+          }
           const probe = await this.backend.probeBrain()
           this.notice = `${probe.ready ? 'Brain Ready' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
           this.tui.requestRender()
@@ -1213,12 +1276,39 @@ class XiaoyuSurface {
     }
   }
 
+  private openReasoningSelector(afterSetup = false): void {
+    if (!this.backend.reasoningSupported) {
+      this.notice = '当前 Provider/模型未声明可配置推理强度。'
+      this.tui.requestRender()
+      return
+    }
+    const current = this.backend.reasoningEffort
+    const items: AutocompleteItem[] = [
+      { value: 'default', label: `${current === 'default' ? '● ' : ''}Default`, description: '使用 Provider 默认推理强度' },
+      { value: 'high', label: `${current === 'high' ? '● ' : ''}high`, description: '高推理强度' },
+      { value: 'max', label: `${current === 'max' ? '● ' : ''}max`, description: '最大推理强度（Provider 支持时）' },
+    ]
+    this.showListOverlay('选择推理强度', items, value => {
+      void this.backend.selectBrainReasoning(value as TerminalReasoningEffort).then(async profile => {
+        this.notice = `推理强度已切换 · ${profile.model} · ${this.backend.reasoningEffort}`
+        this.tui.requestRender()
+        if (!afterSetup) return
+        const probe = await this.backend.probeBrain()
+        this.notice = `${probe.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${profile.model} · ${this.backend.reasoningEffort} · ${probe.latencyMs}ms`
+        this.tui.requestRender()
+      }).catch(error => {
+        this.notice = `推理强度切换失败 · ${error instanceof Error ? error.message : String(error)}`
+        this.tui.requestRender()
+      })
+    })
+  }
+
   private async addProviderWizard(providerId: string, credentialMode: 'os' | 'env'): Promise<void> {
     const catalog = this.backend.listBrainProviderCatalog()
     const provider = catalog.find(item => item.id === providerId)
     if (!provider) throw new Error(`Provider Catalog 不存在：${providerId}`)
-    const displayName = await this.showInputOverlay('Profile 名称', `例如：${provider.displayName} / 工作账号 / 个人账号`, provider.displayName)
-    if (displayName === undefined) return
+    const existingProfiles = this.backend.listBrainProfiles().filter(item => item.providerId === providerId && item.source === 'config')
+    const displayName = existingProfiles.length === 0 ? provider.displayName : `${provider.displayName} ${existingProfiles.length + 1}`
     let baseUrl: string | undefined
     let model: string | undefined
     if (provider.customEndpoint) {
@@ -1227,6 +1317,7 @@ class XiaoyuSurface {
       model = await this.showInputOverlay('默认模型 ID', '请输入 endpoint 实际支持的 model ID', '')
       if (model === undefined) return
     }
+    // 品牌 Provider 的主流程固定为：API Key → 真实模型 → 推理强度 → Probe，减少无关表单打断。
     const credentialInput = credentialMode === 'os'
       ? await this.showInputOverlay('API Key', provider.credentialRequired
           ? '安全写入系统凭据库；输入内容不会回显'
@@ -1243,7 +1334,7 @@ class XiaoyuSurface {
     try {
       profile = await this.backend.saveBrainProfile({
         providerId,
-        displayName: displayName.trim() || provider.displayName,
+        displayName,
         ...(baseUrl !== undefined ? { baseUrl: baseUrl.trim() } : {}),
         ...(model !== undefined ? { model: model.trim() } : {}),
         ...(credentialMode === 'os' && credentialInput ? { apiKey: credentialInput } : {}),
@@ -1256,9 +1347,21 @@ class XiaoyuSurface {
     }
 
     // Profile 保存成功即成为当前 Brain。后续远端模型发现失败不能反过来伪装成“保存失败”或清掉已保存配置。
-    this.notice = `Provider 已保存并设为当前 Brain · ${profile.displayName} · ${profile.model} · 正在读取真实模型…`
+    this.notice = `Provider 已保存并设为当前 Brain · ${profile.displayName} · 正在读取真实模型…`
     this.tui.requestRender()
-    await this.openModelSelector()
+    await this.openModelSelector(() => {
+      if (this.backend.reasoningSupported) {
+        this.openReasoningSelector(true)
+        return
+      }
+      void this.backend.probeBrain().then(result => {
+        this.notice = `${result.ready ? 'Brain Ready' : 'Brain 未就绪'} · ${result.latencyMs}ms · ${result.message}`
+        this.tui.requestRender()
+      }).catch(error => {
+        this.notice = `Brain Ready 失败 · ${error instanceof Error ? error.message : String(error)}`
+        this.tui.requestRender()
+      })
+    })
   }
 
   private showInputOverlay(
@@ -1482,6 +1585,7 @@ class XiaoyuSurface {
     try {
       await this.backend.sendMessage(
         line,
+        this.agentMode,
         chunk => {
           assistant.text += chunk
           this.tui.requestRender()

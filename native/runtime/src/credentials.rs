@@ -7,6 +7,7 @@ use xma_native_protocol::{
     CredentialDeleteResult, CredentialReadResult, CredentialStoreStatus, CredentialWriteResult,
 };
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const SERVICE_NAME: &str = "Xiaoyu Management Agent";
 // Windows Credential Manager 的 CRED_MAX_CREDENTIAL_BLOB_SIZE 为 5*512；取三平台共同上限，避免 Host 语义随平台漂移。
 const MAX_SECRET_BYTES: usize = 5 * 512;
@@ -554,7 +555,10 @@ mod platform {
         }
         Err(format!(
             "Linux secret-tool clear failed with exit code {}",
-            output.status.code().map_or_else(|| "signal".to_string(), |code| code.to_string())
+            output
+                .status
+                .code()
+                .map_or_else(|| "signal".to_string(), |code| code.to_string())
         ))
     }
 }

@@ -1,7 +1,7 @@
 /**
  * 文件作用：定义 TypeScript Core 到 Rust Native Runtime 的 Capability Bridge，并提供 stdio JSON-RPC 客户端。
  * 关联模块：plugins/tools/native.ts、native/protocol、native/runtime、ToolRouter/Approval。
- * 当前实现：Native status、OS Credentials RPC、Capability lease、受限文件读写、无 shell 的受限进程执行与本地 stdio RPC 生命周期。
+ * 当前实现：Native status、OS Credentials RPC、Capability lease、受限文件读写、无 shell 的受限进程执行、本地 stdio RPC 生命周期与可等待的子进程关闭。
  * 职责边界：TypeScript 只能申请最小授权并发起调用；路径/程序/超时等真实安全约束必须由 Rust Kernel 再次独立验证，不能只信 Tool 参数。
  */
 
@@ -333,7 +333,22 @@ export class StdioNativeClient implements NativeClient {
     this.#closed = true
     this.#readline.close()
     this.#failAll(new Error('XMA Native client closed.'))
-    if (!this.#child.killed) this.#child.kill()
+    if (this.#child.exitCode !== null || this.#child.signalCode !== null) return
+
+    // Windows 会一直锁住正在运行的 exe；发送终止信号后等待实际 exit，避免 launcher 立即清理 staging 时留下锁文件。
+    await new Promise<void>(resolve => {
+      let settled = false
+      const finish = (): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        this.#child.off('exit', finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, 2_000)
+      this.#child.once('exit', finish)
+      if (!this.#child.killed) this.#child.kill()
+    })
   }
 
   #request(method: string, params: JsonObject, signal?: AbortSignal): Promise<JsonValue> {

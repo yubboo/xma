@@ -23,6 +23,8 @@ export interface NativeToolSetOptions {
   maxWriteBytes?: number
   maxProcessOutputBytes?: number
   maxProcessTimeoutMs?: number
+  /** Plan 等受限模式可关闭写工具；默认 true。 */
+  allowWrite?: boolean
 }
 
 function stringArg(args: JsonObject, key: string): string {
@@ -215,8 +217,9 @@ export function registerNativeTools(registry: ToolRegistry, options: NativeToolS
   for (const program of options.allowedPrograms ?? []) {
     if (!isAbsolute(program)) throw new Error(`XMA native process allowlist requires absolute executable paths: ${program}`)
   }
-  const disposers: Disposer[] = [registry.register(readTool(options)), registry.register(writeTool(options))]
-  if ((options.allowedPrograms?.length ?? 0) > 0) disposers.push(registry.register(processTool(options)))
+  const disposers: Disposer[] = [registry.register(readTool(options))]
+  if (options.allowWrite !== false) disposers.push(registry.register(writeTool(options)))
+  if (options.allowWrite !== false && (options.allowedPrograms?.length ?? 0) > 0) disposers.push(registry.register(processTool(options)))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
   }

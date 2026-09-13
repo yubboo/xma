@@ -5,6 +5,7 @@ import path from 'node:path'
 import {
   approvalDecision,
   commandPaletteOptions,
+  cycleTerminalAgentMode,
   DEFAULT_TERMINAL_UI_SETTINGS,
   renderHome,
   renderWorkspaceTrustWarning,
@@ -122,8 +123,8 @@ test('TUI command palette exposes only functional terminal actions', () => {
 test('TUI home reserves breathing room and enters modal focus while an overlay is open', () => {
   const normal = terminalHomeLayout(34, false, true)
   assert.equal(normal.logoTop, 3)
-  assert.equal(normal.promptEnd, 27)
-  assert.equal(normal.hintRow, 28)
+  assert.equal(normal.promptEnd, 24)
+  assert.equal(normal.hintRow, 27)
   assert.equal(normal.tipRow, 30)
 
   const overlay = terminalHomeLayout(34, true, true)
@@ -134,7 +135,15 @@ test('TUI home reserves breathing room and enters modal focus while an overlay i
   const compact = terminalHomeLayout(24, false, true)
   assert.equal(compact.tipRow, undefined)
   assert.equal(compact.hintRow, 21)
-  assert.equal(compact.promptEnd, 20)
+  assert.equal(compact.promptEnd, 19)
+})
+
+
+test('TUI Tab mode cycle is Build -> Plan -> Compose and Shift+Tab reverses it', () => {
+  assert.equal(cycleTerminalAgentMode('build'), 'plan')
+  assert.equal(cycleTerminalAgentMode('plan'), 'compose')
+  assert.equal(cycleTerminalAgentMode('compose'), 'build')
+  assert.equal(cycleTerminalAgentMode('build', -1), 'compose')
 })
 
 test('TUI visual setting toggles vivid/minimal without changing other terminal settings', () => {

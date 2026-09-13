@@ -131,7 +131,7 @@ for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseDa
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
 }
 const providerCatalog = readFileSync('plugins/providers/catalog.ts', 'utf8')
-for (const marker of ['DEEPSEEK_PROVIDER_ID', 'CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID', 'https://api.deepseek.com', 'modelCatalogDiscovery', 'thinkingMode', 'reasoningEffort', 'reasoningContentToolContinuation', 'toolProbeThinkingMode']) {
+for (const marker of ['DEEPSEEK_PROVIDER_ID', 'CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID', 'https://api.deepseek.com', 'modelCatalogDiscovery', 'thinkingMode', 'reasoningContentToolContinuation', 'toolProbeThinkingMode']) {
   if (!providerCatalog.includes(marker)) throw new Error(`XMA Provider Catalog marker missing: ${marker}`)
 }
 const toolsSource = readFileSync('core/src/tool/router.ts', 'utf8')
@@ -147,7 +147,7 @@ for (const marker of ['assertCliNativeRuntimeStatus', 'credential.status', 'Prov
   if (!cliMainSource.includes(marker)) throw new Error(`XMA CLI Provider/Native readiness marker missing: ${marker}`)
 }
 const cliTuiSource = readFileSync('apps/cli/src/tui.ts', 'utf8')
-for (const marker of ['Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。', '模型列表读取失败', 'Provider 已保存并设为当前 Brain', '命令执行失败']) {
+for (const marker of ['Brain 未配置 · 请先在 Ctrl+P → Brain / Provider 添加并保存 Provider。', '模型列表读取失败', 'Provider 已保存并设为当前 Brain', '选择推理强度', 'cycleTerminalAgentMode', '命令执行失败']) {
   if (!cliTuiSource.includes(marker)) throw new Error(`XMA CLI Provider failure-containment marker missing: ${marker}`)
 }
 

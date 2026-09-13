@@ -91,7 +91,7 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/硬件光标基础层；主 Prompt 使用 XMA `SafePromptInput`，只发 `CURSOR_MARKER` 定位真实硬件光标，不使用上游 Editor/Input 的 reverse-video 假光标，避免 Windows Terminal 白块/反色泄漏；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
 - Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
-- Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
+- Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区，对话区、输入 Dock、快捷键与提示区之间至少保留稳定空行；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。Prompt Dock 持续显示 Mode + Provider/Model + Reasoning，模式和推理强度使用稳定颜色；Tab/Shift+Tab 循环 Build/Plan/Compose(legacy)，Build 暴露完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
 - Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - `xiaoyu --help / --version / doctor`；
@@ -99,7 +99,7 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - Home / 文件系统根目录风险确认，只允许“退出”或“仅本次信任”；
 - Workspace Session 绑定到正式 Agent Runtime；
 - `Xiaoyu Code` 当前会加载根 `skills/` 的 canonical Skills，并通过 `agent/skills` Context Source 进入正式 Context Assembly；portable launcher 使用 `XIAOYU_SKILLS_HOME` 指向随包分发的 `skills/`，普通用户不依赖源码仓库读取 Skill；
-- Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 从真实 Provider Catalog 添加 DeepSeek Official 或自定义 OpenAI-compatible Profile；同一品牌可保存多个账号/Profile。API Key 默认写入 OS Credentials，环境变量引用继续作为兼容路径，可执行 Brain Ready Probe、真实远程模型列表和 `/model` 切换。`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 与 Credential Reference，永远不保存 Secret 值，也不写入 Session；v1 `credentialEnv`、v2 generic Profile 与 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续兼容迁移读取；
+- Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 从真实 Provider Catalog 添加 DeepSeek Official 或自定义 OpenAI-compatible Profile；同一品牌可保存多个账号/Profile。品牌 Provider 首次配置主路径固定为 API Key → 真实远程模型选择 → 推理强度 → Brain Ready；API Key 默认写入 OS Credentials，环境变量引用继续作为兼容路径，`/model` 可再次切换真实模型，Reasoning effort 作为非 Secret Profile option 持久化。`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 与 Credential Reference，永远不保存 Secret 值，也不写入 Session；v1 `credentialEnv`、v2 generic Profile 与 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续兼容迁移读取；
 - 未配置 Provider 时明确显示未就绪，禁止伪造模型回复；
 - 如果 bundled/development Native Kernel 可用，Terminal 注册 `native.fs.read_text` / `native.fs.write_text`：读取按 standard policy 直接允许，写入必须在 TUI 显示 Tool Approval，并支持 deny / allow-once / allow-session；
 - Terminal 第一批 **不注册 `native.process.run`**。只有 Host 明确给出 absolute executable allowlist 后才允许把进程工具加入 ToolPlan，不能为了终端方便退回 PATH/shell 执行。
@@ -136,3 +136,8 @@ dist/release/
 Windows 资产在 Windows 构建，Linux 资产在 Linux 构建，macOS 资产在 macOS 构建。禁止在一个 OS 上伪造另一个 OS 的已验证发行包。
 
 每个平台最低 E2E：安装 → 新终端解析 `xiaoyu` → `xiaoyu --version` → `xiaoyu doctor` → 打开安全 Workspace → 升级覆盖 → 卸载/PATH 清理。Desktop 安装验证是另一条独立 E2E，不能替代 Terminal 安装验证。
+
+
+### Windows 源码开发 Native staging
+
+`XMA.bat → [4]` 在源码开发态不得直接运行 Cargo target 中的 `xma-native-runtime.exe`。Windows 会锁定正在运行的 exe，因此 CLI 必须在 `.cache/cargo-target/cli/` 离线增量构建，并复制到 `.cache/native-runtime/runs/` 的唯一运行副本；旧运行副本可延迟清理，不能阻断新版本启动。

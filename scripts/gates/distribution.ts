@@ -122,7 +122,7 @@ for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm r
 }
 
 const architecture = text('docs/architecture/DISTRIBUTION.md')
-for (const marker of ['xiaoyu', '%LOCALAPPDATA%\\Programs\\Xiaoyu', '~/.local/share/xiaoyu', '.cache', 'dist/release']) {
+for (const marker of ['xiaoyu', '%LOCALAPPDATA%\\Programs\\Xiaoyu', '~/.local/share/xiaoyu', '.cache', 'dist/release', 'Build/Plan/Compose(legacy)', 'API Key → 真实远程模型选择 → 推理强度 → Brain Ready']) {
   if (!architecture.includes(marker)) throw new Error(`XMA Distribution architecture doc marker missing: ${marker}`)
 }
 

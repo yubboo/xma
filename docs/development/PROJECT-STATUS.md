@@ -21,7 +21,7 @@
 - Session export + Secret value redaction + 相邻单向 migration Contract；
 - Provider Registry / Profile / Credentials Resolver / OS Credentials Store bridge / Capabilities / Model Catalog / Error taxonomy；Profile/ModelIdentity 已区分真实 `providerId`、Profile 与协议 `adapterId`；
 - OpenAI-compatible Chat Completions HTTP/SSE Adapter 第一版（协议测试，不等于外部厂商 Ready）；
-- Brain Ready Probe 已升级：目标 catalog/model 校验 + 真实 text request；声明 native tool calling 时还要求最小 Tool Call → Tool Result → 同模型继续响应 round trip；DeepSeek 当前 named/`required` tool choice 与 thinking 不兼容，因此确定性 Tool 子探针只在探针请求中关闭 thinking，实际 Agent Turn 仍使用 thinking/high；真实 thinking + tools 所需 `reasoning_content` 通过 opaque provider continuation 持久续传，redacted export 会移除；
+- Brain Ready Probe 已升级：目标 catalog/model 校验 + 真实 text request；声明 native tool calling 时还要求最小 Tool Call → Tool Result → 同模型继续响应 round trip；DeepSeek 当前 named/`required` tool choice 与 thinking 不兼容，因此确定性 Tool 子探针只在探针请求中关闭 thinking，实际 Agent Turn 仍使用 thinking 与用户选择的 reasoning effort；真实 thinking + tools 所需 `reasoning_content` 通过 opaque provider continuation 持久续传，redacted export 会移除；
 - Model Provider 最小 Contract；
 - Tool Definition / deterministic frozen ToolPlan / ToolRouter；
 - JSON Schema validation → Policy → monotonic Security Guard → Approval → Execute/Finalize Tool Pipeline；
@@ -47,9 +47,10 @@
 - Agent Task delegation Contract：Manager 可创建经过 Registry/Policy 校验的 specialist Task，普通 specialist 默认 deny；
 - `xiaoyu` 持续 Terminal TUI + Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
+- Windows Terminal Native 启动使用独立 Cargo target + 唯一 staging exe，避免旧 Xiaoyu 进程锁定编译目标；GitHub 助手拒绝在正式源码包目录初始化第二个仓库；
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
 - `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；Brain 已升级为多 Profile 的真实 Provider Catalog：首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留；`brain.json` v3 保存品牌/Profile/Adapter/Base URL/Model/Credential Reference，OS Credentials 为默认 Secret 路径，v1/v2 legacy 配置继续显式迁移；
-- Terminal 已增加 `/model` 与真实模型目录选择；DeepSeek Profile 不要求用户手填官方 Base URL/初始 model，保存后从官方 model catalog 读取当前可用 model ID 并按选择结果 Probe；DeepSeek preset 使用 thinking/high reasoning，并保留 thinking+tools 的协议续传状态；
+- Terminal 已增加 `/model` 与真实模型目录选择；DeepSeek 品牌配置按 API Key → 真实模型 → 推理强度 → Brain Ready 顺序完成，reasoning effort 支持 Default/high/max 并持久化为 Profile option；Prompt Dock 显示 Mode + Provider/Model + Reasoning，Tab/Shift+Tab 在 Build/Plan/Compose(legacy) 间切换，其中 Plan 只暴露只读工具、Compose 不暴露 Workspace 工具；DeepSeek 保留 thinking+tools 的协议续传状态；
 - Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/硬件光标基础能力，但主 Prompt 已改成 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标，专门规避 Windows Terminal 白块/反色泄漏；支持 CJK 硬件光标、输入历史、多行、斜杠补全；Home/Prompt 使用固定锚点并按终端高度保留纵向留白，Overlay 打开时进入 modal focus、背景只保留紧凑状态 Dock，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板、Terminal Settings 与 Brain / Provider 管理已接线；
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；

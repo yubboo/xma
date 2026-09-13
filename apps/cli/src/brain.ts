@@ -345,4 +345,21 @@ export class TerminalBrainStore {
     saveBrainConfig(this.#config, this.file)
     return { ...validated }
   }
+
+  updateReasoningEffort(profileId: string, effort: 'default' | 'low' | 'high' | 'max'): TerminalBrainProfile {
+    if (profileId === ENVIRONMENT_PROFILE_ID) throw new Error('环境变量 Provider 的推理强度请通过 Provider 配置修改。')
+    const profile = this.#config.profiles.find(item => item.id === profileId)
+    if (!profile) throw new Error(`Brain Profile 不存在：${profileId}`)
+    if (profile.options?.reasoning !== true) throw new Error('当前 Provider Profile 未声明 reasoning capability。')
+    const options = structuredClone(profile.options ?? {})
+    if (effort === 'default') delete options.reasoningEffort
+    else options.reasoningEffort = effort
+    profile.options = options
+    const validated = validateProfile(profile)
+    const index = this.#config.profiles.findIndex(item => item.id === profileId)
+    this.#config.profiles[index] = validated
+    this.#config.activeProfileId = profileId
+    saveBrainConfig(this.#config, this.file)
+    return { ...validated }
+  }
 }
