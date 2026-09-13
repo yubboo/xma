@@ -5,3 +5,6 @@
 权限原则：**最大化模型推理自由，最小化默认副作用范围。**
 
 模型可以自由判断“应该删除哪个文件”，但真正执行仍必须经过 Tool → Permission/Approval → Native Capability → Rust Enforcement。
+
+
+当前 Native 第一批具体 enforcement、已完成范围与未完成边界见 `docs/security/NATIVE-CAPABILITIES.md`。文件/进程 Tool 不能以 Node `fs/child_process` 直接替代 Native Bridge。

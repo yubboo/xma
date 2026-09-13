@@ -17,8 +17,9 @@
 - Provider Model 是推理核心，不写关键词路由/固定 Planner 替代模型。
 - Model-visible 动态内容必须可从 Session/Context source 重建。
 - 新行为优先通过 Provider/Tool/Context/Session/Plugin extension point；不要给 Agent Loop 加业务特例。
-- Tool 必须有 Schema、权限/Capability、structured result、取消语义和测试。
-- Rust 只执行 Native/Security/Performance，不实现专业 Agent 决策。
+- Tool 必须有 Schema、权限/Capability、structured result、取消语义和测试；模型 Schema 与 Runtime 必须来自同一个 frozen ToolPlan。
+- 需要 Approval 的副作用先 durable 记录最终决策再执行；allow-session 没有稳定 scope key 时禁止复用。
+- Rust 只执行 Native/Security/Performance，不实现专业 Agent 决策；Native 先锁 Host Policy，真实 FS/Process 再由 Rust capability 二次 enforcement。
 - UI 是 Runtime 客户端；当前优先底层，不为“看起来完成”堆假 UI。
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。

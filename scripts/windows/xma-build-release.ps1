@@ -15,6 +15,8 @@ Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
+$CargoTargetDir = Join-Path $Root '.cache\cargo-target'
+$TauriTargetDir = Join-Path $Root '.cache\tauri-target'
 
 $requiredCommands = @('node.exe','pnpm.cmd','cargo.exe')
 $requiredFiles = @(
@@ -59,12 +61,13 @@ Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -F
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
 Write-Host '[构建] 正在构建 Web / CLI / Server...' -ForegroundColor Cyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build')
-Write-Host '[构建] 正在构建 XMA Native Runtime...' -ForegroundColor Cyan
+Write-Host "[构建] 正在构建 XMA Native Runtime；Cargo 中间产物统一写入 $CargoTargetDir，不再生成仓库根 target\ 目录。" -ForegroundColor Cyan
 Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--workspace','--release')
 
 $release = Join-Path $Root 'dist\release'
+if (Test-Path $release) { Remove-Item $release -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $release | Out-Null
-$nativeExe = Join-Path $Root 'target\release\xma-native-runtime.exe'
+$nativeExe = Join-Path $CargoTargetDir 'release\xma-native-runtime.exe'
 if (Test-Path $nativeExe) { Copy-Item $nativeExe (Join-Path $release 'xma-native-runtime.exe') -Force }
 
 if ($DesktopRuntime -in @('electron','both')) {
@@ -75,14 +78,25 @@ if ($DesktopRuntime -in @('electron','both')) {
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {
-  Write-Host '[构建] 正在构建 Tauri 2 备用桌面端...' -ForegroundColor Cyan
-  if ($WindowsPackages) {
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','exec','tauri','build','--bundles','nsis')
-  } else {
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:desktop:tauri')
+  Write-Host "[构建] 正在构建 Tauri 2 备用桌面端；Tauri Rust 缓存写入 $TauriTargetDir。" -ForegroundColor Cyan
+  $previousCargoTargetDir = $env:CARGO_TARGET_DIR
+  $env:CARGO_TARGET_DIR = $TauriTargetDir
+  try {
+    if ($WindowsPackages) {
+      Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','exec','tauri','build','--bundles','nsis')
+    } else {
+      Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:desktop:tauri')
+    }
+  } finally {
+    if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
   }
-  $tauriTarget = Join-Path $Root 'apps\desktop\src-tauri\target\release'
-  if (Test-Path $tauriTarget) { Copy-Item $tauriTarget (Join-Path $release 'tauri') -Recurse -Force }
+  $tauriRelease = Join-Path $TauriTargetDir 'release'
+  $tauriOutput = Join-Path $release 'tauri'
+  New-Item -ItemType Directory -Force -Path $tauriOutput | Out-Null
+  $tauriExe = Join-Path $tauriRelease 'xma-desktop.exe'
+  if (Test-Path $tauriExe) { Copy-Item $tauriExe (Join-Path $tauriOutput 'xma-desktop.exe') -Force }
+  $tauriBundle = Join-Path $tauriRelease 'bundle'
+  if (Test-Path $tauriBundle) { Copy-Item $tauriBundle (Join-Path $tauriOutput 'bundle') -Recurse -Force }
 }
 
 Write-Host "[完成] XMA $ProjectVersion 发布产物：$release" -ForegroundColor Green

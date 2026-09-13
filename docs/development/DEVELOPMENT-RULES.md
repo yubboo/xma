@@ -105,6 +105,8 @@ schema → policy/plugin interception → security guard → approval → execut
 
 安全 guard 的拒绝是单调的：后续普通插件不能把已经被安全层拒绝的调用重新变成允许。
 
+需要 Approval 的真实副作用必须先形成最终 Approval 决策，并在执行副作用前把该决策 append 为 durable audit；不能“先写文件/跑命令，成功以后再补一条批准记录”。`allow-session` 只有 Tool 明确提供稳定 approval scope key 时才可复用；未声明 scope key 时必须按单调用 fail-safe，不能默认把一次参数授权扩成整个 Tool 授权。
+
 普通工具失败形成结构化 Tool Result 回模型，不得因为“文件不存在/命令失败/API 404”直接炸毁整个 Session。
 
 ### 6.3 并发
@@ -113,7 +115,7 @@ schema → policy/plugin interception → security guard → approval → execut
 
 ### 6.4 Native
 
-TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/process/network 限制，不能盲信 TypeScript 已验证。
+TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/process/network 限制，不能盲信 TypeScript 已验证。Native capability 默认应最小化并短生命周期；Native Runtime 必须先锁定 Host Policy，Tool lease 只能申请其子集。当前文件/进程第一版使用一次性 lease，真实文件路径必须在 Rust 侧 canonicalize 后再做 root containment。进程执行不得用 `shell:true` 替代受限 argv 执行。
 
 ## 7. Plugin 规则
 
@@ -233,7 +235,7 @@ Git 不存在时只能提示用户先运行 `XMA.bat → [1]`。
 
 应提交：源码、文档、测试、AI 开发上下文、脚本、配置模板、CI、`pnpm-lock.yaml`、`Cargo.lock`。
 
-禁止提交：`node_modules/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。
+禁止提交：`node_modules/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。Cargo 正常编译缓存固定在 `.cache/cargo-target/`，根 `target/` 仅作为旧版遗留/防误提交路径继续忽略。
 
 `.gitignore` 是第一层，GitHub Safety 是第二层。Safety 必须扫描 Git 真正可能提交的文件，不能把已忽略二进制缓存误判 Secret。
 

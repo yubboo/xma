@@ -16,6 +16,7 @@ const docs = [
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/DESKTOP-RUNTIME.md',
   'docs/architecture/DESKTOP-WORKBENCH.md',
+  'docs/security/NATIVE-CAPABILITIES.md',
   'docs/development/DEVELOPMENT-RULES.md',
   'docs/development/DEVELOPMENT-PLAN.md',
   'docs/development/PROJECT-STATUS.md',

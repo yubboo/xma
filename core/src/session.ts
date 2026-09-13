@@ -47,6 +47,7 @@ export type SessionEventData =
       turnId: string
       stepId: string
       provider: ModelIdentity
+      toolPlanId: string
       tools: readonly ModelToolSpec[]
       messageCount: number
       contextDigest?: string
@@ -58,6 +59,17 @@ export type SessionEventData =
       content: string
       toolCalls: readonly ModelToolCall[]
       interrupted: boolean
+    }
+  | {
+      type: 'tool/approval'
+      turnId: string
+      stepId: string
+      callId: string
+      name: string
+      requested: boolean
+      decision: 'allow-once' | 'allow-session' | 'deny' | 'cached-session'
+      cacheKey: string
+      reason: string
     }
   | {
       type: 'tool/result'

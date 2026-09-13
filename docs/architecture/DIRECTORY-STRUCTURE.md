@@ -57,7 +57,20 @@ Rust 边界非常明确：Native / Security / Performance。第一阶段保留 `
 - 根 `/runtime/` = 用户运行数据，禁止提交；
 - `native/runtime/` = Rust 源码，必须提交、同步、测试。
 
-## 7. docs/
+## 7. 本地构建缓存与发布产物
+
+XMA 明确区分“编译缓存”和“产品产物”：
+
+- `.cache/cargo-target/`：XMA 根 Rust Workspace 的中间对象、build script 输出和 release 编译缓存，可随时删除，不提交 Git，不进入源码包；
+- `.cache/tauri-target/`：Tauri 2 备用桌面端的独立 Rust 编译缓存，避免与 Native Runtime release 目录混在一起；
+- `.cache/electron/`：Electron ZIP 下载缓存；
+- `dist/`：XMA 统一的产品构建/发布产物入口，例如 Web、CLI、Server、`dist/release`。
+
+仓库根目录不再使用 `target/` 作为正常 Cargo 输出。根 `.cargo/config.toml` 固定 `build.target-dir = ".cache/cargo-target"`。旧版本遗留的根 `target/` 只是历史编译缓存，`XMA-Sync.bat` 会在同步新源码时清理。
+
+`target/` 与 `dist/` **不是同一种目录**：前者属于 Cargo 内部编译状态，后者才是 XMA 对开发者/发布流程暴露的产品输出。
+
+## 8. docs/
 
 长期事实必须有唯一文档归属：
 
@@ -67,7 +80,7 @@ Rust 边界非常明确：Native / Security / Performance。第一阶段保留 `
 
 AI Skills 可以引用这些文档，但不能复制成另一套权威规则。
 
-## 8. 仓库级 AI 开发目录
+## 9. 仓库级 AI 开发目录
 
 XMA 明确允许下面这些开发元数据目录，它们**不是产品 Runtime**：
 
@@ -97,7 +110,7 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 - 运行 Session；
 - 可绕过 `AGENTS.md` 的“隐藏规则”。
 
-## 9. 什么时候才拆包
+## 10. 什么时候才拆包
 
 只有至少满足其一才考虑把 Core 模块拆为独立 workspace package：
 
@@ -108,3 +121,15 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 - 单包已经造成持续的 ownership/变更冲突。
 
 不能因为参考项目拆了很多包，就机械复制其目录规模。
+
+
+## 当前 Stage C 新增源码归属
+
+- `core/src/tool-schema.ts`：模型 Tool arguments 的 TypeScript Schema 校验；
+- `core/src/tool-policy.ts`：Permission Policy / Security Guard / Approval Contract；
+- `core/src/tools.ts`：Tool Registry / frozen ToolPlan / ToolRouter；
+- `core/src/native.ts`：TypeScript ↔ Rust Native Capability Bridge；
+- `plugins/tools/native.ts`：Native FS/Process 的 Tool Definition Adapter；
+- `native/protocol/`：稳定 JSON-RPC / Capability wire contract；
+- `native/runtime/`：Rust path/process enforcement；
+- `docs/security/NATIVE-CAPABILITIES.md`：当前安全能力与未完成边界。

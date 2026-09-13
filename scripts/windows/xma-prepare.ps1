@@ -189,6 +189,7 @@ Write-Host "[通过] Workspace JavaScript 依赖已准备完成；Electron packa
 
 Write-Host ''
 Write-Host '[7/7] XMA Native Rust crates' -ForegroundColor Cyan
+Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
 Write-Host '[同步] 正在预取 XMA Native Runtime 所需 Rust crates...' -ForegroundColor Yellow
 Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')
 Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green

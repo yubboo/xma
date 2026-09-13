@@ -17,6 +17,9 @@ const required = [
   'scripts/windows/xma-build-release.ps1',
 ]
 for (const file of required) if (!existsSync(file)) throw new Error(`Windows helper missing: ${file}`)
+if (!existsSync('.cargo/config.toml')) throw new Error('Cargo project-local config missing: .cargo/config.toml')
+const cargoConfigSource = readFileSync('.cargo/config.toml', 'utf8')
+if (!cargoConfigSource.includes('target-dir = ".cache/cargo-target"')) throw new Error('Cargo cache must be redirected from root target/ to .cache/cargo-target/')
 
 for (const file of required.filter(file => file.endsWith('.ps1'))) {
   const bytes = readFileSync(file)
@@ -214,12 +217,18 @@ for (const marker of [
   '构建流程不会再次执行 pnpm install',
   'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'apps/desktop/scripts/install-electron-runtime.ts',
+  "$CargoTargetDir = Join-Path $Root '.cache\\cargo-target'",
+  "$TauriTargetDir = Join-Path $Root '.cache\\tauri-target'",
+  "$nativeExe = Join-Path $CargoTargetDir 'release\\xma-native-runtime.exe'",
+  "$tauriBundle = Join-Path $tauriRelease 'bundle'",
+  "$tauriExe = Join-Path $tauriRelease 'xma-desktop.exe'",
 ]) {
   if (!buildReleaseSource.includes(marker)) throw new Error(`Build release dependency/runtime contract missing: ${marker}`)
 }
 if (buildReleaseSource.includes("@('install','--ignore-scripts')")) {
   throw new Error('Build release must reuse [1] prepared Workspace dependencies instead of reinstalling them')
 }
+if (buildReleaseSource.includes('Copy-Item $tauriRelease (Join-Path $release')) throw new Error('Tauri Cargo release cache must not be copied wholesale into dist/release')
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
@@ -240,6 +249,8 @@ for (const marker of [
   '官方源 45 秒没有任何新数据',
   "@('check','--workspace','--offline')",
   "@('test','--workspace','--offline')",
+  "Join-Path $Root '.cache\\tauri-target'",
+  '$env:CARGO_TARGET_DIR = $tauriTargetDir',
 ]) {
   if (!consoleSource.includes(marker)) throw new Error(`XMA console prepared-dependency/runtime contract missing: ${marker}`)
 }
@@ -269,6 +280,8 @@ if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA 
 if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
 if (!syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must preserve locally generated lockfiles when the source package omits them')
 if (!syncSource.includes('若版本包暂未携带 lockfile，则保留本机已生成的')) throw new Error('XMA sync must explain conditional lockfile preservation policy')
+if (!syncSource.includes("Join-Path $Target 'target'") || !syncSource.includes("apps\\desktop\\src-tauri\\target")) throw new Error('XMA sync must clean legacy Cargo target directories after cache migration')
+if (!syncSource.includes('.cache/cargo-target') && !syncSource.includes('.cache\\cargo-target')) throw new Error('XMA sync must explain the new project-local Cargo cache location')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

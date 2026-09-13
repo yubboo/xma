@@ -10,7 +10,7 @@ import { ContextRegistry } from './context.ts'
 import type { ModelEvent, ModelMessage, ModelProvider, ModelToolCall, ModelToolSpec } from './model.ts'
 import { deriveModelMessages, SESSION_FORMAT_VERSION, type SessionEvent, type SessionEventInput, type SessionHeader, type SessionSnapshot } from './session.ts'
 import type { SessionHandle, SessionStore } from './session-store.ts'
-import { ToolRegistry, type ToolResult } from './tools.ts'
+import { ToolApprovalSessionCache, ToolRegistry, type ToolApprovalProvider, type ToolPolicy, type ToolResult, type ToolSecurityGuard } from './tools.ts'
 import type { Disposer, JsonValue } from './types.ts'
 
 export type RuntimeLiveEvent =
@@ -32,6 +32,12 @@ export interface RunTurnOptions {
   input: string
   signal: AbortSignal
   maxToolCalls?: number
+  /** Tool Policy 默认 standard；真实副作用在没有 Approval Provider 时 fail closed。 */
+  policy?: ToolPolicy
+  /** Host/UI/CLI 提供用户确认；未提供时 write/execute/network 默认拒绝。 */
+  approvals?: ToolApprovalProvider
+  /** 额外单调 Security Guard；任一 deny 都不可被后续层恢复。 */
+  guards?: readonly ToolSecurityGuard[]
 }
 
 export interface TurnRunResult {
@@ -116,6 +122,7 @@ export class AgentSession {
   readonly #listeners: Set<RuntimeEventListener>
   #activeTurn = false
   #closed = false
+  readonly #approvalCache = new ToolApprovalSessionCache()
 
   constructor(
     readonly header: SessionHeader,
@@ -201,12 +208,38 @@ export class AgentSession {
         }
 
         const messages = freezeMessages(deriveModelMessages(this.handle.snapshot().events))
-        const toolSpecs = freezeTools(options.tools.specs())
+        // 当前 Step 只创建一次 ToolPlan：模型看到的 Schema 和稍后执行的 Runtime 必须来自同一个冻结计划。
+        const toolPlan = options.tools.createPlan()
+        const toolSpecs = freezeTools(toolPlan.modelVisibleSpecs())
+        // Approval 可能来自并发工具；用 promise chain 保证 durable audit 串行，并且在 execute 前真正 append 完成。
+        let approvalAppend: Promise<void> = Promise.resolve()
+        const toolRouter = toolPlan.createRouter({
+          ...(options.policy ? { policy: options.policy } : {}),
+          ...(options.approvals ? { approvals: options.approvals } : {}),
+          ...(options.guards ? { guards: options.guards } : {}),
+          approvalCache: this.#approvalCache,
+          onApproval: (call, approval) => {
+            const append = approvalAppend.then(() => this.#append([{
+              type: 'tool/approval',
+              turnId,
+              stepId,
+              callId: call.callId,
+              name: call.name,
+              requested: approval.requested,
+              decision: approval.decision,
+              cacheKey: approval.cacheKey,
+              reason: approval.reason,
+            }]))
+            approvalAppend = append
+            return append
+          },
+        })
         await this.#append([{
           type: 'step/start',
           turnId,
           stepId,
           provider: structuredClone(options.provider.identity),
+          toolPlanId: toolPlan.id,
           tools: structuredClone(toolSpecs),
           messageCount: messages.length,
           contextDigest,
@@ -309,22 +342,35 @@ export class AgentSession {
         }
 
         let exceededLimit = false
+        const dispatchable: ModelToolCall[] = []
+        const limited = new Map<string, ToolResult>()
         for (const call of pendingToolCalls) {
           toolCalls += 1
-          let result: ToolResult
           if (toolCalls > maxToolCalls) {
             exceededLimit = true
-            result = { ok: false, code: 'TOOL_CALL_LIMIT', content: `XMA tool call limit exceeded: ${maxToolCalls}` }
+            limited.set(call.callId, { ok: false, code: 'TOOL_CALL_LIMIT', content: `XMA tool call limit exceeded: ${maxToolCalls}` })
           } else if (options.signal.aborted) {
-            result = { ok: false, code: 'TOOL_ABORTED', content: 'Tool call aborted before execution.' }
+            limited.set(call.callId, { ok: false, code: 'TOOL_ABORTED', content: 'Tool call aborted before execution.' })
           } else {
-            result = await options.tools.execute(call.name, call.arguments, {
-              runId: this.id,
-              sessionId: this.id,
-              turnId,
-              stepId,
-              signal: options.signal,
-            })
+            dispatchable.push(call)
+          }
+        }
+
+        const dispatches = await toolRouter.dispatchMany(dispatchable, {
+          runId: this.id,
+          sessionId: this.id,
+          turnId,
+          stepId,
+          signal: options.signal,
+        })
+        const byCallId = new Map(dispatches.map(outcome => [outcome.call.callId, outcome]))
+
+        for (const call of pendingToolCalls) {
+          const dispatched = byCallId.get(call.callId)
+          const result = limited.get(call.callId) ?? dispatched?.result ?? {
+            ok: false,
+            code: 'TOOL_EXECUTION_ERROR' as const,
+            content: 'XMA internal tool dispatch result missing.',
           }
           await this.#append([toolResultEvent(result, { turnId, stepId, call })])
         }

@@ -34,14 +34,21 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
 
   while (true) {
     let calledTool = false
-    for await (const event of input.provider.stream({ messages, tools: input.tools.specs(), signal: input.signal })) {
+    // 兼容入口也必须遵守冻结 ToolPlan；同一模型 Step 看见的 Schema 与执行 Runtime 不得来自两次 Registry 读取。
+    const plan = input.tools.createPlan()
+    const router = plan.createRouter()
+    for await (const event of input.provider.stream({ messages, tools: plan.modelVisibleSpecs(), signal: input.signal })) {
       if (event.type === 'text') text += event.text
       if (event.type !== 'tool-call') continue
 
       if (toolCalls >= maxToolSteps) throw new Error(`XMA max tool steps exceeded: ${maxToolSteps}`)
       calledTool = true
       toolCalls += 1
-      const observation = await input.tools.execute(event.name, event.arguments, { runId: input.runId, signal: input.signal })
+      const dispatched = await router.dispatch(
+        { callId: event.callId, name: event.name, arguments: event.arguments },
+        { runId: input.runId, signal: input.signal },
+      )
+      const observation = dispatched.result
       messages.push({
         role: 'assistant',
         content: '',

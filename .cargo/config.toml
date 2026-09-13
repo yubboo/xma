@@ -1,0 +1,7 @@
+# 文件作用：把 XMA Rust/Cargo 编译缓存收敛到项目本地 .cache，避免仓库根目录出现 target/。
+# 关联模块：scripts/windows/xma-build-release.ps1、XMA.bat [7] Rust 检查、Tauri 2 备用桌面构建。
+# 当前实现：所有从本仓库层级发现该配置的 Cargo 命令统一使用 .cache/cargo-target。
+# 职责边界：.cache/cargo-target 只是可删除的本地编译缓存；可交付产品仍统一复制/生成到 dist/，不得把 Cargo cache 当发布目录。
+
+[build]
+target-dir = ".cache/cargo-target"

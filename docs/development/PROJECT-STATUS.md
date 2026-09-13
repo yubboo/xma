@@ -23,7 +23,12 @@
 - OpenAI-compatible Chat Completions HTTP/SSE Adapter 第一版（协议测试，不等于外部厂商 Ready）；
 - Brain Ready Probe 第一版：必须真实发 HTTP 模型请求才可返回 ready；
 - Model Provider 最小 Contract；
-- Tool Registry + 结构化普通错误/取消结果；
+- Tool Definition / deterministic frozen ToolPlan / ToolRouter；
+- JSON Schema validation → Policy → monotonic Security Guard → Approval → Execute/Finalize Tool Pipeline；
+- allow-once / allow-session / deny 与 durable `tool/approval` 审计；
+- parallel-safe batch + exclusive barrier；
+- TypeScript Native Capability Bridge + `native.fs.read_text` / `native.fs.write_text` / `native.process.run` Tool Adapter；
+- Rust Host Policy（roots/绝对 executable identities/resource limits）+ filesystem canonical confinement + 一次性 Capability lease + 无 shell process allowlist/timeout/output cap；
 - Workspace Registry；
 - Plugin Host；
 - `ctx.<service>` Service Proxy；
@@ -49,9 +54,9 @@
 - Provider 通用 Retry / Cost Catalog / App Protocol 配置面；
 - 外部真实 Provider E2E 与 Product Ready 证据；
 - 至少两个不同协议族真实 Provider；
-- Tool Definition / frozen ToolPlan / ToolRouter；
-- Policy / Approval / Permission；
-- Rust filesystem confinement / process / PTY / capability；
+- App Protocol Approval request/decision 与多 Host 交互；
+- Rust process-tree ownership / cancellation、PTY/ConPTY、network/hash/archive capability；
+- process executable 已完成“绝对路径 + canonical identity + 不经 PATH”第一版；仍缺可执行文件内容/句柄级 TOCTOU identity hardening；
 - Workspace persistence / ownership / instructions；
 - App Protocol / Event Stream；
 - DSH Tool/LLM/Session/Skill bridge 与 Conformance Tests。
@@ -61,7 +66,7 @@
 - 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo **品牌 Provider 产品支持**；当前只有通用 OpenAI-compatible 协议 Adapter；
 - 任何外部 Profile 的 Brain Ready 证据；当前只有 Probe 实现与本地协议测试；
 - 完整 Session/Memory/Context；
-- Rust Workspace Sandbox/Capability/PTY/Process；
+- 完整 Rust Workspace Sandbox：process tree / PTY / network / executable content identity；（FS 与 absolute-path direct process 最小 capability 已有第一版）
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
 - Xiaoyu Code 真实 coding 闭环；
 - Minecraft 真实开服闭环；
@@ -87,6 +92,7 @@ XMA 已建立三条固定参考线：
 - 副：Tauri 2（系统 WebView2，备用桌面运行时）；
 - 两者共享 `apps/web` 与 Core，不复制 Agent Runtime；
 - Electron ZIP 默认缓存到项目 `.cache/electron`；
+- Cargo/Rust 编译缓存固定到项目 `.cache/cargo-target`，Tauri 使用 `.cache/tauri-target`；根 `target/` 不再作为正常输出；`dist/` 保持唯一产品构建/发布入口；
 - Windows 使用 `@electron/get` 校验下载 → PowerShell `Expand-Archive` staging → version/executable 校验 → 原子替换 → `path.txt`；
 - `pnpm-workspace.yaml` 固定 `yauzl >= 3.3.1` override；
 - Electron 原子安装核心有离线测试；
@@ -96,11 +102,11 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-Stage A 的 Context/Session 安全导出与 Stage B Provider transport 第一版已经进入代码。下一批继续按底层顺序推进：
+Stage C 的 frozen ToolPlan / Policy / Approval 与 Native FS/Process 最小安全链已经进入代码。下一批继续按底层顺序推进：
 
-1. Tool Definition / frozen ToolPlan / ToolRouter；
-2. Policy / Approval / Permission；
-3. Native FS/Process 最小安全链；
+1. App Protocol Approval request/decision，把 CLI/Desktop 交互接到同一 Contract；
+2. process-tree ownership/cancellation + PTY/ConPTY；
+3. Native network capability；
 4. CLI/Server App Protocol 真正接 Runtime；
 5. 有真实凭据时执行外部 OpenAI-compatible E2E，并开始 Anthropic native Adapter；
 6. system-message reconciliation / compaction 与 Session Store generation migration。

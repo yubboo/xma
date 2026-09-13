@@ -140,6 +140,19 @@ XMA 长期参考：
 - hash/archive；
 - capability token / request validation。
 
+### 当前落地（本批次）
+
+- `core/src/tool-schema.ts`：模型参数在进入 Policy 前做最小 JSON Schema fail-loud 校验；
+- `core/src/tools.ts`：Registry → frozen ToolPlan → 同源 ToolRouter，模型 Schema 与可执行 Runtime 不漂移；
+- `core/src/tool-policy.ts`：standard/paranoid/auto、monotonic Guard、allow-once/allow-session/deny；
+- durable `tool/approval` 审计事件；
+- `parallel-safe` batch + `exclusive` barrier；
+- `core/src/native.ts` + `plugins/tools/native.ts`：TypeScript Capability Bridge 与 Native Tool Adapter；
+- Rust Host Policy：Native 初始化时锁定最大 roots/programs/resource limits，后续 capability 只能申请子集；
+- Rust `filesystem.read` / `filesystem.write`：真实 canonical path confinement、大小硬上限、一次性 capability lease；
+- Rust `process.spawn`：Host Policy 只接受绝对可执行文件路径，Host/lease/execute 三阶段 canonical identity 核对；单次 lease 只下放本次程序；cwd confinement、argv 分离无 shell、超时与输出上限；
+- 当前明确未完成：Windows Job Object/Unix process group、进程树取消、PTY/ConPTY、network capability、hash/archive、可执行文件内容/文件句柄级 TOCTOU identity hardening。
+
 ### 出口标准
 
 - read/write/execute/network 至少各一条 Tool 实链；

@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 const required = [
   'AGENTS.md',
+  '.cargo/config.toml',
   'core/src/agent.ts',
   'core/src/plugin.ts',
   'core/src/runtime.ts',
@@ -16,8 +17,13 @@ const required = [
   'core/src/session-export.ts',
   'core/src/context.ts',
   'core/src/provider.ts',
+  'core/src/tool-schema.ts',
+  'core/src/tool-policy.ts',
+  'core/src/tools.ts',
+  'core/src/native.ts',
   'plugins/providers/builtin.ts',
   'plugins/providers/openai-compatible.ts',
+  'plugins/tools/native.ts',
   'plugins/compat/deepseek-harness/index.ts',
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
@@ -26,6 +32,7 @@ const required = [
   'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
   'docs/development/UPSTREAM-REFERENCE.md',
+  'docs/security/NATIVE-CAPABILITIES.md',
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
 
@@ -60,6 +67,30 @@ const providerAdapter = readFileSync('plugins/providers/openai-compatible.ts', '
 for (const marker of ["OPENAI_COMPATIBLE_ADAPTER_ID", "chat/completions", 'sseData', 'probe(']) {
   if (!providerAdapter.includes(marker)) throw new Error(`XMA OpenAI-compatible adapter marker missing: ${marker}`)
 }
+const toolsSource = readFileSync('core/src/tools.ts', 'utf8')
+for (const marker of ['class ToolPlan', 'class ToolRouter', 'createPlan()', 'validateToolArguments', 'dispatchMany']) {
+  if (!toolsSource.includes(marker)) throw new Error(`XMA ToolPlan architecture marker missing: ${marker}`)
+}
+const policySource = readFileSync('core/src/tool-policy.ts', 'utf8')
+for (const marker of ['DefaultToolPolicy', 'ToolSecurityGuard', 'ToolApprovalProvider', 'allow-session']) {
+  if (!policySource.includes(marker)) throw new Error(`XMA Tool Policy architecture marker missing: ${marker}`)
+}
+const nativeBridge = readFileSync('core/src/native.ts', 'utf8')
+for (const marker of ['NativeCapabilityKind', 'NativeHostPolicy', 'issueCapability', 'runProcess', 'shell: false', '绝对可执行文件身份白名单']) {
+  if (!nativeBridge.includes(marker)) throw new Error(`XMA Native bridge marker missing: ${marker}`)
+}
+const nativeTools = readFileSync('plugins/tools/native.ts', 'utf8')
+for (const marker of ['native.fs.read_text', 'native.fs.write_text', 'native.process.run', 'issueCapability', 'programs: [program]']) {
+  if (!nativeTools.includes(marker)) throw new Error(`XMA Native tool marker missing: ${marker}`)
+}
+const nativeProtocol = readFileSync('native/protocol/src/lib.rs', 'utf8')
+for (const marker of ['filesystem.read', 'filesystem.write', 'process.spawn']) {
+  if (!nativeProtocol.includes(marker)) throw new Error(`XMA Native protocol capability marker missing: ${marker}`)
+}
+const nativeRuntime = readFileSync('native/runtime/src/main.rs', 'utf8')
+for (const marker of ['configure_policy', 'take_capability', 'fs::canonicalize', 'canonicalize_program', 'Command::new', 'process/run', 'absolute executable path']) {
+  if (!nativeRuntime.includes(marker)) throw new Error(`XMA Native runtime security marker missing: ${marker}`)
+}
 const runtimeSource = readFileSync('core/src/runtime.ts', 'utf8')
 if (runtimeSource.includes('chat/completions') || runtimeSource.includes('Authorization')) {
   throw new Error('XMA Core Runtime must not contain provider-specific HTTP/auth protocol details')
@@ -70,9 +101,20 @@ if (modelSource.includes('chat/completions') || modelSource.includes('x-api-key'
 }
 
 const agents = readFileSync('core/src/agent.ts', 'utf8')
-if (!agents.includes('provider.stream') || !agents.includes('tools.execute')) throw new Error('XMA Agent Loop must remain Model -> Tool -> Observation -> Model')
+if (!agents.includes('provider.stream') || !agents.includes('createPlan()') || !agents.includes('createRouter()')) {
+  throw new Error('XMA Agent Loop must remain Model -> frozen ToolPlan/Router -> Observation -> Model')
+}
+if (!runtimeSource.includes('toolPlanId: toolPlan.id') || !runtimeSource.includes('toolRouter.dispatchMany')) {
+  throw new Error('XMA Runtime must bind each Step to one frozen ToolPlan and execute through its ToolRouter')
+}
 const compat = readFileSync('plugins/compat/deepseek-harness/index.ts', 'utf8')
 for (const marker of ['inject', 'apply(context']) if (!compat.includes(marker)) throw new Error(`DeepSeek Harness compatibility marker missing: ${marker}`)
+
+
+const cargoConfig = readFileSync('.cargo/config.toml', 'utf8')
+if (!cargoConfig.includes('target-dir = ".cache/cargo-target"')) {
+  throw new Error('XMA Cargo build cache must live under .cache/cargo-target instead of root target/')
+}
 
 const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string> }
 const webBuild = rootPackage.scripts?.['build:web'] ?? ''

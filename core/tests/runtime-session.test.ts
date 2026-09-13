@@ -14,6 +14,7 @@ import type { ModelProvider } from '../src/model.ts'
 import { AgentRuntime } from '../src/runtime.ts'
 import { deriveModelMessages } from '../src/session.ts'
 import { JsonlSessionStore, MemorySessionStore } from '../src/session-store.ts'
+import { StaticToolApprovalProvider } from '../src/tool-policy.ts'
 import { ToolRegistry } from '../src/tools.ts'
 
 function toolsWithObservation(executions: { count: number }): ToolRegistry {
@@ -100,6 +101,7 @@ test('Runtime persists a reconstructable multi-step tool turn', async () => {
   assert.equal(firstStep?.type, 'step/start')
   if (firstStep?.type === 'step/start') {
     assert.equal(firstStep.provider.model, 'two-step')
+    assert.match(firstStep.toolPlanId, /^tool-plan:v1:[0-9a-f]{8}$/)
     assert.equal(firstStep.tools[0]?.name, 'demo.inspect')
     assert.equal(firstStep.messageCount, 1)
     assert.equal(firstStep.contextDigest, '')
@@ -110,6 +112,65 @@ test('Runtime persists a reconstructable multi-step tool turn', async () => {
   const rebuilt = deriveModelMessages(snapshot.events)
   assert.deepEqual(rebuilt.map(message => message.role), ['user', 'assistant', 'tool', 'assistant'])
   assert.equal(rebuilt[1]?.toolCalls?.[0]?.callId, 'call-1')
+  await session.close()
+})
+
+
+test('Runtime persists approval decisions before side-effect tool results', async () => {
+  const runtime = new AgentRuntime(new MemorySessionStore())
+  const session = await runtime.createSession({ agentId: 'xiaoyu.code', sessionId: 'session-runtime-approval' })
+  const tools = new ToolRegistry()
+  tools.register({
+    spec: {
+      name: 'fixture.write',
+      description: 'Write fixture state.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path'],
+        properties: { path: { type: 'string', minLength: 1 } },
+      },
+    },
+    effect: 'write',
+    approvalKey(args) { return String(args.path) },
+    async execute() {
+      assert.ok(session.snapshot().events.some(event => event.type === 'tool/approval' && event.callId === 'approval-call'))
+      return { ok: true, code: 'OK', content: 'write-ok' }
+    },
+  })
+  let calls = 0
+  const provider: ModelProvider = {
+    identity: { provider: 'fixture', model: 'approval-runtime' },
+    async *stream(request) {
+      calls += 1
+      if (calls === 1) {
+        yield { type: 'tool-call' as const, callId: 'approval-call', name: 'fixture.write', arguments: { path: 'a.txt' } }
+        return
+      }
+      assert.ok(request.messages.some(message => message.role === 'tool' && message.toolCallId === 'approval-call' && message.content === 'write-ok'))
+      yield { type: 'text' as const, text: 'done' }
+    },
+  }
+
+  const result = await session.runTurn({
+    provider,
+    tools,
+    approvals: new StaticToolApprovalProvider('allow-once'),
+    input: '写入',
+    signal: new AbortController().signal,
+  })
+  assert.equal(result.status, 'completed')
+  const events = session.snapshot().events
+  const approval = events.find(event => event.type === 'tool/approval')
+  assert.equal(approval?.type, 'tool/approval')
+  if (approval?.type === 'tool/approval') {
+    assert.equal(approval.requested, true)
+    assert.equal(approval.decision, 'allow-once')
+    assert.equal(approval.cacheKey, 'fixture.write:a.txt')
+  }
+  const approvalIndex = events.findIndex(event => event.type === 'tool/approval')
+  const resultIndex = events.findIndex(event => event.type === 'tool/result' && event.callId === 'approval-call')
+  assert.ok(approvalIndex >= 0 && resultIndex > approvalIndex)
   await session.close()
 })
 

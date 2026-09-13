@@ -197,3 +197,29 @@ Rust Native/Security Kernel
 - 不把 API Key 写入 Provider Profile、Session 或测试 fixture；
 - 不把本地 mock server 测试写成“外部厂商已 Ready”；
 - 不为对齐上游目录而拆出大量 npm workspace。
+
+
+## 10. 0.1.0 Tool / Approval / Native Stage C 研究记录
+
+本批继续使用第 2 节锁定 commit，不跟随上游默认分支漂移。
+
+### OpenAI Codex · tools / approvals
+
+已核对固定 commit 下 `codex-rs/core/src/tools/` 文件树，并重点审阅 `router.rs`、`registry.rs`、`spec_plan.rs`、`approvals.rs`；同时核对同目录 `router_tests.rs`、`spec_plan_tests.rs`、`approvals_tests.rs` 等测试入口在参考域内。XMA 吸收的是：**一个 finalized tool plan 同时拥有模型可见 ToolSpec 与匹配的 Runtime**、Registry/Router 分层、Approval 是独立 policy stage 而非 Tool 自己偷偷弹确认、执行结果统一回到模型。Codex 的 Agent/Core 仍是 Rust 实现，XMA 不复制它的语言所有权。
+
+### DeepSeek Harness · core/tools
+
+已核对固定 commit 下 `packages/core/tools/src/` 与 `packages/core/tools/tests/` 全文件清单，重点把 `index.ts`、`invariant.ts`、`json-schema.ts`、`schema.ts`、`types.ts` 以及 execution/scoped/invariant/schema 测试纳入本批设计核对。XMA 吸收 typed schema、普通失败结构化、policy/guard pipeline、取消 signal、parallel-safe/exclusive 语义；PTC/code runtime 仍不是本批目标，不为“对标”而提前引入。
+
+### Minecraft Host Agent · Tool gate / confinement
+
+已审阅固定 commit 下 `src/tools/mod.rs`、`src/tools/confinement.rs` 和 `src/agent/mod.rs` 的 Tool dispatch/gate 段。XMA 吸收 Read/Write/Execute/Network 的用户交互分级、allow-once/allow-session/deny、参数失败回模型和取消后补齐结果的经验；但**拒绝仅靠词法路径收敛作为最终安全边界**。XMA 的真实文件 side effect 在 Rust Kernel 里做 `Host Policy subset + canonicalize + root containment`，Capability 还是一次性 lease。
+
+### 本批安全拒绝项
+
+- 不让模型看到一套 Schema、执行时再从 live Registry 找另一套 Runtime；
+- 不让 Tool 自己声明“已批准”或绕过 monotonic Guard；
+- 没有 Approval Provider 时不默认执行 write/execute/network；
+- 不从 TypeScript 直接 `fs`/`child_process` 实现真实 Native Tool；
+- 不把当前 direct-child timeout/kill 写成“process tree sandbox 已完成”；
+- 不把“canonical absolute path identity”夸大成完整 executable identity：当前已消除 PATH/当前目录同名程序解析，后续仍需文件内容/句柄级 TOCTOU hardening。

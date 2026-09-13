@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；ToolPlan/Approval/Native Capability 等仍按本文继续实现。
+本文定义 XMA 0.1.x 最重要的底层 Runtime Contract，并区分“已落地第一版”与“后续目标”。当前 0.1.0 已有正式 `Session → Turn → Step` driver、Memory/JSONL Session Store、durable Context Snapshot、Provider/Tool 请求快照和取消结算；本批又落地了 frozen ToolPlan/ToolRouter、Schema → Policy → Security Guard → Approval → Execute 流水线，以及 Rust filesystem/process 最小 Capability 链。PTY/Network/process-tree ownership 等仍按本文继续实现。
 
 参考上，XMA 借鉴 Codex 的 Thread/Turn/ToolRouter/Permission 运行语义、DeepSeek Harness 的 Session/Event/Service/Effect 结构和 Minecraft Host Agent 的 Agent-First/Skill/Tool 实践；实现上仍严格服从 XMA 自己的 **TypeScript Agent Core + Rust Native/Security Kernel** 边界。
 
@@ -198,6 +198,13 @@ resolve call
 
 并发默认保守：只读且工具明确声明 parallel-safe 时才能并行；Write/Execute/Network 等有顺序依赖的调用默认串行或形成 barrier。
 
+### 当前 0.1.0 落地
+
+`core/src/tools.ts` 已把 Tool Registry 生成的 Schema 与真实 Runtime 一起冻结到同一个 `ToolPlan`；每个 Step 只创建一次 Plan，并把 `toolPlanId + tools[]` 写入 `step/start`。Registry 在模型请求之后发生增删，不会改变该 Step 的 Router。`core/src/tool-schema.ts` 在 Policy 之前做 fail-loud 参数校验，普通参数错误变成 `TOOL_INVALID_ARGUMENTS` 返回模型自纠。
+
+`core/src/tool-policy.ts` 已提供 standard/paranoid/auto Policy、单调 Security Guard、allow-once/allow-session/deny Approval 与 Session cache。没有 Host Approval Provider 时，write/execute/network 默认 fail closed。`parallel-safe` 调用可在同一批次并行；`exclusive` 调用形成 barrier。
+
+
 ## 7. Permission / Approval / Capability
 
 XMA 要把三个概念分开：
@@ -209,6 +216,8 @@ XMA 要把三个概念分开：
 模型不能通过改参数绕过任一层。TypeScript Tool 只能请求 Native Capability；Rust Runtime 必须独立验证 path、process、network 等约束。
 
 第一阶段 Tool 交互语义可采用 `ReadOnly / Write / Execute / Network`，后续 Native 内部应细化为 filesystem/process/network/pty/archive 等具体 Capability，而不是让一个 `Network=true` 获得所有机器权限。
+
+当前 Rust Kernel 第一批实现见 `docs/security/NATIVE-CAPABILITIES.md`：Native 进程先锁定一次 Host Policy，`filesystem.read` / `filesystem.write` / `process.spawn` capability 只能申请它的子集并采用一次性 lease；文件路径由 Rust 真实 canonicalize 后再做 root confinement；进程 Host Policy 只接受绝对 executable path，Host/lease/execute 三阶段都 canonicalize 后按真实路径身份核对，并且调用不经过 shell/PATH。process tree ownership、PTY/ConPTY、network capability 与可执行文件内容/句柄级 TOCTOU identity 仍未完成。
 
 ## 8. Cancellation 与结构合法性
 
@@ -298,7 +307,7 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 - `core/src/app-protocol.ts`：Host command/result/event envelope 第一版；
 - `core/src/tools.ts`：结构化 Tool Result 和普通异常/取消归一化。
 
-第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
+第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`context/snapshot`、`step/start`、`assistant/message`、`tool/approval`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity、`toolPlanId`、Tool Schema 快照和 `contextDigest`；模型历史由 context/user/assistant/tool durable fact 重新投影，并可按 Step 重建当时的 messages/tools/context。Approval 是审计事实，不进入模型消息投影；原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
 
 JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；Session export/redaction 与纯 migration registry 已有第一版，但 migration **尚未接入 JSONL Store generation 发布流程**。Context Assembly 已接入 Runtime，不过 system-message reconciliation、compaction、Workspace instructions discovery 仍未完成。
 

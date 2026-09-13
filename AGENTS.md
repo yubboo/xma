@@ -184,6 +184,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/install-electron-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
+- Cargo/Rust 编译缓存固定到项目 `.cache/cargo-target/`；Tauri 2 脚本使用 `.cache/tauri-target/`。仓库根 `target/` 只视为旧版遗留缓存并应清理；`dist/` 才是 XMA 产品构建/发布产物入口。
 - `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
 
 
@@ -214,7 +215,9 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - **Model-visible ⇔ reconstructable**：任何进入模型请求的动态内容都必须能从 Session durable state 或有明确来源的 Context source 重建；UI 临时 state 不得偷偷影响模型。
 - 模型流式 chunk / progress 属于 live event；最终 assistant/tool/approval/usage 等需要恢复或审计的事实必须 durable。
 - Tool 必须通过 Schema → Policy/Plugin → Security Guard → Approval → Execute → Post-process/Redact → Durable Result 流水线；普通 Tool 失败结构化回模型，不得无故炸毁 Session。
+- 需要 Approval 的副作用必须先把最终 Approval 决策 durable append，再执行真实副作用；`allow-session` 只有 Tool 提供稳定 scope key 才允许复用，禁止把一次参数批准无意扩成整个 Tool 授权。
 - 每个 Step 的模型可见 Tool Schema 与实际可执行 Runtime 必须来自同一个冻结 ToolPlan。
+- Native Capability 必须最小化并由 Rust 二次 enforcement；Native Runtime 先锁定 Host Policy，Tool lease 只能申请其子集；文件真实路径要 canonical confinement，进程不得用 `shell:true` 绕过 argv/allowlist。
 - 新产品行为优先走 Provider/Tool/Context/Session/Plugin extension point；能通过扩展点完成时禁止修改 Agent Loop 塞特例。
 - 完整 Capability 至少考虑 Definition / Provider / Consumer；只有接口或只有实现不算完成。
 - Provider 不只是 `stream()`：必须逐步包含 capability、auth、model catalog、usage/error normalization、Brain Ready Probe；Provider-specific JSON/headers 不得散落 Core Loop。

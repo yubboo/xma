@@ -41,6 +41,23 @@ $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJ
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
 
+# 中文说明：0.1.0 早期 Cargo 默认在仓库根生成 target/。现在统一迁移到 .cache/cargo-target，
+# 因此同步新源码时主动清理旧 target/，避免用户误把 Rust 编译缓存当成 dist 发布产物。
+$legacyCargoTargets = @(
+  (Join-Path $Target 'target'),
+  (Join-Path $Target 'apps\desktop\src-tauri\target')
+)
+foreach ($legacyCargoTarget in $legacyCargoTargets) {
+  if (Test-Path $legacyCargoTarget) {
+    Write-Host "[清理] 正在删除旧版 Cargo 编译缓存：$legacyCargoTarget；新缓存统一位于 .cache\。" -ForegroundColor DarkYellow
+    try {
+      Remove-Item $legacyCargoTarget -Recurse -Force -ErrorAction Stop
+    } catch {
+      Write-Host "[警告] 旧 Cargo 缓存当前可能被进程占用，暂未删除：$legacyCargoTarget。关闭相关进程后可手动删除；新构建不会继续使用它。" -ForegroundColor Yellow
+    }
+  }
+}
+
 foreach ($lockName in $preservedLocks) {
   Copy-Item (Join-Path $lockBackupRoot $lockName) (Join-Path $Target $lockName) -Force
 }

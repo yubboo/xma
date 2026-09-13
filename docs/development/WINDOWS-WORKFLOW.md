@@ -36,6 +36,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 - `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；
 - `pnpm rebuild esbuild`：只准备 TypeScript/Web 工具链必须的 esbuild Native Binary；
 - `cargo fetch`：预取 XMA 根 Rust Workspace（`native/protocol`、`native/runtime`）依赖。
+- 根 `.cargo/config.toml` 固定 XMA 根 Rust Workspace 输出到 `.cache/cargo-target/`；Tauri 开发/构建脚本单独覆盖到 `.cache/tauri-target/`。二者都是可删除的本地 Rust 编译缓存，`dist/` 才是 XMA 发布产物目录。旧版根 `target/` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
 完成 `[1]` 后：
 

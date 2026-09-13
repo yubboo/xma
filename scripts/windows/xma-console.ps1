@@ -114,8 +114,15 @@ function Start-ElectronDesktop {
 
 function Start-TauriDesktop {
   Ensure-TauriDesktopRuntime
-  Write-Host '[启动] 正在启动 XMA Desktop / Tauri 2（备用）...' -ForegroundColor Cyan
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:desktop:tauri')
+  $tauriTargetDir = Join-Path $Root '.cache\tauri-target'
+  Write-Host "[启动] 正在启动 XMA Desktop / Tauri 2（备用）；Rust 缓存写入 $tauriTargetDir。" -ForegroundColor Cyan
+  $previousCargoTargetDir = $env:CARGO_TARGET_DIR
+  $env:CARGO_TARGET_DIR = $tauriTargetDir
+  try {
+    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','dev:desktop:tauri')
+  } finally {
+    if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
+  }
 }
 
 function Start-Desktop {
@@ -148,6 +155,7 @@ function Invoke-FullCheck {
   Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
   Write-Host '[检查] 正在运行 Rust fmt / check / test（offline）...' -ForegroundColor Cyan
+  Write-Host '[缓存] Cargo 输出位于 .cache\cargo-target\；dist\ 只保留 XMA 产品构建/发布产物。' -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fmt','--all','--','--check')
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('check','--workspace','--offline')
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('test','--workspace','--offline')
