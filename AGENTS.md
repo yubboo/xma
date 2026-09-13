@@ -88,7 +88,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
 - 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
 - 顶层固定启动器 `XMA.bat`、`XMA-GitHub.bat`、`XMA-Sync.bat` 以及 Windows `xma-*.ps1` 属于稳定外部入口，保留既有产品前缀，不按父目录去重；
-- 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。
+- 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
 当前已经达到分组规模并固定的结构包括：`core/src/session/{contract,store,export}.ts`、`core/src/tool/{router,policy,schema}.ts`、`apps/desktop/scripts/electron/`、`scripts/gates/`。
 

@@ -56,7 +56,7 @@
 - 一个只有单个实现文件的普通领域不应为了“整齐”新建文件夹；通常至少出现约 3 个稳定同领域文件才分组；
 - 已分组的 `session/`、`tool/`、Desktop `scripts/electron/` 和 `scripts/gates/` 不得退回重复长文件名；
 - 改名必须同时修复 import、脚本、文档、Gate 和测试，禁止留下兼容别名文件制造两套命名；
-- 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。
+- 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。 Naming Gate 只检查 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存和生成产物；第三方包命名不受 XMA 命名规则约束。
 
 ## 4. Agent Runtime 硬规则
 

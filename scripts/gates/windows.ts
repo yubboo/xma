@@ -117,6 +117,30 @@ for (const marker of [
   if (!githubSource.includes(marker)) throw new Error(`GitHub helper pure-Git contract regression: missing ${marker}`)
 }
 
+const syncMigrationSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
+for (const marker of [
+  '$legacySourcePaths = @(',
+  'core\\src\\session-store.ts',
+  'apps\\desktop\\tests\\electron-runtime-core.test.ts',
+  'scripts\\gates\\check-architecture.ts',
+  'Remove-Item $legacyTargetPath -Force -ErrorAction Stop',
+]) {
+  if (!syncMigrationSource.includes(marker)) throw new Error(`XMA sync rename-migration contract regression: missing ${marker}`)
+}
+
+const namingGateSource = readFileSync('scripts/gates/naming.ts', 'utf8')
+for (const marker of [
+  "'node_modules'",
+  "'dist'",
+  "'build'",
+  "'target'",
+  "'release'",
+  "apps/desktop/src-tauri/gen",
+  'apps/desktop/tests/electron-runtime-core.test.ts',
+]) {
+  if (!namingGateSource.includes(marker)) throw new Error(`Naming Gate ownership/legacy contract regression: missing ${marker}`)
+}
+
 const gitignoreSource = readFileSync('.gitignore', 'utf8')
 for (const marker of [
   'node_modules/', '.pnpm-store/', 'dist/', 'build/', '/runtime/', '.xma/', 'workspaces/',

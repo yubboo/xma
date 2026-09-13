@@ -84,3 +84,5 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
 
 - Electron 发布包通过 `file://` 加载 `.cache/desktop/electron/app/web/` staging 打入应用的 `web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`。最终 Setup/Portable 由 electron-builder 直接写到 `dist/release/electron/`；禁止恢复 `apps/desktop/web|release` 中转目录。
+
+- `XMA-Sync.bat` 必须清理已经改名/删除的旧源码路径；即使用户把新 ZIP 覆盖解压到旧目录导致 Source 残留旧文件，也不得把旧路径重新同步回 Git 工作目录。

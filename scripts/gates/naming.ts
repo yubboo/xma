@@ -12,6 +12,24 @@ const ROOTS = ['apps', 'core', 'agents', 'plugins', 'native', 'scripts'] as cons
 const MAX_NAME_LENGTH = 32
 const MAX_WORDS = 3
 
+// 仅检查 XMA 自己维护的源码/配置。第三方依赖、缓存、构建产物和生成目录不属于命名规范治理范围。
+const IGNORED_DIR_NAMES = new Set([
+  '.git',
+  '.cache',
+  '.pnpm-store',
+  '.turbo',
+  '.xma',
+  'node_modules',
+  'dist',
+  'build',
+  'target',
+  'release',
+  'coverage',
+  'tmp',
+  'temp',
+])
+const IGNORED_PATHS = new Set(['apps/desktop/src-tauri/gen'])
+
 const failures: string[] = []
 
 function fail(message: string): void {
@@ -53,6 +71,7 @@ function walk(dir: string): void {
     const normalized = path.replaceAll('\\', '/')
     const stat = statSync(path)
     if (stat.isDirectory()) {
+      if (IGNORED_DIR_NAMES.has(name) || IGNORED_PATHS.has(normalized)) continue
       assertKebab(name, normalized, '目录')
       walk(path)
       continue
@@ -135,6 +154,14 @@ const forbiddenLegacyPaths = [
   'apps/desktop/scripts/dev-electron.ts',
   'apps/desktop/scripts/install-electron-runtime.ts',
   'apps/desktop/scripts/electron-runtime-core.ts',
+  'apps/desktop/tests/electron-runtime-core.test.ts',
+  'scripts/gates/check-ai-context.ts',
+  'scripts/gates/check-architecture.ts',
+  'scripts/gates/check-comments.ts',
+  'scripts/gates/check-documentation.ts',
+  'scripts/gates/check-repository-hygiene.ts',
+  'scripts/gates/check-version.ts',
+  'scripts/gates/check-windows-helpers.ts',
 ]
 for (const path of forbiddenLegacyPaths) {
   if (existsSync(path)) fail(`旧命名/重复领域前缀不得恢复：${path}`)

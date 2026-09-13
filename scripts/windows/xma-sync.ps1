@@ -63,6 +63,36 @@ foreach ($legacyBuildDir in $legacyBuildDirs) {
   }
 }
 
+# 中文说明：用户可能把新 ZIP 直接解压覆盖旧源码目录；这种操作会让“已改名/已删除”的旧文件继续留在 Source，随后又被 /MIR 带进目标仓库。
+# 因此重命名迁移必须有显式清理合同：无论 Source 是否残留，下列旧路径在 Target 都必须删除。
+$legacySourcePaths = @(
+  'core\src\session.ts',
+  'core\src\session-store.ts',
+  'core\src\session-export.ts',
+  'core\src\tools.ts',
+  'core\src\tool-policy.ts',
+  'core\src\tool-schema.ts',
+  'apps\desktop\scripts\build-electron.ts',
+  'apps\desktop\scripts\dev-electron.ts',
+  'apps\desktop\scripts\install-electron-runtime.ts',
+  'apps\desktop\scripts\electron-runtime-core.ts',
+  'apps\desktop\tests\electron-runtime-core.test.ts',
+  'scripts\gates\check-ai-context.ts',
+  'scripts\gates\check-architecture.ts',
+  'scripts\gates\check-comments.ts',
+  'scripts\gates\check-documentation.ts',
+  'scripts\gates\check-repository-hygiene.ts',
+  'scripts\gates\check-version.ts',
+  'scripts\gates\check-windows-helpers.ts'
+)
+foreach ($legacySourcePath in $legacySourcePaths) {
+  $legacyTargetPath = Join-Path $Target $legacySourcePath
+  if (Test-Path $legacyTargetPath) {
+    Write-Host "[迁移] 删除已重命名的旧源码路径：$legacySourcePath" -ForegroundColor DarkYellow
+    Remove-Item $legacyTargetPath -Force -ErrorAction Stop
+  }
+}
+
 foreach ($lockName in $preservedLocks) {
   Copy-Item (Join-Path $lockBackupRoot $lockName) (Join-Path $Target $lockName) -Force
 }

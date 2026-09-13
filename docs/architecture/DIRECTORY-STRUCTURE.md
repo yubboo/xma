@@ -189,3 +189,7 @@ CLAUDE.md                    # Claude 入口，只能指向/摘要 AGENTS.md
 - `native/protocol/`：稳定 JSON-RPC / Capability wire contract；
 - `native/runtime/`：Rust path/process enforcement；
 - `docs/security/NATIVE-CAPABILITIES.md`：当前安全能力与未完成边界。
+
+### Naming Gate 扫描边界
+
+`pnpm gate:naming` 只治理 XMA 自己维护的源码/配置；`node_modules/.cache/dist/build/target/release` 与 Tauri `src-tauri/gen` 等依赖、缓存、构建和生成目录必须被递归忽略。第三方文件命名不能反向污染 XMA 的 kebab-case / snake_case 规则。
