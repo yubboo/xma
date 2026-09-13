@@ -39,9 +39,9 @@ core/tests/provider-openai-compatible.test.ts
                                          本地协议级 Conformance 起点
 ```
 
-当前已经具备：Profile Secret 边界、环境/内存 Credential Resolver、Provider Adapter Registry、能力声明、模型目录发现、真实 HTTP/SSE 流解析、分片 Tool Call arguments 合并、Usage 归一化、取消与错误分类、最小 Brain Ready Probe。
+当前已经具备：Profile Secret 边界、环境/内存 Credential Resolver、OS Credentials Store Contract 与 Native bridge、Provider Adapter Registry、能力声明、模型目录发现、真实 HTTP/SSE 流解析、分片 Tool Call arguments 合并、Usage 归一化、取消与错误分类、最小 Brain Ready Probe。
 
-当前**没有**具备：外部厂商真实 Ready 证据、通用自动 Retry 驱动、Anthropic/Gemini native Adapter、价格/Cost Catalog、远程 compaction、Keychain/OS Credential Store，以及完整的跨 Adapter Conformance Harness。
+当前**没有**具备：外部厂商真实 Ready 证据、通用自动 Retry 驱动、Anthropic/Gemini native Adapter、价格/Cost Catalog、远程 compaction、OS Credentials 三平台实机 E2E 证据，以及完整的跨 Adapter Conformance Harness。
 
 ## 3. Provider Profile 与 Secret
 
@@ -56,7 +56,7 @@ core/tests/provider-openai-compatible.test.ts
 - proxy/network settings；
 - provider-specific advanced options。
 
-Secret 交给 Credentials Service，Provider 请求时按 profile scope 获取。当前 `CredentialReference` 支持 `env` 与进程内 `memory` 两类引用；Profile 只保存引用，不保存 Secret 值，并静态拒绝 `Authorization`、`X-Api-Key` 等 Secret-bearing header。后续 OS Keychain/安全存储仍属于待实现能力。
+Secret 交给 Credentials Service，Provider 请求时按 profile scope 获取。当前 `CredentialReference` 支持 `env`、进程内 `memory` 与 `os` 三类引用；Profile 只保存引用，不保存 Secret 值，并静态拒绝 `Authorization`、`X-Api-Key` 等 Secret-bearing header。`os` 由 Rust Native Runtime 统一桥接：Windows 使用 Credential Manager、macOS 使用 Keychain、Linux 在检测到系统 `secret-tool` 时使用 Secret Service。Terminal 默认安全录入路径只把稳定别名写入 `brain.json`；旧环境变量路径继续兼容。这里的“已实现”只指代码 Contract/bridge，Windows/macOS/Linux 真实系统凭据库仍需分别做实机 E2E 后才能算 Product Ready。
 
 Secret 不进入 Session message、Workspace、普通日志或导出；Provider HTTP 错误在转成用户可见错误前必须 redaction。
 
@@ -210,4 +210,4 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 
 ## 13. 当前 0.1.0 验证边界
 
-当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化和真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。
+当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、OS CredentialReference/Store 适配与 legacy env 配置迁移、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化和真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。同样，本地 Fake Native 只能验证 Credentials Contract，不能替代 Windows Credential Manager、macOS Keychain、Linux Secret Service 的实机 E2E。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。

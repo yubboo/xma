@@ -123,6 +123,20 @@ test('Safe Prompt uses only the hardware cursor marker and never reverse-video A
   assert.doesNotMatch(line, /\u001b\[7m|\u001b\[27m/)
 })
 
+test('Safe Prompt secret rendering never exposes the stored credential text', () => {
+  const toolkit = {
+    CURSOR_MARKER: '<CURSOR>',
+    matchesKey: () => false,
+  } as any
+  const input = new SafePromptInput(toolkit)
+  input.focused = true
+  input.setText('sk-secret-value')
+  const line = input.renderSecret(40).join('\n')
+  assert.doesNotMatch(line, /sk-secret-value|secret-value/)
+  assert.match(line, /•/)
+  assert.match(line, /<CURSOR>/)
+})
+
 test('Safe Prompt exposes slash suggestions without changing the fixed parent layout contract', () => {
   const toolkit = {
     CURSOR_MARKER: '<CURSOR>',

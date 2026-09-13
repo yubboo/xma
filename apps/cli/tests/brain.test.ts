@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import {
   ENVIRONMENT_PROFILE_ID,
   TerminalBrainStore,
   loadBrainConfig,
+  osCredentialKey,
   profileToProvider,
 } from '../src/brain.ts'
 
@@ -37,16 +38,74 @@ test('Brain Store persists only credential references and never the API Key Secr
         displayName: 'Local Provider',
         baseUrl: 'https://example.com/v1/',
         model: 'demo-model',
-        credentialEnv: 'XIAOYU_TEST_KEY',
+        credential: { source: 'env', key: 'XIAOYU_TEST_KEY' },
       })
       assert.equal(profile.baseUrl, 'https://example.com/v1')
       assert.equal(store.active()?.id, profile.id)
       const raw = readFileSync(file, 'utf8')
       assert.match(raw, /XIAOYU_TEST_KEY/)
+      assert.match(raw, /"source": "env"/)
       assert.doesNotMatch(raw, /secret-value-must-not-persist/)
       const view = store.list().find(item => item.id === profile.id)
       assert.equal(view?.credentialReady, true)
     })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Brain Store persists only OS credential aliases and uses caller-provided readiness', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'xma-brain-'))
+  const file = path.join(root, 'brain.json')
+  try {
+    withEnv({ XIAOYU_BASE_URL: undefined, XIAOYU_MODEL: undefined, XIAOYU_API_KEY: undefined }, () => {
+      const store = new TerminalBrainStore(file)
+      const id = store.allocateId('Secure Provider')
+      const key = osCredentialKey(id)
+      const profile = store.upsert({
+        id,
+        displayName: 'Secure Provider',
+        baseUrl: 'https://secure.example/v1',
+        model: 'secure-model',
+        credential: { source: 'os', key },
+      })
+      const raw = readFileSync(file, 'utf8')
+      assert.match(raw, new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+      assert.doesNotMatch(raw, /super-secret-api-key/)
+      assert.equal(store.list().find(item => item.id === profile.id)?.credentialReady, false)
+      assert.equal(store.list(new Map([[profile.id, true]])).find(item => item.id === profile.id)?.credentialReady, true)
+      assert.deepEqual(profileToProvider(profile).auth, { type: 'bearer', credential: { source: 'os', key } })
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('v1 credentialEnv profile migrates in memory to v2 env CredentialReference', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'xma-brain-'))
+  const file = path.join(root, 'brain.json')
+  try {
+    writeFileSync(file, JSON.stringify({
+      formatVersion: 1,
+      activeProfileId: 'legacy',
+      profiles: [{
+        id: 'legacy',
+        displayName: 'Legacy',
+        baseUrl: 'https://legacy.example/v1',
+        model: 'legacy-model',
+        credentialEnv: 'LEGACY_API_KEY',
+      }],
+    }), 'utf8')
+    const loaded = loadBrainConfig(file)
+    assert.equal(loaded.formatVersion, 2)
+    assert.deepEqual(loaded.profiles[0]?.credential, { source: 'env', key: 'LEGACY_API_KEY' })
+
+    const store = new TerminalBrainStore(file)
+    store.updateModel('legacy', 'legacy-model-next')
+    const persisted = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    assert.equal(persisted.formatVersion, 2)
+    assert.doesNotMatch(JSON.stringify(persisted), /credentialEnv/)
+    assert.match(JSON.stringify(persisted), /LEGACY_API_KEY/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

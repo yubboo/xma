@@ -3,6 +3,8 @@
 //! 当前实现：Host Policy、一次性 Capability lease、真实路径 confinement、UTF-8 文件读写、绝对可执行文件 canonical identity、无 shell 进程执行、超时/输出上限与 runtime.status。
 //! 职责边界：Rust 只执行 Native/Security/Performance 工作，不承担 Agent 推理；任何来自 TypeScript/模型的路径、程序与权限都必须在这里重新验证。
 
+mod credentials;
+
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
@@ -16,8 +18,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 use xma_native_protocol::{
     CapabilityGrant, CapabilityKind, CapabilityLease, JsonRpcRequest, JsonRpcResponse,
-    NativeHostPolicy, ProcessRunRequest, ProcessRunResult, ReadTextRequest, ReadTextResult,
-    RuntimeStatus, WriteTextRequest, WriteTextResult, PROTOCOL_VERSION,
+    CredentialDeleteRequest, CredentialReadRequest, CredentialWriteRequest, NativeHostPolicy,
+    ProcessRunRequest, ProcessRunResult, ReadTextRequest, ReadTextResult, RuntimeStatus,
+    WriteTextRequest, WriteTextResult, PROTOCOL_VERSION,
 };
 
 const DEFAULT_READ_MAX_BYTES: usize = 1024 * 1024;
@@ -67,8 +70,19 @@ fn status(state: &RuntimeState) -> RuntimeStatus {
             "fs.read_text".to_string(),
             "fs.write_text".to_string(),
             "process.run".to_string(),
+            "credential.status".to_string(),
+            "credential.read".to_string(),
+            "credential.write".to_string(),
+            "credential.delete".to_string(),
         ],
     }
+}
+
+fn ensure_initialized(state: &RuntimeState) -> Result<(), String> {
+    if state.host_policy.is_none() {
+        return Err("native host policy is not configured".to_string());
+    }
+    Ok(())
 }
 
 fn decode<T: DeserializeOwned>(value: Value) -> Result<T, String> {
@@ -649,6 +663,20 @@ fn handle(request: JsonRpcRequest, state: &mut RuntimeState) -> JsonRpcResponse 
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
         "process/run" => decode::<ProcessRunRequest>(request.params)
             .and_then(|params| run_process(state, params))
+            .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
+        "credential/status" => ensure_initialized(state)
+            .and_then(|_| serde_json::to_value(credentials::status()).map_err(|error| error.to_string())),
+        "credential/read" => ensure_initialized(state)
+            .and_then(|_| decode::<CredentialReadRequest>(request.params))
+            .and_then(|params| credentials::read(&params.key))
+            .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
+        "credential/write" => ensure_initialized(state)
+            .and_then(|_| decode::<CredentialWriteRequest>(request.params))
+            .and_then(|params| credentials::write(&params.key, &params.value))
+            .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
+        "credential/delete" => ensure_initialized(state)
+            .and_then(|_| decode::<CredentialDeleteRequest>(request.params))
+            .and_then(|params| credentials::delete(&params.key))
             .and_then(|value| serde_json::to_value(value).map_err(|error| error.to_string())),
         _ => Err(format!("unknown native method: {}", request.method)),
     };

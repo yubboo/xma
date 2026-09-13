@@ -33,6 +33,22 @@ class FakeNativeClient implements NativeClient {
     return { name: 'fake', version: '0.1.0', protocol: 'xma.native.v1', ready: true, policyConfigured: true, capabilities: [] }
   }
 
+  async credentialStatus() {
+    return { backend: 'fake-os-store', available: true }
+  }
+
+  async readCredential(_key: string) {
+    return { found: false }
+  }
+
+  async writeCredential(_key: string, _value: string) {
+    return { stored: true }
+  }
+
+  async deleteCredential(_key: string) {
+    return { deleted: true }
+  }
+
   async issueCapability(grant: NativeCapabilityGrant): Promise<NativeCapabilityLease> {
     this.grants.push(structuredClone(grant))
     return { token: `lease-${this.grants.length}`, kind: grant.kind }

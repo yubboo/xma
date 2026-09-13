@@ -1,8 +1,8 @@
 /**
  * 文件作用：管理 Xiaoyu Terminal 的 Brain/Provider 用户配置，并把非 Secret 配置转换为 Core Provider Profile。
- * 关联模块：main.ts、tui.ts、core/provider.ts、plugins/providers/openai-compatible.ts。
- * 当前实现：用户级 JSON Profile Store、活动 Profile、模型选择、环境变量凭据引用和旧版 XIAOYU_* 环境配置兼容。
- * 职责边界：本文件绝不持久化 API Key 等 Secret；Secret 继续由 EnvironmentCredentialResolver / 后续 Credentials Service 提供。
+ * 关联模块：main.ts、tui.ts、core/provider.ts、plugins/providers/openai-compatible.ts、Provider OS Credentials Service。
+ * 当前实现：用户级 JSON Profile Store、活动 Profile、模型选择、OS/环境变量凭据引用和旧版 XIAOYU_* 环境配置兼容。
+ * 职责边界：本文件绝不持久化 API Key 等 Secret；brain.json 只保存 CredentialReference，Secret 必须由 Credentials Service 解析。
  */
 
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,19 +11,24 @@ import path from 'node:path'
 import type { ProviderProfile } from '../../../core/src/provider.ts'
 import { OPENAI_COMPATIBLE_ADAPTER_ID } from '../../../plugins/providers/openai-compatible.ts'
 
-export const BRAIN_CONFIG_FORMAT_VERSION = 1
+export const BRAIN_CONFIG_FORMAT_VERSION = 2
 export const ENVIRONMENT_PROFILE_ID = 'environment'
+
+export interface TerminalCredentialReference {
+  source: 'env' | 'os'
+  key: string
+}
 
 export interface TerminalBrainProfile {
   id: string
   displayName: string
   baseUrl: string
   model: string
-  credentialEnv?: string
+  credential?: TerminalCredentialReference
 }
 
 export interface TerminalBrainConfig {
-  formatVersion: 1
+  formatVersion: 2
   activeProfileId?: string
   profiles: TerminalBrainProfile[]
 }
@@ -67,11 +72,19 @@ function normalizeBaseUrl(value: string): string {
   return text
 }
 
-function validateCredentialEnv(value: string | undefined): string | undefined {
-  const key = value?.trim()
-  if (!key) return undefined
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error('API Key 环境变量名无效。')
-  return key
+function validateCredential(reference: TerminalCredentialReference | undefined): TerminalCredentialReference | undefined {
+  if (!reference) return undefined
+  const key = reference.key.trim()
+  if (!key) throw new Error('Credential Reference 不能为空。')
+  if (reference.source === 'env') {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error('API Key 环境变量名无效。')
+    return { source: 'env', key }
+  }
+  if (reference.source === 'os') {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(key)) throw new Error('OS Credential Key 无效。')
+    return { source: 'os', key }
+  }
+  throw new Error('不支持的 Credential Source。')
 }
 
 function validateProfile(profile: TerminalBrainProfile): TerminalBrainProfile {
@@ -81,32 +94,50 @@ function validateProfile(profile: TerminalBrainProfile): TerminalBrainProfile {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id)) throw new Error('Provider Profile ID 无效。')
   if (!displayName) throw new Error('Provider 显示名称不能为空。')
   if (!model) throw new Error('模型 ID 不能为空。')
-  const credentialEnv = validateCredentialEnv(profile.credentialEnv)
+  const credential = validateCredential(profile.credential)
   return {
     id,
     displayName,
     baseUrl: normalizeBaseUrl(profile.baseUrl),
     model,
-    ...(credentialEnv ? { credentialEnv } : {}),
+    ...(credential ? { credential } : {}),
   }
+}
+
+function parseCredential(profile: Record<string, unknown>): TerminalCredentialReference | undefined {
+  const raw = profile.credential
+  if (raw !== undefined) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Brain Profile credential 无效。')
+    const object = raw as Record<string, unknown>
+    const source = String(object.source ?? '')
+    if (source !== 'env' && source !== 'os') throw new Error(`不支持的 Brain Credential Source：${source}`)
+    return validateCredential({ source, key: String(object.key ?? '') })
+  }
+
+  // 兼容 v1 brain.json：credentialEnv 只作为 env reference 迁移读取；下一次保存统一写成 v2 credential 对象。
+  if (profile.credentialEnv !== undefined) {
+    return validateCredential({ source: 'env', key: String(profile.credentialEnv) })
+  }
+  return undefined
 }
 
 function parseConfig(raw: unknown): TerminalBrainConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Brain 配置根结构无效。')
   const object = raw as Record<string, unknown>
-  if (object.formatVersion !== BRAIN_CONFIG_FORMAT_VERSION) {
+  if (object.formatVersion !== 1 && object.formatVersion !== BRAIN_CONFIG_FORMAT_VERSION) {
     throw new Error(`不支持的 Brain 配置版本：${String(object.formatVersion)}`)
   }
   if (!Array.isArray(object.profiles)) throw new Error('Brain 配置 profiles 必须是数组。')
   const profiles = object.profiles.map((entry, index) => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error(`Brain Profile #${index + 1} 无效。`)
     const profile = entry as Record<string, unknown>
+    const credential = parseCredential(profile)
     return validateProfile({
       id: String(profile.id ?? ''),
       displayName: String(profile.displayName ?? ''),
       baseUrl: String(profile.baseUrl ?? ''),
       model: String(profile.model ?? ''),
-      ...(profile.credentialEnv === undefined ? {} : { credentialEnv: String(profile.credentialEnv) }),
+      ...(credential ? { credential } : {}),
     })
   })
   const ids = new Set<string>()
@@ -157,7 +188,7 @@ export function environmentBrainProfile(): TerminalBrainProfile | undefined {
     displayName: 'Environment Provider',
     baseUrl,
     model,
-    ...(process.env.XIAOYU_API_KEY ? { credentialEnv: 'XIAOYU_API_KEY' } : {}),
+    ...(process.env.XIAOYU_API_KEY ? { credential: { source: 'env', key: 'XIAOYU_API_KEY' } } : {}),
   })
 }
 
@@ -167,11 +198,17 @@ export function profileToProvider(profile: TerminalBrainProfile): ProviderProfil
     adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
     displayName: profile.displayName,
     baseUrl: profile.baseUrl,
-    auth: profile.credentialEnv
-      ? { type: 'bearer', credential: { source: 'env', key: profile.credentialEnv } }
+    auth: profile.credential
+      ? { type: 'bearer', credential: profile.credential }
       : { type: 'none' },
     defaultModel: profile.model,
   }
+}
+
+export function osCredentialKey(profileId: string): string {
+  const normalized = profileId.trim()
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(normalized)) throw new Error('Provider Profile ID 无效。')
+  return `provider:${normalized}:api-key`
 }
 
 function slug(value: string): string {
@@ -186,21 +223,27 @@ export class TerminalBrainStore {
     this.#config = loadBrainConfig(file)
   }
 
-  list(): readonly TerminalBrainProfileView[] {
+  list(osCredentialReadiness: ReadonlyMap<string, boolean> = new Map()): readonly TerminalBrainProfileView[] {
     const environment = environmentBrainProfile()
     const active = this.active()?.id
     const configured = this.#config.profiles.map(profile => ({
       ...profile,
       source: 'config' as const,
       active: active === profile.id,
-      credentialReady: !profile.credentialEnv || Boolean(process.env[profile.credentialEnv]),
+      credentialReady: profile.credential?.source === 'env'
+        ? Boolean(process.env[profile.credential.key])
+        : profile.credential?.source === 'os'
+          ? osCredentialReadiness.get(profile.id) === true
+          : true,
     }))
     if (!environment) return configured
     return [{
       ...environment,
       source: 'environment',
       active: active === environment.id,
-      credentialReady: !environment.credentialEnv || Boolean(process.env[environment.credentialEnv]),
+      credentialReady: environment.credential?.source === 'env'
+        ? Boolean(process.env[environment.credential.key])
+        : true,
     }, ...configured]
   }
 
@@ -208,6 +251,17 @@ export class TerminalBrainStore {
     const configuredId = this.#config.activeProfileId
     if (configuredId) return this.#config.profiles.find(profile => profile.id === configuredId)
     return environmentBrainProfile() ?? this.#config.profiles[0]
+  }
+
+  allocateId(displayName: string, preferredId?: string): string {
+    const idBase = preferredId?.trim() || slug(displayName)
+    let id = idBase
+    let suffix = 2
+    while (this.#config.profiles.some(profile => profile.id === id)) {
+      id = `${idBase}-${suffix}`
+      suffix += 1
+    }
+    return validateProfile({ id, displayName: displayName || 'Provider', baseUrl: 'https://example.invalid', model: 'placeholder' }).id
   }
 
   upsert(input: Omit<TerminalBrainProfile, 'id'> & { id?: string }): TerminalBrainProfile {

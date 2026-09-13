@@ -1,7 +1,7 @@
 /**
  * 文件作用：定义 TypeScript Core 到 Rust Native Runtime 的 Capability Bridge，并提供 stdio JSON-RPC 客户端。
  * 关联模块：plugins/tools/native.ts、native/protocol、native/runtime、ToolRouter/Approval。
- * 当前实现：Native status、Capability lease、受限文件读写、无 shell 的受限进程执行与本地 stdio RPC 生命周期。
+ * 当前实现：Native status、OS Credentials RPC、Capability lease、受限文件读写、无 shell 的受限进程执行与本地 stdio RPC 生命周期。
  * 职责边界：TypeScript 只能申请最小授权并发起调用；路径/程序/超时等真实安全约束必须由 Rust Kernel 再次独立验证，不能只信 Tool 参数。
  */
 
@@ -29,6 +29,25 @@ export interface NativeRuntimeStatus {
   ready: boolean
   policyConfigured: boolean
   capabilities: readonly string[]
+}
+
+export interface NativeCredentialStoreStatus {
+  backend: string
+  available: boolean
+  detail?: string
+}
+
+export interface NativeCredentialReadResult {
+  found: boolean
+  value?: string
+}
+
+export interface NativeCredentialWriteResult {
+  stored: boolean
+}
+
+export interface NativeCredentialDeleteResult {
+  deleted: boolean
 }
 
 export interface NativeHostPolicy {
@@ -91,6 +110,10 @@ export interface NativeProcessRunResult {
 
 export interface NativeClient {
   status(signal?: AbortSignal): Promise<NativeRuntimeStatus>
+  credentialStatus(signal?: AbortSignal): Promise<NativeCredentialStoreStatus>
+  readCredential(key: string, signal?: AbortSignal): Promise<NativeCredentialReadResult>
+  writeCredential(key: string, value: string, signal?: AbortSignal): Promise<NativeCredentialWriteResult>
+  deleteCredential(key: string, signal?: AbortSignal): Promise<NativeCredentialDeleteResult>
   issueCapability(grant: NativeCapabilityGrant, signal?: AbortSignal): Promise<NativeCapabilityLease>
   readText(request: NativeReadTextRequest, signal?: AbortSignal): Promise<NativeReadTextResult>
   writeText(request: NativeWriteTextRequest, signal?: AbortSignal): Promise<NativeWriteTextResult>
@@ -205,6 +228,49 @@ export class StdioNativeClient implements NativeClient {
   async status(signal?: AbortSignal): Promise<NativeRuntimeStatus> {
     await this.#initialized
     return parseStatus(await this.#request('runtime/status', {}, signal))
+  }
+
+  async credentialStatus(signal?: AbortSignal): Promise<NativeCredentialStoreStatus> {
+    await this.#initialized
+    const value = await this.#request('credential/status', {}, signal)
+    if (!isRecord(value)) throw new Error('XMA Native credential/status response must be an object.')
+    const detail = value.detail
+    if (detail !== undefined && typeof detail !== 'string') {
+      throw new Error('XMA Native credential/status detail must be a string when present.')
+    }
+    return {
+      backend: asString(value.backend, 'backend'),
+      available: asBoolean(value.available, 'available'),
+      ...(detail === undefined ? {} : { detail }),
+    }
+  }
+
+  async readCredential(key: string, signal?: AbortSignal): Promise<NativeCredentialReadResult> {
+    await this.#initialized
+    const value = await this.#request('credential/read', { key }, signal)
+    if (!isRecord(value)) throw new Error('XMA Native credential/read response must be an object.')
+    const found = asBoolean(value.found, 'found')
+    if (value.value !== undefined && typeof value.value !== 'string') {
+      throw new Error('XMA Native credential/read value must be a string when present.')
+    }
+    if (found && typeof value.value !== 'string') {
+      throw new Error('XMA Native credential/read found=true requires a value.')
+    }
+    return { found, ...(typeof value.value === 'string' ? { value: value.value } : {}) }
+  }
+
+  async writeCredential(key: string, secret: string, signal?: AbortSignal): Promise<NativeCredentialWriteResult> {
+    await this.#initialized
+    const value = await this.#request('credential/write', { key, value: secret }, signal)
+    if (!isRecord(value)) throw new Error('XMA Native credential/write response must be an object.')
+    return { stored: asBoolean(value.stored, 'stored') }
+  }
+
+  async deleteCredential(key: string, signal?: AbortSignal): Promise<NativeCredentialDeleteResult> {
+    await this.#initialized
+    const value = await this.#request('credential/delete', { key }, signal)
+    if (!isRecord(value)) throw new Error('XMA Native credential/delete response must be an object.')
+    return { deleted: asBoolean(value.deleted, 'deleted') }
   }
 
   async issueCapability(grant: NativeCapabilityGrant, signal?: AbortSignal): Promise<NativeCapabilityLease> {

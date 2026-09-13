@@ -1,7 +1,7 @@
 /**
  * 文件作用：定义 XMA 正式 Model Provider 平台 Contract：Profile、Credential、Capability、Model Catalog、Registry、Probe 与错误分类。
  * 关联模块：model.ts、runtime.ts、plugins/providers/*、未来 Settings/App Protocol。
- * 当前实现：无 Secret 的 Provider Profile、环境/内存凭据解析、Adapter Registry、Model 创建、Catalog 与 Brain Ready Probe。
+ * 当前实现：无 Secret 的 Provider Profile、环境/内存/OS 凭据解析 Contract、Adapter Registry、Model 创建、Catalog 与 Brain Ready Probe。
  * 职责边界：Core 不包含任何厂商 HTTP JSON；OpenAI/Claude/Gemini 等协议必须放在 Provider Adapter，Secret 值不得进入 Profile/Session/普通日志。
  */
 
@@ -26,8 +26,8 @@ export interface ProviderCapabilities {
 }
 
 export interface CredentialReference {
-  /** `env` 指向系统环境变量；`memory` 只用于当前进程/测试，不进入持久配置。 */
-  source: 'env' | 'memory'
+  /** `env` 指向系统环境变量；`memory` 只用于当前进程/测试；`os` 指向系统凭据库中的稳定别名。 */
+  source: 'env' | 'memory' | 'os'
   key: string
 }
 
@@ -103,6 +103,24 @@ export interface CredentialResolver {
   resolve(reference: CredentialReference): Promise<string | undefined>
 }
 
+export interface CredentialStoreStatus {
+  source: 'os'
+  backend: string
+  available: boolean
+  detail?: string
+}
+
+/**
+ * 可写 Credentials Service 只暴露稳定别名，不允许 Provider/Profile 直接接触系统凭据库细节。
+ * Secret 值只能短暂存在于调用栈与 Provider 请求中，禁止进入 Profile、Session 或普通日志。
+ */
+export interface CredentialStore extends CredentialResolver {
+  status(signal?: AbortSignal): Promise<CredentialStoreStatus>
+  has(key: string, signal?: AbortSignal): Promise<boolean>
+  set(key: string, value: string, signal?: AbortSignal): Promise<void>
+  delete(key: string, signal?: AbortSignal): Promise<boolean>
+}
+
 /** 系统环境变量凭据源；只解析 env reference，不枚举环境变量。 */
 export class EnvironmentCredentialResolver implements CredentialResolver {
   async resolve(reference: CredentialReference): Promise<string | undefined> {
@@ -111,7 +129,7 @@ export class EnvironmentCredentialResolver implements CredentialResolver {
   }
 }
 
-/** 进程内凭据源，主要用于测试和未来受控 Keychain bridge；值不会被 ProviderProfile 序列化。 */
+/** 进程内凭据源，主要用于测试与临时 Host 注入；值不会被 ProviderProfile 序列化。 */
 export class MemoryCredentialResolver implements CredentialResolver {
   readonly #values = new Map<string, string>()
 
@@ -178,6 +196,9 @@ function validateProfile(profile: ProviderProfile): void {
   }
   if (profile.auth.type === 'bearer' && !profile.auth.credential.key.trim()) {
     throw new Error(`XMA provider profile ${profile.id} has an empty credential reference.`)
+  }
+  if (profile.auth.type === 'bearer' && !['env', 'memory', 'os'].includes(profile.auth.credential.source)) {
+    throw new Error(`XMA provider profile ${profile.id} has an unsupported credential source.`)
   }
 }
 

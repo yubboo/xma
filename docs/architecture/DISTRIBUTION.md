@@ -99,7 +99,7 @@ Bootstrap `scripts/install/unix.sh` 下载当前 OS/arch 的 `tar.gz` 和 `check
 - Home / 文件系统根目录风险确认，只允许“退出”或“仅本次信任”；
 - Workspace Session 绑定到正式 Agent Runtime；
 - `Xiaoyu Code` 当前会加载根 `skills/` 的 canonical Skills，并通过 `agent/skills` Context Source 进入正式 Context Assembly；portable launcher 使用 `XIAOYU_SKILLS_HOME` 指向随包分发的 `skills/`，普通用户不依赖源码仓库读取 Skill；
-- Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 新增 OpenAI-compatible Base URL、模型 ID、API Key **环境变量名**，执行 Brain Ready Probe、远程模型列表和模型切换；`XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续作为只读兼容 Profile。`brain.json` 永远只保存 Credential Reference，不保存 Secret 值，也不写入 Session；
+- Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 新增 OpenAI-compatible Base URL、模型 ID，并默认把 API Key 写入 OS Credentials；环境变量引用继续作为兼容路径，可执行 Brain Ready Probe、远程模型列表和模型切换。`brain.json` v2 永远只保存 Credential Reference，不保存 Secret 值，也不写入 Session；v1 `credentialEnv` 与 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续兼容读取；
 - 未配置 Provider 时明确显示未就绪，禁止伪造模型回复；
 - 如果 bundled/development Native Kernel 可用，Terminal 注册 `native.fs.read_text` / `native.fs.write_text`：读取按 standard policy 直接允许，写入必须在 TUI 显示 Tool Approval，并支持 deny / allow-once / allow-session；
 - Terminal 第一批 **不注册 `native.process.run`**。只有 Host 明确给出 absolute executable allowlist 后才允许把进程工具加入 ToolPlan，不能为了终端方便退回 PATH/shell 执行。

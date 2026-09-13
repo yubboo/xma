@@ -19,7 +19,7 @@
 - Context Source Registry + 确定性组装 + 字符硬上限 + durable Context Snapshot/digest；
 - 历史 Step 的 message/tool/context 请求输入重建；
 - Session export + Secret value redaction + 相邻单向 migration Contract；
-- Provider Registry / Profile / Credentials Resolver / Capabilities / Model Catalog / Error taxonomy；
+- Provider Registry / Profile / Credentials Resolver / OS Credentials Store bridge / Capabilities / Model Catalog / Error taxonomy；
 - OpenAI-compatible Chat Completions HTTP/SSE Adapter 第一版（协议测试，不等于外部厂商 Ready）；
 - Brain Ready Probe 第一版：必须真实发 HTTP 模型请求才可返回 ready；
 - Model Provider 最小 Contract；
@@ -48,7 +48,7 @@
 - `xiaoyu` 持续 Terminal TUI + Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
-- `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；OpenAI-compatible Brain 已从“仅环境变量”升级为用户级非 Secret Profile Store：`brain.json` 保存 Base URL / Model / Credential Env Reference，环境变量 Profile 继续兼容；
+- `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；OpenAI-compatible Brain 已升级为用户级非 Secret Profile Store：`brain.json` v2 保存 Base URL / Model / Credential Reference，OS Credentials 为默认 Secret 路径，v1 `credentialEnv` 与环境变量 Profile 继续兼容；
 - Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/硬件光标基础能力，但主 Prompt 已改成 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标，专门规避 Windows Terminal 白块/反色泄漏；支持 CJK 硬件光标、输入历史、多行、斜杠补全；Home/Prompt 使用固定锚点，丰富显示只动态刷新装饰层；`Ctrl+P` 命令面板、Terminal Settings 与 Brain / Provider 管理已接线；
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
@@ -80,7 +80,8 @@
 ## 4. 尚未完成，禁止过度宣称
 
 - 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo **品牌 Provider 产品支持**；当前只有通用 OpenAI-compatible 协议 Adapter；
-- 真实外部 Profile 的 Brain Ready **验收证据**；Terminal 已可执行真实 Probe，但当前仓库仍只有本地协议测试，不能冒充外部厂商 E2E 已通过；
+- 真实外部 Profile 的 Brain Ready **验收证据**；Terminal 已可通过 OS Credentials/env 引用执行真实 Probe，但当前仓库仍只有本地协议测试，不能冒充外部厂商 E2E 已通过；
+- OS Credentials 三平台**实机验收证据**；Windows Credential Manager、macOS Keychain、Linux Secret Service bridge 已进入代码，但当前沙箱没有对应 Rust/系统后端实机验证条件；
 - 完整 Session/Memory/Context；
 - 完整 Rust Workspace Sandbox：process tree / PTY / network / executable content identity；（FS 与 absolute-path direct process 最小 capability 已有第一版）
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
@@ -120,7 +121,7 @@ XMA 已建立三条固定参考线：
 
 Agent/Skill Platform Foundation 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
 
-1. **OS Credentials + Provider 产品化**：安全录入 Secret、Provider Profile、Brain Ready、Model Catalog、默认模型，不把 API Key 写入 Session/JSON/Git；
+1. **OS Credentials + Provider 产品化**：第一批代码已落地（Native OS Store、掩码录入、Profile 只存引用、env 兼容、凭据 readiness/Probe）；下一步先补三平台实机 Credentials + 真实 Provider E2E 证据，再继续扩 Provider 产品面；
 2. **Process executable registry / absolute allowlist / Approval**：把已存在的 Rust `process.spawn` 安全链接到产品配置面，先支持明确绝对路径的 node/pnpm/git/cargo/python 等；
 3. **Workspace persistence + discovery**：repo/project metadata、Git identity、`AGENTS.md/CLAUDE.md` instructions discovery、显式 rebind/migration；
 4. **Xiaoyu Manager durable Task/Delegation**：Task Store、父子任务、状态、结果与验收，不做“多个 Agent 随意聊天”；

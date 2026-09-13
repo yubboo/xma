@@ -85,13 +85,15 @@ XMA 长期参考：
 
 - `ProviderRegistry` 已实现 Adapter/Profile 注册与非 Secret Profile 校验；
 - `EnvironmentCredentialResolver / MemoryCredentialResolver / CompositeCredentialResolver` 已实现请求时 Secret 解析；
+- `CredentialStore` + `NativeCredentialStore` 已增加 `os` CredentialReference；Rust Native Runtime 已实现 Windows Credential Manager、macOS Keychain、Linux Secret Service（存在 `secret-tool` 时）读/写/删 bridge；
+- Terminal Provider 默认使用掩码 API Key 输入 → OS Credentials → Profile 只存稳定别名；`brain.json` 升级到 v2，v1 `credentialEnv` / `XIAOYU_*` 保持兼容读取；
 - Profile 静态拒绝 `Authorization` / `X-Api-Key` 等 Secret-bearing Header；
 - `ProviderCapabilities / ModelDescriptor / ProviderRequestError / BrainReadyProbeResult` 已进入 Core；
 - `xma.openai-compatible` 已实现真实 HTTP/SSE Chat Completions transport family；
 - 已覆盖 `/models`、stream text、分片 Tool Call arguments、Usage、取消、错误分类与最小 Brain Ready Probe；
 - 本地 HTTP 测试证明协议实现，但不构成任何外部厂商 Ready 证据。
 
-仍未完成：真实外部 Provider E2E、通用 Retry driver、OS Keychain Credentials、Anthropic/Gemini native、通用跨 Adapter Conformance Harness、Cost Catalog。
+仍未完成：真实外部 Provider E2E、OS Credentials Windows/macOS/Linux 实机 E2E、通用 Retry driver、Anthropic/Gemini native、通用跨 Adapter Conformance Harness、Cost Catalog。
 
 ### 真实 Adapter 顺序
 
@@ -244,7 +246,7 @@ XMA 长期参考：
 - 固定 Pi TUI 0.74.0 作为 Node 22 兼容差分渲染/Overlay/硬件光标基础层；主输入使用 XMA `SafePromptInput`，禁止使用上游 Editor/Input 的 reverse-video cursor；支持 CJK 硬件光标、历史、多行与已实现命令的 `/` 自动补全；Home/Prompt Dock 固定锚点，丰富视觉只刷新装饰层；`Ctrl+P` 命令面板 + Terminal Settings（丰富/简洁、提示、Logo）作为真正可操作的 Overlay，不推动主布局；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
-- OpenAI-compatible Brain Terminal 配置闭环第一版：用户级非 Secret Profile Store、Credential Env Reference、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；
+- OpenAI-compatible Brain Terminal 配置闭环：用户级非 Secret Profile Store、OS Credentials 默认安全录入、Credential Env Reference 兼容、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；
 - `xiaoyu doctor/server/web` 入口；
 - portable bundle：私有 Node + CLI/Server/Web + Rust Native；
 - Windows / Unix bootstrap installer；
@@ -253,7 +255,7 @@ XMA 长期参考：
 
 ### 尚未完成
 
-- OS Keychain Credentials：在不把 Secret 写入 `brain.json` / Session 的前提下，允许 Terminal/Desktop 安全录入 API Key；
+- OS Credentials 三平台实机验收：代码已桥接 Windows Credential Manager / macOS Keychain / Linux Secret Service，仍需在对应系统完成真实写入→重启→读取→Probe→删除 E2E；
 - Terminal process Tool allowlist / Approval（文件 read/write 第一批已接 Rust Kernel）；
 - PTY/ConPTY；
 - 正式公网安装域名；GitHub tag release workflow 已有代码，但尚未完成真实 tag/release E2E；

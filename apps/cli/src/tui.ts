@@ -138,6 +138,7 @@ export interface TerminalBackend {
     displayName: string
     baseUrl: string
     model: string
+    apiKey?: string
     credentialEnv?: string
   }): Promise<TerminalBrainProfileView>
   selectBrain(profileId: string): Promise<TerminalBrainProfileView>
@@ -755,10 +756,10 @@ export class SafePromptInput {
     if (data) this.insert(data)
   }
 
-  render(width: number): string[] {
+  private renderValue(value: string, cursor: number, width: number): string[] {
     const safeWidth = Math.max(4, width)
-    const lines = this.value.split('\n')
-    const beforeCursor = this.value.slice(0, this.cursor)
+    const lines = value.split('\n')
+    const beforeCursor = value.slice(0, cursor)
     const cursorLine = beforeCursor.split('\n').length - 1
     const cursorCol = beforeCursor.slice(beforeCursor.lastIndexOf('\n') + 1).length
     const firstVisible = Math.max(0, Math.min(cursorLine - 2, Math.max(0, lines.length - 4)))
@@ -782,6 +783,21 @@ export class SafePromptInput {
 
     if (rendered.length === 0) rendered.push(this.focused ? this.toolkit.CURSOR_MARKER : '')
     return rendered
+  }
+
+  render(width: number): string[] {
+    return this.renderValue(this.value, this.cursor, width)
+  }
+
+  renderSecret(width: number): string[] {
+    const mask = (value: string): string => {
+      let out = ''
+      for (const segment of graphemeSegmenter.segment(value)) out += segment.segment === '\n' ? '\n' : '•'
+      return out
+    }
+    const before = mask(this.value.slice(0, this.cursor))
+    const after = mask(this.value.slice(this.cursor))
+    return this.renderValue(`${before}${after}`, before.length, width)
   }
 }
 
@@ -1041,7 +1057,8 @@ class XiaoyuSurface {
     const profiles = this.backend.listBrainProfiles()
     const active = profiles.find(profile => profile.active)
     const items: AutocompleteItem[] = [
-      { value: 'add', label: '新增 OpenAI-compatible Provider', description: '保存 Base URL / Model / API Key 环境变量引用' },
+      { value: 'add-os', label: '新增 OpenAI-compatible Provider', description: 'API Key 安全保存到 OS Credentials' },
+      { value: 'add-env', label: '新增 Provider · 环境变量兼容', description: '只保存 API Key 环境变量名' },
     ]
     if (active) {
       items.push(
@@ -1050,9 +1067,11 @@ class XiaoyuSurface {
       )
     }
     for (const profile of profiles) {
-      const credential = profile.credentialEnv
-        ? profile.credentialReady ? `Key: ${profile.credentialEnv}` : `缺少 ${profile.credentialEnv}`
-        : '无需 API Key'
+      const credential = profile.credential?.source === 'os'
+        ? profile.credentialReady ? 'Key: OS Credentials' : '缺少 OS Credentials'
+        : profile.credential?.source === 'env'
+          ? profile.credentialReady ? `Key: ${profile.credential.key}` : `缺少 ${profile.credential.key}`
+          : '无需 API Key'
       items.push({
         value: `select:${profile.id}`,
         label: `${profile.active ? '●' : '○'} ${profile.displayName}`,
@@ -1066,8 +1085,12 @@ class XiaoyuSurface {
 
   private async runProviderAction(value: string): Promise<void> {
     try {
-      if (value === 'add') {
-        await this.addProviderWizard()
+      if (value === 'add-os') {
+        await this.addProviderWizard('os')
+        return
+      }
+      if (value === 'add-env') {
+        await this.addProviderWizard('env')
         return
       }
       if (value === 'probe') {
@@ -1109,22 +1132,25 @@ class XiaoyuSurface {
     }
   }
 
-  private async addProviderWizard(): Promise<void> {
+  private async addProviderWizard(credentialMode: 'os' | 'env'): Promise<void> {
     const displayName = await this.showInputOverlay('Provider 名称', '例如：OpenAI Compatible', '')
     if (displayName === undefined) return
     const baseUrl = await this.showInputOverlay('Base URL', '例如：https://api.example.com/v1', '')
     if (baseUrl === undefined) return
     const model = await this.showInputOverlay('默认模型 ID', '例如：gpt-4.1 / deepseek-chat', '')
     if (model === undefined) return
-    const credentialEnv = await this.showInputOverlay('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY')
-    if (credentialEnv === undefined) return
+    const credentialInput = credentialMode === 'os'
+      ? await this.showInputOverlay('API Key', '安全写入系统凭据库；输入内容不会回显；留空表示无需鉴权', '', { secret: true })
+      : await this.showInputOverlay('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY')
+    if (credentialInput === undefined) return
 
     try {
       const profile = await this.backend.saveBrainProfile({
         displayName: displayName.trim() || 'OpenAI Compatible',
         baseUrl: baseUrl.trim(),
         model: model.trim(),
-        ...(credentialEnv.trim() ? { credentialEnv: credentialEnv.trim() } : {}),
+        ...(credentialMode === 'os' && credentialInput ? { apiKey: credentialInput } : {}),
+        ...(credentialMode === 'env' && credentialInput.trim() ? { credentialEnv: credentialInput.trim() } : {}),
       })
       this.notice = `Provider 已保存 · ${profile.displayName} · ${profile.model}`
       this.tui.requestRender()
@@ -1137,7 +1163,12 @@ class XiaoyuSurface {
     }
   }
 
-  private showInputOverlay(title: string, description: string, initial: string): Promise<string | undefined> {
+  private showInputOverlay(
+    title: string,
+    description: string,
+    initial: string,
+    options: { secret?: boolean } = {},
+  ): Promise<string | undefined> {
     if (this.overlayOpen) return Promise.resolve(undefined)
     this.overlayOpen = true
     return new Promise(resolve => {
@@ -1169,7 +1200,7 @@ class XiaoyuSurface {
             `${bold}${text}${title}${reset}${spaces(Math.max(1, inner - cellWidth(title) - 3))}${textFaint}esc${reset}`,
             `${textFaint}${truncateCells(description, inner)}${reset}`,
             '',
-            ...field.render(inner),
+            ...(options.secret ? field.renderSecret(inner) : field.render(inner)),
             '',
             `${textFaint}Enter 确认 · Esc 取消${reset}`,
           ]
