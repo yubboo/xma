@@ -12,6 +12,7 @@ import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
+import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
 
 const ESC = '\u001b['
 const reset = `${ESC}0m`
@@ -27,6 +28,8 @@ const red = `${ESC}38;2;238;94;94m`
 const clearScreen = `${ESC}2J${ESC}H`
 const enterAltScreen = `${ESC}?1049h`
 const leaveAltScreen = `${ESC}?1049l`
+export const terminalMouseCaptureSequence = `${ESC}?1002h${ESC}?1006h`
+export const terminalMouseReleaseSequence = `${ESC}?1006l${ESC}?1002l`
 const setTitle = (title: string) => `\u001b]0;${title}\u0007`
 const TUI_PACKAGE = '@earendil-works/pi-tui'
 const SPINNER = ['✦', '✧', '·', '✧'] as const
@@ -60,17 +63,17 @@ const COMMANDS = [
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
 ] as const
 
-const PALETTE_ACTIONS = [
-  { value: 'settings', label: '终端设置', description: '视觉、提示与 Logo，仅影响 Terminal' },
-  { value: 'visual', label: '切换丰富显示', description: '动态星点 / 简洁模式' },
-  { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor' },
-  { value: 'workspace', label: '工作区', description: '查看当前工作区' },
-  { value: 'provider', label: '模型 / 提供方', description: '配置、测试和选择模型' },
-  { value: 'model', label: '模型切换', description: '从当前提供方的真实模型目录切换' },
-  { value: 'agent', label: '智能体', description: '查看当前智能体' },
-  { value: 'clear', label: '清空显示', description: '清空当前会话的终端显示' },
-  { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端' },
-] as const
+const PALETTE_ACTIONS: readonly TuiMenuItem[] = [
+  { value: 'settings', label: '终端设置', description: '终端视觉与提示', shortcut: '/settings', keywords: ['terminal', '设置'] },
+  { value: 'visual', label: '切换丰富显示', description: '动态视觉 / 简洁模式', shortcut: '/vivid', keywords: ['visual', 'vivid'] },
+  { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor', shortcut: '/doctor', keywords: ['doctor', '检查'] },
+  { value: 'workspace', label: '工作区', description: '查看当前目录', shortcut: '/workspace', keywords: ['workspace', '目录'] },
+  { value: 'provider', label: '模型 / 提供方', description: '配置模型与 API Key', shortcut: '/provider', keywords: ['provider', 'model', 'api key', 'deepseek', '模型', '提供方'] },
+  { value: 'model', label: '模型切换', description: '切换当前模型', shortcut: '/model', keywords: ['model', 'deepseek', '模型'] },
+  { value: 'agent', label: '智能体', description: '查看当前智能体', shortcut: '/agent', keywords: ['agent', '智能体'] },
+  { value: 'clear', label: '清空显示', description: '清空会话显示', shortcut: '/clear', keywords: ['clear', '清空'] },
+  { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端', shortcut: '/exit', keywords: ['exit', 'quit', '退出'] },
+]
 
 export interface TerminalUiSettings {
   visual: 'vivid' | 'minimal'
@@ -269,18 +272,11 @@ interface Viewport {
   rows: number
 }
 
-interface AutocompleteItem {
-  value: string
-  label: string
-  description?: string
-}
-
 interface PiTuiToolkit {
   TUI: new (terminal: unknown, showHardwareCursor?: boolean) => any
   ProcessTerminal: new () => any
   CURSOR_MARKER: string
   Box: new (paddingX?: number, paddingY?: number, bgFn?: (value: string) => string) => any
-  SelectList: new (items: readonly AutocompleteItem[], maxVisible: number, theme: unknown) => any
   visibleWidth(value: string): number
   matchesKey(data: string, key: string): boolean
 }
@@ -481,19 +477,27 @@ function padStyled(value: string, width: number, visibleWidth: (value: string) =
 }
 
 function renderHintLine(width: number): string {
-  const compact = width < 66
+  const compact = width < 72
   const plain = compact
-    ? 'tab 模式  ctrl+p 设置  / 命令  ctrl+c 中止'
-    : 'tab / shift+tab 切换模式    ctrl+p 设置    / 命令    ↑↓ 历史    ctrl+c 中止'
+    ? 'tab 模式  ctrl+p 命令  ctrl+k 搜索  ctrl+c 中止'
+    : 'tab / shift+tab 切换模式    ctrl+p 命令    ctrl+k 搜索    / 快捷命令    ctrl+c 中止'
   const styled = compact
-    ? `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}设置${reset}  ${bold}/${reset} ${textSoft}命令${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
-    : `${bold}tab / shift+tab${reset} ${textSoft}切换模式${reset}    ${bold}ctrl+p${reset} ${textSoft}设置${reset}    ${bold}/${reset} ${textSoft}命令${reset}    ${bold}↑↓${reset} ${textSoft}历史${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+    ? `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}命令${reset}  ${bold}ctrl+k${reset} ${textSoft}搜索${reset}  ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
+    : `${bold}tab / shift+tab${reset} ${textSoft}切换模式${reset}    ${bold}ctrl+p${reset} ${textSoft}命令${reset}    ${bold}ctrl+k${reset} ${textSoft}搜索${reset}    ${bold}/${reset} ${textSoft}快捷命令${reset}    ${bold}ctrl+c${reset} ${textSoft}中止${reset}`
   if (cellWidth(plain) <= width) return styled
-  return `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}设置${reset}  ${bold}/${reset} ${textSoft}命令${reset}`
+  return `${bold}tab${reset} ${textSoft}模式${reset}  ${bold}ctrl+p${reset} ${textSoft}命令${reset}  ${bold}ctrl+k${reset} ${textSoft}搜索${reset}`
 }
 
-export function commandPaletteOptions(): readonly AutocompleteItem[] {
+export function commandPaletteOptions(): readonly TuiMenuItem[] {
   return PALETTE_ACTIONS.map(item => ({ ...item }))
+}
+
+/**
+ * 中文说明：Windows Terminal 在应用启用 SGR mouse reporting 后会把普通左键拖动交给 Xiaoyu，
+ * 从而避免 TUI 文字被宿主终端选成大片白底；Shift+拖动仍由宿主终端保留为主动选择文本的逃生通道。
+ */
+export function isTerminalMouseInput(data: string): boolean {
+  return data.startsWith('\u001b[<') || data.startsWith('\u001b[M')
 }
 
 export function toggleTerminalVisual(settings: TerminalUiSettings): TerminalUiSettings {
@@ -624,6 +628,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
     input.setEncoding('utf8')
     input.setRawMode(true)
     input.resume()
+    output.write(terminalMouseCaptureSequence)
     draw()
     return await new Promise<boolean>(resolve => {
       const finish = (value: boolean): void => {
@@ -634,6 +639,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
       }
       const onData = (chunk: string | Buffer): void => {
         const data = String(chunk)
+        if (isTerminalMouseInput(data)) return
         if (data === '\u0003' || data === '\u001b') return finish(false)
         if (data === '\u001b[A' || data === '\u001b[B' || data === '\t' || data === ' ') {
           selected = selected === 'exit' ? 'trust' : 'exit'
@@ -657,7 +663,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
   } finally {
     input.setRawMode(previousRaw)
     if (!previousRaw) input.pause()
-    output.write(`${reset}${clearScreen}`)
+    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}`)
   }
 }
 
@@ -667,7 +673,7 @@ export function approvalDecision(answer: string): ToolApprovalDecision {
   return 'deny'
 }
 
-export function slashCommandSuggestions(prefix: string): readonly AutocompleteItem[] {
+export function slashCommandSuggestions(prefix: string): readonly TuiMenuItem[] {
   const normalized = prefix.replace(/^\//, '').toLowerCase()
   return COMMANDS.filter(command => command.value.startsWith(normalized)).map(command => ({ ...command }))
 }
@@ -751,7 +757,7 @@ export class SafePromptInput {
     if (this.history.length > 100) this.history.pop()
   }
 
-  suggestions(): readonly AutocompleteItem[] {
+  suggestions(): readonly TuiMenuItem[] {
     const trimmed = this.value.trimStart()
     if (!trimmed.startsWith('/') || trimmed.includes(' ')) return []
     return slashCommandSuggestions(trimmed)
@@ -1277,7 +1283,7 @@ class XiaoyuSurface {
     if (this.overlayOpen || this.approval) return
     this.showListOverlay('命令', commandPaletteOptions(), value => {
       void this.runPaletteAction(value)
-    })
+    }, { centered: true, width: 76, maxHeight: 18, searchable: true })
   }
 
   private openSettings(): void {
@@ -1286,10 +1292,10 @@ class XiaoyuSurface {
     const tips = this.settings.tips ? '开启' : '关闭'
     const logo = this.settings.logo === 'auto' ? '自动' : '紧凑'
     this.showListOverlay('终端设置', [
-      { value: 'visual', label: '丰富显示', description: `当前：${visual} · 动态星点，不改变主布局` },
+      { value: 'visual', label: '丰富显示', description: `当前：${visual}` },
       { value: 'tips', label: '提示信息', description: `当前：${tips}` },
       { value: 'logo', label: 'Logo 模式', description: `当前：${logo}` },
-      { value: 'back', label: '返回命令面板', description: 'Esc 也可以关闭' },
+      { value: 'back', label: '返回命令面板', description: '返回主菜单' },
     ], value => {
       if (value === 'visual') {
         this.settings = toggleTerminalVisual(this.settings)
@@ -1323,9 +1329,9 @@ class XiaoyuSurface {
     if (this.overlayOpen) return
     const profiles = this.backend.listBrainProfiles()
     const active = profiles.find(profile => profile.active)
-    const items: AutocompleteItem[] = [
-      { value: 'catalog', label: '＋ 添加提供方', description: '选择已真实接入的提供方；API Key 默认保存到系统凭据' },
-      { value: 'add-env', label: '＋ 自定义提供方 · 环境变量兼容', description: '兼容旧环境变量工作流' },
+    const items: TuiMenuItem[] = [
+      { value: 'catalog', label: '添加提供方', description: '配置新的模型提供方' },
+      { value: 'add-env', label: '自定义提供方', description: 'OpenAI 兼容接口 · 环境变量' },
     ]
     if (active) {
       items.push(
@@ -1337,15 +1343,15 @@ class XiaoyuSurface {
     const providerNames = new Map(this.backend.listBrainProviderCatalog().map(item => [item.id, item.displayName]))
     for (const profile of profiles) {
       const credential = profile.credential?.source === 'os'
-        ? profile.credentialReady ? '密钥：系统凭据' : '缺少系统凭据'
+        ? profile.credentialReady ? '系统凭据' : '缺少系统凭据'
         : profile.credential?.source === 'env'
-          ? profile.credentialReady ? `Key: ${profile.credential.key}` : `缺少 ${profile.credential.key}`
-          : '无需 API Key'
+          ? profile.credentialReady ? `环境变量 ${profile.credential.key}` : `缺少 ${profile.credential.key}`
+          : '无需密钥'
       const providerName = providerNames.get(profile.providerId) ?? profile.providerId
       items.push({
         value: `select:${profile.id}`,
         label: `${profile.active ? '●' : '○'} ${profile.displayName}`,
-        description: `${providerName} · ${profile.model} · ${profile.source === 'environment' ? '环境变量' : '用户配置'} · ${credential}`,
+        description: `${providerName} · ${profile.model} · ${credential}`,
       })
     }
     this.showListOverlay(title, items, value => {
@@ -1489,7 +1495,7 @@ class XiaoyuSurface {
       return
     }
     const current = this.backend.reasoningEffort
-    const items: AutocompleteItem[] = [
+    const items: TuiMenuItem[] = [
       { value: 'default', label: `${current === 'default' ? '● ' : ''}默认`, description: '使用提供方默认推理强度' },
       { value: 'high', label: `${current === 'high' ? '● ' : ''}高`, description: '高推理强度' },
       { value: 'max', label: `${current === 'max' ? '● ' : ''}最大`, description: '最大推理强度（提供方支持时）' },
@@ -1654,31 +1660,24 @@ class XiaoyuSurface {
 
   private showListOverlay(
     title: string,
-    items: readonly AutocompleteItem[],
+    items: readonly TuiMenuItem[],
     onSelect: (value: string) => void,
-    layout: { centered?: boolean; width?: number | string; maxHeight?: number | string } = {},
+    layout: { centered?: boolean; width?: number | string; maxHeight?: number | string; searchable?: boolean } = {},
   ): void {
     if (this.overlayOpen) return
     this.overlayOpen = true
-    const theme = {
-      selectedPrefix: (value: string) => `${orange}${bold}${value}${reset}`,
-      selectedText: (value: string) => `${orange}${bold}${value}${reset}`,
-      description: (value: string) => `${textSoft}${value}${reset}`,
-      scrollInfo: (value: string) => `${textFaint}${value}${reset}`,
-      noMatch: (value: string) => `${textFaint}${value}${reset}`,
-    }
-    const list = new this.toolkit.SelectList(items, Math.min(10, Math.max(4, items.length)), theme)
+    const maxVisible = Math.min(10, Math.max(4, items.length))
+    const searchable = layout.searchable === true
+    let query = ''
+    let selectedIndex = items.length > 0 ? 0 : -1
     let handle: any
+
     const close = (): void => {
       if (!this.overlayOpen) return
       this.overlayOpen = false
       try { handle?.hide?.() } catch { /* best effort */ }
       this.tui.setFocus(this)
       this.tui.requestRender()
-    }
-    list.onSelect = (item: AutocompleteItem) => {
-      close()
-      onSelect(item.value)
     }
     const cancel = (): void => {
       if (this.initialBrainSetupActive) {
@@ -1688,26 +1687,106 @@ class XiaoyuSurface {
       }
       close()
     }
-    list.onCancel = cancel
+    const projection = (inner: number) => {
+      const projected = projectTuiMenu(items, query, selectedIndex, inner, maxVisible)
+      selectedIndex = projected.selectedIndex
+      return projected
+    }
+    const selectCurrent = (inner: number): void => {
+      const projected = projection(inner)
+      if (projected.selectedIndex < 0) return
+      const item = projected.filtered[projected.selectedIndex]
+      if (!item) return
+      close()
+      onSelect(item.value)
+    }
+
     const frame = {
       render: (width: number): string[] => {
-        const inner = Math.max(28, width - 4)
+        const inner = Math.max(32, width - 4)
         const heading = `${bold}${text}${title}${reset}${spaces(Math.max(1, inner - cellWidth(title) - 3))}${textFaint}esc${reset}`
-        return [heading, '', ...list.render(inner)]
+        const projected = projection(inner)
+        const lines: string[] = [heading]
+
+        if (searchable) {
+          const searchValue = query
+            ? `${text}${query}${this.toolkit.CURSOR_MARKER}${reset}`
+            : `${this.toolkit.CURSOR_MARKER}${textFaint}输入关键词…${reset}`
+          lines.push(`${textFaint}搜索${reset}  ${searchValue}`, '')
+        } else {
+          lines.push('')
+        }
+
+        if (projected.rows.length === 0) {
+          lines.push(`${textFaint}  没有匹配项${reset}`)
+        } else {
+          for (const row of projected.rows) {
+            const prefix = row.selected ? `${orange}${bold}→${reset}` : `${textFaint} ${reset}`
+            const label = row.selected ? `${orange}${bold}${row.label}${reset}` : `${text}${row.label}${reset}`
+            const description = `${textSoft}${row.description}${reset}`
+            const shortcut = row.shortcut ? `  ${textFaint}${row.shortcut}${reset}` : ''
+            lines.push(`${prefix} ${label}  ${description}${shortcut}`)
+          }
+        }
+
+        if (searchable) {
+          lines.push('', `${textFaint}输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回${reset}`)
+        }
+        return lines
       },
       handleInput: (data: string): void => {
+        if (isTerminalMouseInput(data)) return
         if (this.toolkit.matchesKey(data, 'escape') || data === '\u001b') {
           cancel()
           return
         }
-        list.handleInput?.(data)
+
+        const inner = Math.max(32, Number(this.terminal.columns ?? 76) - 12)
+        const current = projection(inner)
+        if (this.toolkit.matchesKey(data, 'up') || data === '\u001b[A') {
+          selectedIndex = moveTuiMenuSelection(current.selectedIndex, current.filtered.length, -1)
+          this.tui.requestRender()
+          return
+        }
+        if (this.toolkit.matchesKey(data, 'down') || data === '\u001b[B') {
+          selectedIndex = moveTuiMenuSelection(current.selectedIndex, current.filtered.length, 1)
+          this.tui.requestRender()
+          return
+        }
+        if (this.toolkit.matchesKey(data, 'enter') || data === '\r' || data === '\n') {
+          selectCurrent(inner)
+          return
+        }
+        if (!searchable) return
+        if (this.toolkit.matchesKey(data, 'backspace') || data === '\u007f' || data === '\b') {
+          if (query.length > 0) {
+            query = query.slice(0, -1)
+            selectedIndex = 0
+            this.tui.requestRender()
+          }
+          return
+        }
+        if (this.toolkit.matchesKey(data, 'ctrl+u') || data === '\u0015') {
+          query = ''
+          selectedIndex = 0
+          this.tui.requestRender()
+          return
+        }
+        if (data.includes('\u001b') || [...data].some(char => {
+          const code = char.charCodeAt(0)
+          return code < 32 || code === 0x7f || (code >= 0x80 && code <= 0x9f)
+        })) return
+        if (data) {
+          query += data
+          selectedIndex = 0
+          this.tui.requestRender()
+        }
       },
-      invalidate: () => list.invalidate?.(),
     }
     const position = layout.centered ? { anchor: 'center' as const } : this.brainOverlayPosition('14%')
     handle = this.tui.showOverlay(frame, {
       width: layout.width ?? 68,
-      maxHeight: layout.maxHeight ?? Math.min(20, Math.max(10, items.length + 6)),
+      maxHeight: layout.maxHeight ?? Math.min(20, Math.max(10, items.length + (searchable ? 9 : 6))),
       ...position,
       margin: 3,
     })
@@ -1899,14 +1978,16 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
   let stopped = false
 
   try {
-    output.write(`${enterAltScreen}${setTitle('Xiaoyu')}${clearScreen}`)
+    output.write(`${enterAltScreen}${terminalMouseCaptureSequence}${setTitle('Xiaoyu')}${clearScreen}`)
     tui.addChild(surface)
     tui.setFocus(surface)
     tui.addInputListener((data: string) => {
+      if (isTerminalMouseInput(data)) return { consume: true }
       const ctrlC = toolkit.matchesKey(data, 'ctrl+c') || data === '\u0003'
       const ctrlP = toolkit.matchesKey(data, 'ctrl+p') || data === '\u0010'
+      const ctrlK = toolkit.matchesKey(data, 'ctrl+k') || data === '\u000b'
       const escape = toolkit.matchesKey(data, 'escape') || data === '\u001b'
-      if (ctrlP) {
+      if (ctrlP || ctrlK) {
         surface.openCommandPalette()
         return { consume: true }
       }
@@ -1928,7 +2009,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
       try { tui.stop() } catch { /* best effort terminal restore */ }
     }
     await backend.close()
-    output.write(`${reset}${clearScreen}${leaveAltScreen}`)
+    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${leaveAltScreen}`)
     output.write(`${textFaint}Xiaoyu 已退出。${reset}\n`)
   }
 }

@@ -44,8 +44,12 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu 模型', '模型 / 提供方', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', 'showInputOverlay', '模型就绪测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
+for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu 模型', '模型 / 提供方', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", "matchesKey(data, 'ctrl+k')", 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'isTerminalMouseInput', 'searchable: true', 'showListOverlay', 'showInputOverlay', '模型就绪测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
+}
+const tuiMenu = text('apps/cli/src/tui-menu.ts')
+for (const marker of ['filterTuiMenuItems', 'moveTuiMenuSelection', 'projectTuiMenu', 'labelWidth', 'descriptionWidth', 'shortcutWidth']) {
+  if (!tuiMenu.includes(marker)) throw new Error(`XMA TUI menu grid marker missing: ${marker}`)
 }
 
 for (const marker of ['USER_CANCEL_EXIT_CODE = 0', "process.stdout.write('已取消：未授权当前工作区。\\n')"]) {

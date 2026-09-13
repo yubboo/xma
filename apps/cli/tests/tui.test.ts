@@ -8,6 +8,7 @@ import {
   commandPaletteOptions,
   cycleTerminalAgentMode,
   DEFAULT_TERMINAL_UI_SETTINGS,
+  isTerminalMouseInput,
   renderHome,
   needsInitialBrainSetup,
   renderWorkspaceTrustPrompt,
@@ -15,11 +16,14 @@ import {
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
+  terminalMouseCaptureSequence,
+  terminalMouseReleaseSequence,
   workspaceRisk,
   workspaceTrustDefaultSelection,
   type TerminalTranscriptItem,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs, USER_CANCEL_EXIT_CODE } from '../src/main.ts'
+import { filterTuiMenuItems, moveTuiMenuSelection, projectTuiMenu, tuiMenuCellWidth } from '../src/tui-menu.ts'
 
 
 
@@ -138,6 +142,36 @@ test('TUI command palette exposes only functional terminal actions with Chinese 
   assert.equal(options.find(item => item.value === 'workspace')?.label, '工作区')
   assert.equal(options.find(item => item.value === 'provider')?.label, '模型 / 提供方')
   assert.equal(options.find(item => item.value === 'agent')?.label, '智能体')
+})
+
+
+test('TUI command palette search matches labels, descriptions and provider aliases', () => {
+  const options = commandPaletteOptions()
+  assert.deepEqual(filterTuiMenuItems(options, 'deep').map(item => item.value), ['provider', 'model'])
+  assert.deepEqual(filterTuiMenuItems(options, 'API Key').map(item => item.value), ['provider'])
+  assert.deepEqual(filterTuiMenuItems(options, '工作区').map(item => item.value), ['workspace'])
+})
+
+test('TUI menu projection keeps labels, descriptions and shortcuts in stable columns', () => {
+  const projected = projectTuiMenu(commandPaletteOptions(), '', 0, 72, 10)
+  assert.equal(projected.rows.length, 9)
+  assert.equal(projected.rows[0]?.selected, true)
+  for (const row of projected.rows) {
+    assert.equal(tuiMenuCellWidth(row.label), projected.labelWidth)
+    assert.equal(tuiMenuCellWidth(row.description), projected.descriptionWidth)
+    assert.equal(tuiMenuCellWidth(row.shortcut), projected.shortcutWidth)
+  }
+  assert.equal(moveTuiMenuSelection(0, projected.filtered.length, -1), projected.filtered.length - 1)
+})
+
+test('TUI captures ordinary mouse drag while active and releases terminal state on exit', () => {
+  assert.match(terminalMouseCaptureSequence, /\?1002h/)
+  assert.match(terminalMouseCaptureSequence, /\?1006h/)
+  assert.match(terminalMouseReleaseSequence, /\?1006l/)
+  assert.match(terminalMouseReleaseSequence, /\?1002l/)
+  assert.equal(isTerminalMouseInput('\u001b[<0;10;5M'), true)
+  assert.equal(isTerminalMouseInput('\u001b[<0;10;5m'), true)
+  assert.equal(isTerminalMouseInput('\u001b[A'), false)
 })
 
 test('CLI treats an explicit Workspace Trust decline as a clean user cancellation', () => {

@@ -110,3 +110,15 @@
 - 验证：Core + CLI + Desktop 可离线 TypeScript 测试 76/76 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9/9 Gate PASS；CLI/TUI/Gates targeted strict `tsc --noEmit` PASS。
 - 未验证边界：当前沙箱不能代替 Windows Terminal 真实 alternate-screen 视觉验收；模型管理面板的新宽度/居中效果与“否，退出”无错误堆栈仍需用户 Windows 实机确认。
 - 下一步：Stage P1 顺延为 `##10 · Pi Agent Engine 行为研究与迁移设计`，先列真实 streaming/tool/steering/cancellation 行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。
+
+##10 · Terminal 鼠标接管、统一菜单栅格与命令搜索
+
+- 日期：2026-09-14
+- 目的：收口 Windows Terminal 实机验收中的交互问题：普通左键拖动会触发宿主终端文本选择并形成大片白块/蓝色选择手柄；命令与模型菜单的名称/说明列不统一，说明过长；命令主菜单缺少可直接输入的搜索能力。
+- 鼠标输入：Workspace Trust 与 Xiaoyu alternate-screen 工作台活跃期间启用 SGR mouse reporting（button-event + SGR coordinates），普通左键点击/拖动由 Xiaoyu 接收并忽略，退出、取消与异常收口时显式恢复终端模式；不修改终端自身 Shift+拖动的主动文本选择语义。
+- 菜单组件：新增 `apps/cli/src/tui-menu.ts` 作为纯 TUI 菜单投影层，统一 CJK cell width、名称列、简短说明列、快捷命令列、截断与选择窗口；命令面板、Terminal Settings、Provider/Model 列表共享同一 `showListOverlay` 栅格，不再依赖 Pi SelectList 的页面级自由宽度。
+- 命令搜索：`Ctrl+P` 与新增 `Ctrl+K` 共用同一居中命令面板；命令面板顶部提供即时搜索，匹配 label/value/description/keywords，支持中文、命令名、Provider/Model 别名（例如 DeepSeek/API Key），↑↓ 选择、Enter 执行、Esc 返回。真实 `/settings`、`/provider` 等命令在最右列统一对齐显示。
+- 文案与模型页：主菜单说明统一缩短；“添加提供方 / 自定义提供方”移除多余 `＋`；Profile 行缩短为 Provider + Model + Credential 状态，避免把来源、密钥说明等全部挤成一条超长字符串。
+- Gate / 测试：Distribution Gate 新增 mouse capture、Ctrl+K 搜索与统一菜单栅格静态合同；CLI TUI 测试补搜索、列宽与 mouse sequence 回归。本批已完成 `tui-menu.ts` strict TypeScript 检查 PASS、`tui.ts/tui.test.ts/distribution.ts/tui-menu.ts` Node strip-types 语法检查 PASS、纯菜单 search/layout/selection smoke PASS，以及 Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9/9 Gate PASS。当前源码包不携带 `node_modules`，沙箱也无法联网准备 workspace 依赖，因此未冒充执行完整 `pnpm test/typecheck`；Windows Terminal 鼠标视觉效果仍以用户实机验收为最终证据。
+- Source Manifest：正式源码包重新生成 `.xma-package/source-manifest.json`，仍按未冻结 `0.1.0` 同名交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止临时 fixed/hotfix 包名。
+- 下一步：用户 Windows 实机重点验收普通左键拖动不再产生白色选择块、命令搜索与菜单列对齐；确认后继续 Stage P1 的 Pi Agent Engine 行为研究与迁移，不把后续开发重心长期停留在 TUI 外观。

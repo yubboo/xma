@@ -265,7 +265,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 
 - `xiaoyu` canonical command + `xma` compatibility alias；
 - 持续 TUI，而不是欢迎页打印后退出；
-- 固定 Pi TUI 0.74.0 作为 Node 22 兼容差分渲染/Overlay/硬件光标基础层；主输入使用 XMA `SafePromptInput`，禁止使用上游 Editor/Input 的 reverse-video cursor；支持 CJK 硬件光标、历史、多行与已实现命令的 `/` 自动补全；Home/Prompt Dock 固定锚点，丰富视觉只刷新装饰层；`Ctrl+P` 命令面板 + Terminal Settings（丰富/简洁、提示、Logo）作为真正可操作的 Overlay，不推动主布局；
+- 固定 Pi TUI 0.74.0 作为 Node 22 兼容差分渲染/Overlay/硬件光标基础层；主输入使用 XMA `SafePromptInput`，禁止使用上游 Editor/Input 的 reverse-video cursor；支持 CJK 硬件光标、历史、多行与已实现命令的 `/` 自动补全；Home/Prompt Dock 固定锚点，丰富视觉只刷新装饰层；`Ctrl+P` 命令面板与 `Ctrl+K` 搜索共用统一可检索菜单栅格，名称/说明/快捷命令列稳定对齐；交互期间通过 mouse reporting 接管普通拖动并在退出时恢复，避免 Windows Terminal 原生选择白块；Terminal Settings（丰富/简洁、提示、Logo）继续作为真正可操作的 Overlay，不推动主布局；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
 - OpenAI-compatible Brain Terminal 配置闭环：用户级非 Secret Profile Store、OS Credentials 默认安全录入、Credential Env Reference 兼容、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；

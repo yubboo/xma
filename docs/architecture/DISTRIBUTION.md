@@ -95,7 +95,7 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 - Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
 - Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区，对话区、输入 Dock、快捷键与提示区之间至少保留稳定空行；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。Prompt Dock 持续显示 Mode + Provider/Model + Reasoning，模式和推理强度使用稳定颜色；Tab/Shift+Tab 循环 Build/Plan/Compose(legacy)，Build 暴露完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
-- Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；
+- Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；Xiaoyu 交互界面活跃期间必须启用终端 mouse reporting 接管普通左键点击/拖动并忽略这些鼠标事件，退出/取消时可靠恢复，避免 Windows Terminal 把 TUI 文本拖成大片白色选择区；用户仍可用终端保留的 Shift+拖动主动选择文本；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - 工作区信任界面选择“否，退出”属于正常用户取消，CLI 必须以成功退出语义返回，不得让 `xma-dev` / pnpm 包装层打印失败堆栈；
 - `xiaoyu --help / --version / doctor`；
