@@ -24,7 +24,7 @@ GitHub：`https://github.com/yubboo/xma.git`
 
 ## 三个 Windows 入口的职责边界
 
-- `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录。
+- `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。
 - `XMA-GitHub.bat`：只负责 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。
 - `XMA.bat`：负责本地基础环境、项目运行、检查和构建。
 
@@ -85,4 +85,5 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 - Electron 发布包通过 `file://` 加载 `.cache/desktop/electron/app/web/` staging 打入应用的 `web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`。最终 Setup/Portable 由 electron-builder 直接写到 `dist/release/electron/`；禁止恢复 `apps/desktop/web|release` 中转目录。
 
-- `XMA-Sync.bat` 必须清理已经改名/删除的旧源码路径；即使用户把新 ZIP 覆盖解压到旧目录导致 Source 残留旧文件，也不得把旧路径重新同步回 Git 工作目录。
+- `XMA-Sync.bat` 必须优先使用 Source Manifest，而不是按目录名字猜哪些是源码。即使用户把新 ZIP 覆盖解压到旧目录导致 Source 残留旧文件，Manifest 之外的残留也不得重新同步回 Git 工作目录；`scripts/release/` 等正式源码目录必须正常同步。
+- Source Manifest 同步状态保存在目标工作目录 `.xma/source-sync.json`，只属于本地同步状态，不进入 Git。新增目录不需要修改 Sync 白名单；上一版受管文件若从新 Manifest 消失，则自动视为删除/重命名并清理。

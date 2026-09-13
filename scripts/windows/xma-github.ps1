@@ -53,7 +53,7 @@ function Test-ForbiddenGitPath([string]$Path) {
   $normalized = $Path.Replace('\','/').TrimStart('./')
   $directoryRules = @(
     'node_modules/', '.pnpm-store/', '.cache/', '.turbo/',
-    'dist/', 'build/', 'coverage/', '.xma/',
+    'dist/', 'build/', 'coverage/', '.xma/', '.xma-package/',
     'native/target/', 'target/', 'apps/desktop/release/',
     'apps/desktop/dist/', 'apps/desktop/web/', 'apps/desktop/native/',
     'tmp/', 'temp/', '.idea/'

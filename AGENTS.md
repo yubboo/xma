@@ -156,6 +156,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - `XMA.bat` → `scripts/windows/xma-console.ps1`
 - `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1`
 - `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1`
+- 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。
 
 BAT/PS1 必须在成功和失败后保留窗口，并有明显颜色状态提示。
 

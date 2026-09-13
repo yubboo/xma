@@ -119,13 +119,29 @@ for (const marker of [
 
 const syncMigrationSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 for (const marker of [
-  '$legacySourcePaths = @(',
-  'core\\src\\session-store.ts',
-  'apps\\desktop\\tests\\electron-runtime-core.test.ts',
-  'scripts\\gates\\check-architecture.ts',
-  'Remove-Item $legacyTargetPath -Force -ErrorAction Stop',
+  '.xma-package\\source-manifest.json',
+  '.xma\\source-sync.json',
+  'Get-XmaPreviousManagedFiles',
+  'Save-XmaSyncState',
+  'Source Manifest 模式',
+  '删除上一版已移除/重命名源码',
+  '新增目录无需配置',
+  'scripts/release 正式源码',
 ]) {
-  if (!syncMigrationSource.includes(marker)) throw new Error(`XMA sync rename-migration contract regression: missing ${marker}`)
+  if (!syncMigrationSource.includes(marker)) throw new Error(`XMA sync manifest contract regression: missing ${marker}`)
+}
+if (syncMigrationSource.includes("'.git','node_modules','.cache','dist','build','.xma','target','release'")) {
+  throw new Error('XMA sync must not globally exclude every directory named release/build/dist; path ownership must be explicit.')
+}
+if (!existsSync('scripts/release/source-manifest.ts')) throw new Error('XMA source manifest generator missing: scripts/release/source-manifest.ts')
+const sourceManifestGenerator = readFileSync('scripts/release/source-manifest.ts', 'utf8')
+for (const marker of [
+  "outputFile = join(outputDir, 'source-manifest.json')",
+  "parts[0] === 'scripts'",
+  "project: 'xma'",
+  'formatVersion: 1',
+]) {
+  if (!sourceManifestGenerator.includes(marker)) throw new Error(`XMA source manifest generator regression: missing ${marker}`)
 }
 
 const namingGateSource = readFileSync('scripts/gates/naming.ts', 'utf8')
@@ -143,7 +159,7 @@ for (const marker of [
 
 const gitignoreSource = readFileSync('.gitignore', 'utf8')
 for (const marker of [
-  'node_modules/', '.pnpm-store/', 'dist/', 'build/', '/runtime/', '.xma/', 'workspaces/',
+  'node_modules/', '.pnpm-store/', 'dist/', 'build/', '/runtime/', '.xma/', '.xma-package/', 'workspaces/',
   'native/target/', '**/target/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
 ]) {
   if (!gitignoreSource.includes(marker)) throw new Error(`.gitignore repository hygiene regression: missing ${marker}`)
@@ -304,12 +320,20 @@ for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', '
   if (!githubSource.includes(marker)) throw new Error(`XMA GitHub helper marker missing: ${marker}`)
 }
 const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
-if (!syncSource.includes('H:\\一键部署\\xma')) throw new Error('XMA sync target contract missing')
-if (!syncSource.includes("'node_modules','.cache'")) throw new Error('XMA sync must preserve project-local .cache downloads')
-if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync must exclude only root runtime, not native/runtime source')
-if (syncSource.includes("'runtime','.xma'")) throw new Error('Generic runtime directory exclusion would drop native/runtime source')
-if (!syncSource.includes("@('pnpm-lock.yaml','Cargo.lock')")) throw new Error('XMA sync must preserve locally generated lockfiles when the source package omits them')
-if (!syncSource.includes('若版本包暂未携带 lockfile，则保留本机已生成的')) throw new Error('XMA sync must explain conditional lockfile preservation policy')
+for (const marker of [
+  'H:\\一键部署\\xma',
+  ".xma-package\\source-manifest.json",
+  ".xma\\source-sync.json",
+  'Get-XmaPreviousManagedFiles',
+  'Save-XmaSyncState',
+  'Source Manifest 模式',
+  '新增目录无需配置',
+]) {
+  if (!syncSource.includes(marker)) throw new Error(`XMA sync target/manifest contract missing: ${marker}`)
+}
+if (syncSource.includes("'.git','node_modules','.cache','dist','build','.xma','target','release'")) {
+  throw new Error('XMA sync must not globally exclude release/build/dist by generic directory name.')
+}
 for (const marker of [
   "Join-Path $Target 'target'",
   "Join-Path $Target 'build'",
@@ -321,8 +345,8 @@ for (const marker of [
 ]) {
   if (!syncSource.includes(marker)) throw new Error(`XMA sync must clean legacy build directory: ${marker}`)
 }
-if (!syncSource.includes('.cache/cargo-target') && !syncSource.includes('.cache\\cargo-target')) throw new Error('XMA sync must explain the new project-local Cargo cache location')
-if (!syncSource.includes('正式产物统一位于 dist')) throw new Error('XMA sync must state the unified .cache/dist build-layout contract')
+if (!syncSource.includes("(Join-Path $Source 'runtime')")) throw new Error('XMA sync fallback must exclude only root runtime, not native/runtime source')
+if (!syncSource.includes('scripts/release 正式源码')) throw new Error('XMA sync must explicitly protect scripts/release as managed source')
 
 for (const bat of required.filter(file => file.endsWith('.bat'))) {
   const text = readFileSync(bat, 'utf8')

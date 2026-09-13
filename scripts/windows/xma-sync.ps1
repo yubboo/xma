@@ -1,8 +1,8 @@
 ﻿<#
-文件作用：把解压后的版本源码安全同步到固定 Git 工作目录 H:\一键部署\xma。
-关联模块：XMA-Sync.bat、XMA-GitHub.bat、GitHub yubboo/xma。
-当前实现：robocopy 镜像源码但只保留根运行数据目录 runtime、.git、node_modules、构建缓存；native/runtime 属于源码，必须正常同步。
-职责边界：不得删除目标仓库 .git，不得把用户运行时数据从版本包覆盖进去。
+文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到固定 Git 工作目录 H:\一键部署\xma。
+关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、XMA-GitHub.bat、GitHub yubboo/xma。
+当前实现：优先按包内 Source Manifest 精确复制新增/变更源码并自动清理上一版已删除/重命名的受管文件；仅保留 .git、runtime、node_modules、.cache、dist 等本地状态。旧版本包没有 Manifest 时才回退 robocopy 兼容流程。
+职责边界：不得删除目标仓库 .git、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +10,8 @@ $Source = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $Target = if ($env:XMA_TARGET_ROOT) { $env:XMA_TARGET_ROOT } else { 'H:\一键部署\xma' }
 $RepoUrl = 'https://github.com/yubboo/xma.git'
 $ProjectVersion = (Get-Content (Join-Path $Source 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$PackageManifest = Join-Path $Source '.xma-package\source-manifest.json'
+$SyncState = Join-Path $Target '.xma\source-sync.json'
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host "  XMA $ProjectVersion Source Sync" -ForegroundColor Cyan
@@ -20,29 +22,148 @@ Write-Host "目标目录：$Target"
 if ($Source.TrimEnd('\') -ieq $Target.TrimEnd('\')) { throw '源目录和目标目录不能相同。' }
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
 
-# 中文说明：早期版本包可能暂未携带 lockfile，但用户本机 [1] 会生成它们。
-# /MIR 会删除源目录不存在的文件，因此先暂存“源缺失、目标已存在”的 lockfile；
-# 如果未来版本包正式携带 lockfile，则直接以源码包版本为准，不恢复旧文件。
-$lockBackupRoot = Join-Path $env:TEMP ("xma-lock-backup-" + [Guid]::NewGuid().ToString('N'))
-$preservedLocks = @()
-foreach ($lockName in @('pnpm-lock.yaml','Cargo.lock')) {
-  $sourceLock = Join-Path $Source $lockName
-  $targetLock = Join-Path $Target $lockName
-  if (-not (Test-Path $sourceLock) -and (Test-Path $targetLock)) {
-    New-Item -ItemType Directory -Force -Path $lockBackupRoot | Out-Null
-    Copy-Item $targetLock (Join-Path $lockBackupRoot $lockName) -Force
-    $preservedLocks += $lockName
+function Normalize-XmaRelativePath {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $normalized = $Path.Replace('\', '/').TrimStart('/')
+  if ([string]::IsNullOrWhiteSpace($normalized)) { throw 'Source Manifest 包含空路径。' }
+  if ([System.IO.Path]::IsPathRooted($Path) -or $normalized -match '(^|/)\.\.(/|$)') {
+    throw "Source Manifest 包含不安全路径：$Path"
+  }
+  return $normalized
+}
+
+function Test-XmaProtectedRelativePath {
+  param([Parameter(Mandatory = $true)][string]$RelativePath)
+  $normalized = (Normalize-XmaRelativePath $RelativePath).ToLowerInvariant()
+  $parts = $normalized.Split('/')
+  if ($parts[0] -in @('.git','.xma','.xma-package','runtime','node_modules','.cache','dist','build','target','release')) { return $true }
+  foreach ($part in $parts) {
+    if ($part -in @('.git','node_modules','.cache','target')) { return $true }
+  }
+  return $false
+}
+
+function Convert-XmaRelativeToNative {
+  param([Parameter(Mandatory = $true)][string]$RelativePath)
+  return (Normalize-XmaRelativePath $RelativePath).Replace('/', '\')
+}
+
+function Remove-XmaEmptyParents {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $current = Split-Path -Parent $Path
+  while ($current -and $current.StartsWith($Target, [System.StringComparison]::OrdinalIgnoreCase) -and $current -ne $Target) {
+    $relative = $current.Substring($Target.Length).TrimStart('\')
+    if ($relative -and (Test-XmaProtectedRelativePath $relative)) { break }
+    $children = @(Get-ChildItem -LiteralPath $current -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -ne 0) { break }
+    Remove-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+    $current = Split-Path -Parent $current
   }
 }
 
-$excludeDirs = @('.git','node_modules','.cache','dist','build','.xma','target','release',(Join-Path $Source 'runtime'))
-$robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP','/XD') + $excludeDirs
-& robocopy.exe @robocopyArgs
-$rc = $LASTEXITCODE
-if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
+function Get-XmaPreviousManagedFiles {
+  if (Test-Path $SyncState) {
+    try {
+      $state = Get-Content $SyncState -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($state.formatVersion -eq 1 -and $state.files) {
+        return @($state.files | ForEach-Object { Normalize-XmaRelativePath ([string]$_) })
+      }
+    } catch {
+      Write-Host '[警告] 旧同步状态无法读取，将尝试从 Git tracked files 恢复受管文件列表。' -ForegroundColor Yellow
+    }
+  }
+
+  if ((Test-Path (Join-Path $Target '.git')) -and (Get-Command git.exe -ErrorAction SilentlyContinue)) {
+    $tracked = @(& git.exe -C $Target ls-files 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+      return @($tracked | Where-Object { $_ } | ForEach-Object { Normalize-XmaRelativePath ([string]$_) })
+    }
+  }
+  return @()
+}
+
+function Save-XmaSyncState {
+  param([Parameter(Mandatory = $true)][string[]]$Files)
+  $stateDir = Split-Path -Parent $SyncState
+  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+  $state = [ordered]@{
+    formatVersion = 1
+    project = 'xma'
+    version = $ProjectVersion
+    files = @($Files | Sort-Object -Unique)
+  }
+  $state | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $SyncState -Encoding UTF8
+}
+
+if (Test-Path $PackageManifest) {
+  $manifest = Get-Content $PackageManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($manifest.formatVersion -ne 1 -or $manifest.project -ne 'xma') { throw 'Source Manifest 格式或项目标识不受支持。' }
+  if ($manifest.version -ne $ProjectVersion) { throw "Source Manifest 版本 $($manifest.version) 与 package.json $ProjectVersion 不一致。" }
+
+  $newFiles = @()
+  $seen = @{}
+  foreach ($entry in @($manifest.files)) {
+    $relative = Normalize-XmaRelativePath ([string]$entry)
+    if (Test-XmaProtectedRelativePath $relative) { throw "Source Manifest 不得管理本地状态路径：$relative" }
+    if ($seen.ContainsKey($relative)) { throw "Source Manifest 包含重复路径：$relative" }
+    $seen[$relative] = $true
+    $sourceFile = Join-Path $Source (Convert-XmaRelativeToNative $relative)
+    if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) { throw "Source Manifest 声明的文件不存在：$relative" }
+    $newFiles += $relative
+  }
+
+  $previousFiles = @(Get-XmaPreviousManagedFiles)
+  $newSet = @{}
+  foreach ($relative in $newFiles) { $newSet[$relative] = $true }
+
+  $removed = 0
+  foreach ($relative in $previousFiles) {
+    if (Test-XmaProtectedRelativePath $relative) { continue }
+    if (-not $newSet.ContainsKey($relative)) {
+      $targetFile = Join-Path $Target (Convert-XmaRelativeToNative $relative)
+      if (Test-Path -LiteralPath $targetFile -PathType Leaf) {
+        Write-Host "[同步] 删除上一版已移除/重命名源码：$relative" -ForegroundColor DarkYellow
+        Remove-Item -LiteralPath $targetFile -Force -ErrorAction Stop
+        Remove-XmaEmptyParents $targetFile
+        $removed++
+      }
+    }
+  }
+
+  $copied = 0
+  foreach ($relative in $newFiles) {
+    $sourceFile = Join-Path $Source (Convert-XmaRelativeToNative $relative)
+    $targetFile = Join-Path $Target (Convert-XmaRelativeToNative $relative)
+    $parent = Split-Path -Parent $targetFile
+    if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    Copy-Item -LiteralPath $sourceFile -Destination $targetFile -Force
+    $copied++
+  }
+
+  Save-XmaSyncState -Files $newFiles
+  Write-Host "[同步] Source Manifest 模式：$copied 个源码文件已同步，$removed 个上一版受管文件已自动清理。" -ForegroundColor Green
+} else {
+  Write-Host '[兼容] 当前源码包没有 Source Manifest，使用旧版 robocopy 同步；建议使用新的正式源码包。' -ForegroundColor Yellow
+
+  # 中文说明：旧包回退模式仍允许按名字排除真正不会成为源码的依赖/缓存目录；
+  # release 不再做全局名字排除，避免误伤 scripts/release 正式源码。
+  $excludeDirs = @('.git','node_modules','.cache','.xma','target')
+  $excludeDirs += @(
+    (Join-Path $Source 'runtime'),
+    (Join-Path $Source 'dist'),
+    (Join-Path $Source 'build'),
+    (Join-Path $Source 'release'),
+    (Join-Path $Source 'apps\desktop\release'),
+    (Join-Path $Source 'apps\desktop\src-tauri\gen')
+  )
+  $robocopyArgs = @($Source,$Target,'/MIR','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP','/XD') + $excludeDirs
+  & robocopy.exe @robocopyArgs
+  $rc = $LASTEXITCODE
+  if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
+}
 
 # 中文说明：0.1.0 早期曾把 Cargo/Desktop 中间产物散落在 target/build/apps/desktop 下。
-# 现在统一约束为：Cargo 根缓存位于 .cache/cargo-target，其他中间状态只进 .cache，正式产品只进 dist；同步时清理旧目录，避免继续误用。
+# 新版只做一次兼容清理；正常构建不会再生成这些路径。
 $legacyBuildDirs = @(
   (Join-Path $Target 'target'),
   (Join-Path $Target 'build'),
@@ -54,49 +175,14 @@ $legacyBuildDirs = @(
 )
 foreach ($legacyBuildDir in $legacyBuildDirs) {
   if (Test-Path $legacyBuildDir) {
-    Write-Host "[清理] 正在删除旧版构建/编译目录：$legacyBuildDir；新中间产物统一位于 .cache\，正式产物统一位于 dist\。" -ForegroundColor DarkYellow
+    Write-Host "[清理] 删除旧版构建/编译目录：$legacyBuildDir" -ForegroundColor DarkYellow
     try {
       Remove-Item $legacyBuildDir -Recurse -Force -ErrorAction Stop
     } catch {
-      Write-Host "[警告] 旧目录当前可能被进程占用，暂未删除：$legacyBuildDir。关闭相关进程后可手动删除；新构建不会继续使用它。" -ForegroundColor Yellow
+      Write-Host "[警告] 旧目录可能被进程占用，暂未删除：$legacyBuildDir。" -ForegroundColor Yellow
     }
   }
 }
-
-# 中文说明：用户可能把新 ZIP 直接解压覆盖旧源码目录；这种操作会让“已改名/已删除”的旧文件继续留在 Source，随后又被 /MIR 带进目标仓库。
-# 因此重命名迁移必须有显式清理合同：无论 Source 是否残留，下列旧路径在 Target 都必须删除。
-$legacySourcePaths = @(
-  'core\src\session.ts',
-  'core\src\session-store.ts',
-  'core\src\session-export.ts',
-  'core\src\tools.ts',
-  'core\src\tool-policy.ts',
-  'core\src\tool-schema.ts',
-  'apps\desktop\scripts\build-electron.ts',
-  'apps\desktop\scripts\dev-electron.ts',
-  'apps\desktop\scripts\install-electron-runtime.ts',
-  'apps\desktop\scripts\electron-runtime-core.ts',
-  'apps\desktop\tests\electron-runtime-core.test.ts',
-  'scripts\gates\check-ai-context.ts',
-  'scripts\gates\check-architecture.ts',
-  'scripts\gates\check-comments.ts',
-  'scripts\gates\check-documentation.ts',
-  'scripts\gates\check-repository-hygiene.ts',
-  'scripts\gates\check-version.ts',
-  'scripts\gates\check-windows-helpers.ts'
-)
-foreach ($legacySourcePath in $legacySourcePaths) {
-  $legacyTargetPath = Join-Path $Target $legacySourcePath
-  if (Test-Path $legacyTargetPath) {
-    Write-Host "[迁移] 删除已重命名的旧源码路径：$legacySourcePath" -ForegroundColor DarkYellow
-    Remove-Item $legacyTargetPath -Force -ErrorAction Stop
-  }
-}
-
-foreach ($lockName in $preservedLocks) {
-  Copy-Item (Join-Path $lockBackupRoot $lockName) (Join-Path $Target $lockName) -Force
-}
-if (Test-Path $lockBackupRoot) { Remove-Item $lockBackupRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
 Set-Location $Target
 if (Get-Command git.exe -ErrorAction SilentlyContinue) {
@@ -114,9 +200,9 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
     }
   }
 } else {
-  Write-Host '[提示] 当前系统还没有 Git；源码已同步，XMA-GitHub.bat 只负责 Git 推送且不会安装环境；请先通过 XMA.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
+  Write-Host '[提示] 当前系统还没有 Git；源码已同步，请先通过 XMA.bat → [1] 一键准备环境安装 Git。' -ForegroundColor Yellow
 }
 
-Write-Host '[完成] XMA 新源码已同步，同时保留 .git / runtime / node_modules / .cache 本地依赖与缓存；dist 作为本机构建产物也不会从源码包覆盖。' -ForegroundColor Green
-Write-Host '[锁文件] 若版本包暂未携带 lockfile，则保留本机已生成的 pnpm-lock.yaml / Cargo.lock；若源码包携带，则以源码包版本为准。' -ForegroundColor DarkGray
+Write-Host '[完成] XMA 新源码已同步；.git / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
+Write-Host '[自动同步] 新增目录无需配置；删除/重命名源码由 Source Manifest + 上一版同步状态自动识别。' -ForegroundColor DarkGray
 Write-Host '下一步：运行目标目录中的 XMA-GitHub.bat → 1. 一键推送。' -ForegroundColor Cyan

@@ -38,7 +38,8 @@
     "gate:ai-context": "tsx scripts/gates/ai-context.ts",
     "gate:naming": "tsx scripts/gates/naming.ts",
     "release:cli-stage": "tsx scripts/release/cli.ts",
-    "gate:distribution": "tsx scripts/gates/distribution.ts"
+    "gate:distribution": "tsx scripts/gates/distribution.ts",
+    "release:source-manifest": "tsx scripts/release/source-manifest.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

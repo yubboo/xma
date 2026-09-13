@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 
 const ignore = readFileSync('.gitignore', 'utf8')
 const requiredIgnoreRules = [
-  'node_modules/', '.pnpm-store/', 'dist/', 'build/', 'coverage/', '/runtime/', '.xma/', 'workspaces/',
+  'node_modules/', '.pnpm-store/', 'dist/', 'build/', 'coverage/', '/runtime/', '.xma/', '.xma-package/', 'workspaces/',
   'native/target/', '**/target/', '.env', '*.pem', '*.key', '*.exe', '*.zip',
 ]
 for (const rule of requiredIgnoreRules) {
@@ -20,7 +20,7 @@ for (const rule of requiredIgnoreRules) {
 const forbidden = (path: string): boolean => {
   const value = path.replaceAll('\\', '/').toLowerCase()
   if (value.startsWith('runtime/')) return true
-  const dirs = ['node_modules/', '.pnpm-store/', '.cache/', '.turbo/', 'dist/', 'build/', 'coverage/', '.xma/', 'workspaces/', 'target/', 'native/target/', 'apps/desktop/release/', 'apps/desktop/web/', 'apps/desktop/native/']
+  const dirs = ['node_modules/', '.pnpm-store/', '.cache/', '.turbo/', 'dist/', 'build/', 'coverage/', '.xma/', '.xma-package/', 'workspaces/', 'target/', 'native/target/', 'apps/desktop/release/', 'apps/desktop/web/', 'apps/desktop/native/']
   if (dirs.some(dir => value.startsWith(dir) || value.includes(`/${dir}`))) return true
   const name = value.split('/').at(-1) ?? value
   if (name === '.env' || (name.startsWith('.env.') && name !== '.env.example')) return true
