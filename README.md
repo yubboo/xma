@@ -61,3 +61,9 @@ XMA.bat
 ## 仓库
 
 `https://github.com/yubboo/xma.git`
+
+## 当前开发优先级
+
+XMA 0.1.x 当前采用 **Backend/Agent Runtime First**：先完成 Session/Turn/Step、真实 Model Provider、Tool/Permission/Native、Workspace、Plugin/Skill 和 Code/Minecraft 真闭环，再进入完整 Desktop Workbench。Desktop 最终目标是左侧导航 + 中央 Chat/Work 主工作区 + 右侧 Inspector + 中央底部 Terminal 的可吸附三栏布局，但 UI 不拥有 Agent 状态。
+
+上游实现参考固定记录在 `docs/development/UPSTREAM-REFERENCE.md`；项目级 AI 开发入口为根 `AGENTS.md`，并提供 `.agents/`、`.codex/`、`.claude/` 适配目录。

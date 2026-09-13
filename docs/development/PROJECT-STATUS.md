@@ -1,9 +1,15 @@
 # XMA 0.1.0 项目状态
 
-## 已实现的骨架证据
+## 1. 当前定位
+
+0.1.0 是**可测试的平台骨架 + Windows/Desktop 工程通路验证版本**，不是已经具备完整 Agent 产品能力的正式版。
+
+本轮开发优先级已经明确调整为：**底层 Agent Runtime 与真实 Model Provider 优先，复杂 Desktop UI 后置。** 当前 Desktop 只要求能启动、能打包、能验证 Shell/Runtime 通路；完整 Codex 风格三栏 Workbench 作为后续目标记录在 `docs/architecture/DESKTOP-WORKBENCH.md`。
+
+## 2. 已实现的骨架证据
 
 - XMA Core 最小 Agent Loop；
-- Model Provider Contract；
+- Model Provider 最小 Contract；
 - Tool Registry；
 - Workspace Registry；
 - Plugin Host；
@@ -15,29 +21,77 @@
 - Minecraft / Code / Writer Agent 身份骨架；
 - CLI / Web / Desktop / Server Shell；
 - Windows 环境/同步/GitHub/构建脚本；
-- 中文注释与架构文档 Gates。
+- Architecture / Comment / Documentation / Version / Windows / Repository Gates；
+- Electron 41.2.0 Runtime 的显式下载、校验、Windows staging 原子安装链；
+- Desktop 发布资源使用相对 Vite base，解决 `file://` 黑屏；
+- 仓库级 `.agents/.codex/.claude` AI 开发上下文规范和上游参考基线文档。
 
-## 尚未完成，禁止过度宣称
+## 3. 当前架构已确定但尚未完成的底层
 
-- 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo Provider；
-- Provider Brain Ready Probe；
+以下是当前 0.1.x 真正的开发主线：
+
+- Session / Turn / Step durable Runtime；
+- Durable Event / Live Event 分层；
+- Session JSONL Store / resume / export；
+- Context Assembly / compaction；
+- Provider Registry / Profile / Credentials；
+- Provider capability / Model catalog；
+- Brain Ready Probe；
+- 至少两个不同协议族真实 Provider；
+- Tool Definition / frozen ToolPlan / ToolRouter；
+- Policy / Approval / Permission；
+- Rust filesystem confinement / process / PTY / capability；
+- Workspace persistence / ownership / instructions；
+- App Protocol / Event Stream；
+- DSH Tool/LLM/Session/Skill bridge 与 Conformance Tests。
+
+## 4. 尚未完成，禁止过度宣称
+
+- 真实 OpenAI/Claude/Gemini/DeepSeek/MiMo Provider 产品支持；
+- Provider Brain Ready；
 - 完整 Session/Memory/Context；
 - Rust Workspace Sandbox/Capability/PTY/Process；
 - DeepSeek Harness 所有 Service 的 package-level 完整兼容；
+- Xiaoyu Code 真实 coding 闭环；
 - Minecraft 真实开服闭环；
-- Xiaoyu Code 产品闭环；
 - Writer Agent 产品闭环；
+- 完整三栏 Desktop Workbench；
 - Desktop 安装包跨平台实装验证。
 
-0.1.0 的定位是**可测试的平台骨架**，不是可对外宣称全部能力完成的正式产品版。
+**文档中有目标架构，不代表代码已经具备这些能力。**
 
-## Desktop Runtime
+## 5. 上游参考状态
+
+XMA 已建立三条固定参考线：
+
+- OpenAI Codex：Coding Runtime / Thread-Turn / ToolRouter / Provider / Permission-Sandbox / App Protocol；
+- DeepSeek Harness：Cordis Plugin Harness / Session / Agent Loop / Tool Pipeline / Skills；
+- Minecraft Host Agent：Minecraft Agent-First / Skills / Knowledge / Tool vertical / E2E。
+
+固定 commit、许可证、路径映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。后续每个子系统实现必须在对应上游固定 commit 下做子系统全文件审阅，不能靠概括记忆。
+
+## 6. Desktop Runtime
 
 - 主：Electron 41.2.0（精确锁定，运行/构建时惰性下载 Runtime）；
-- 副：Tauri 2（系统 WebView2，作为备用桌面运行时）；
-- 两者共享 apps/web 与 core，不复制 Agent Runtime；
-- Electron 安装链已完整审计：用户 Windows 实测 Node ZIP 解压链出现不稳定行为，因此 Windows 改为 `@electron/get` -> PowerShell `Expand-Archive` -> staging 校验 -> `dist/path.txt` 原子落地；pnpm-workspace.yaml 同时 override `yauzl >= 3.3.1`；
-- Electron 原子安装核心已有离线测试，覆盖成功安装、解压失败、旧半成品替换、版本不一致。
-- Electron 发布包 Web UI 使用相对静态资源路径，避免 `file://` 下绝对 `/assets` 导致安装后黑屏；Desktop 原生菜单和当前平台总览界面为中文。
+- 副：Tauri 2（系统 WebView2，备用桌面运行时）；
+- 两者共享 `apps/web` 与 Core，不复制 Agent Runtime；
+- Electron ZIP 默认缓存到项目 `.cache/electron`；
+- Windows 使用 `@electron/get` 校验下载 → PowerShell `Expand-Archive` staging → version/executable 校验 → 原子替换 → `path.txt`；
+- `pnpm-workspace.yaml` 固定 `yauzl >= 3.3.1` override；
+- Electron 原子安装核心有离线测试；
+- 发布包 Web UI 使用 `--base ./`，避免 `file://` 绝对 `/assets` 黑屏。
 
-> 当前仍不得宣称 Electron 41.2.0 Windows 真机链已最终验证；必须以用户 Windows 实机或 Windows CI 的 Runtime 文件状态校验 + 实际 Desktop 启动结果为准。
+当前用户 Windows 已证明 Setup 能安装、Electron 能启动；但完整 Workbench 仍未实现，因此不得把“能安装启动”写成“Desktop 产品完成”。
+
+## 7. 下一开发批次
+
+下一批不是继续扩 UI，而是：
+
+1. Agent Runtime Session/Turn/Step Contract；
+2. Session durable log；
+3. Provider Registry/Capabilities/Credentials；
+4. 第一个真实 Provider + tool-call round trip；
+5. ToolPlan/Policy/Approval；
+6. Native FS/Process 最小安全链。
+
+详细分阶段出口见 `DEVELOPMENT-PLAN.md`。

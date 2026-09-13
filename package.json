@@ -19,7 +19,7 @@
     "gate:architecture": "tsx scripts/gates/check-architecture.ts",
     "gate:comments": "tsx scripts/gates/check-comments.ts",
     "gate:docs": "tsx scripts/gates/check-documentation.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm gate:architecture && pnpm gate:comments && pnpm gate:docs && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
+    "check": "pnpm typecheck && pnpm test && pnpm gate:architecture && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
     "build:web": "vite build apps/web --outDir ../../dist/web --emptyOutDir",
     "build:cli": "tsup apps/cli/src/main.ts --format esm --platform node --out-dir dist/cli",
     "build:server": "tsup apps/server/src/main.ts --format esm --platform node --out-dir dist/server",
@@ -34,7 +34,8 @@
     "dev:desktop:electron": "pnpm --dir apps/desktop run dev:electron",
     "dev:desktop:tauri": "pnpm --dir apps/desktop run dev:tauri",
     "build:desktop:electron": "pnpm --dir apps/desktop run build:electron",
-    "build:desktop:tauri": "pnpm --dir apps/desktop run build:tauri"
+    "build:desktop:tauri": "pnpm --dir apps/desktop run build:tauri",
+    "gate:ai-context": "tsx scripts/gates/check-ai-context.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

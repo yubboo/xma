@@ -95,12 +95,17 @@ XMA Plugin Host 必须支持两条路径：
 2. `docs/architecture/PROJECT-ARCHITECTURE.md`
 3. `docs/architecture/DIRECTORY-STRUCTURE.md`
 4. `docs/architecture/LANGUAGE-OWNERSHIP.md`
-5. `docs/architecture/PLUGIN-SYSTEM.md`
-6. `docs/development/DEVELOPMENT-RULES.md`
-7. `docs/development/DEVELOPMENT-PLAN.md`
-8. `docs/development/PROJECT-STATUS.md`
-9. `docs/development/VERSIONING-AND-RELEASES.md`
-10. `docs/development/WINDOWS-WORKFLOW.md`
+5. `docs/architecture/AGENT-RUNTIME.md`
+6. `docs/architecture/MODEL-PROVIDER.md`
+7. `docs/architecture/PLUGIN-SYSTEM.md`
+8. `docs/architecture/DESKTOP-RUNTIME.md`
+9. `docs/architecture/DESKTOP-WORKBENCH.md`
+10. `docs/development/DEVELOPMENT-RULES.md`
+11. `docs/development/DEVELOPMENT-PLAN.md`
+12. `docs/development/PROJECT-STATUS.md`
+13. `docs/development/UPSTREAM-REFERENCE.md`
+14. `docs/development/VERSIONING-AND-RELEASES.md`
+15. `docs/development/WINDOWS-WORKFLOW.md`
 
 文档专业命名，但正文必须有中文说明，避免只有术语没有解释。
 
@@ -201,3 +206,43 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - Windows Electron Runtime 验证禁止直接执行 GUI `electron.exe --version` 并依赖 `$LASTEXITCODE`；使用 `dist/version + path.txt + executable` 三项状态校验，实际桌面进程由 Desktop 启动器负责。
 - pnpm 11 的 dependency overrides 写入根 `pnpm-workspace.yaml -> overrides`；不要再使用会被 pnpm 11 忽略的 `package.json -> pnpm.overrides`。
 - Electron 下载器中 `@electron/get.downloadArtifact` 必须先收窄成确定函数类型，strict TypeScript 下不得把可选函数跨异步闭包调用。
+
+
+## 12. Agent Runtime / Provider / Tool 新硬规则（锁死）
+
+- XMA 正式 Runtime 采用 **Session → Turn → Step** 语义：Session 是持久事实源；Turn 是一次用户驱动工作；Step 是一次模型请求及其 Tool Call 处理。
+- **Model-visible ⇔ reconstructable**：任何进入模型请求的动态内容都必须能从 Session durable state 或有明确来源的 Context source 重建；UI 临时 state 不得偷偷影响模型。
+- 模型流式 chunk / progress 属于 live event；最终 assistant/tool/approval/usage 等需要恢复或审计的事实必须 durable。
+- Tool 必须通过 Schema → Policy/Plugin → Security Guard → Approval → Execute → Post-process/Redact → Durable Result 流水线；普通 Tool 失败结构化回模型，不得无故炸毁 Session。
+- 每个 Step 的模型可见 Tool Schema 与实际可执行 Runtime 必须来自同一个冻结 ToolPlan。
+- 新产品行为优先走 Provider/Tool/Context/Session/Plugin extension point；能通过扩展点完成时禁止修改 Agent Loop 塞特例。
+- 完整 Capability 至少考虑 Definition / Provider / Consumer；只有接口或只有实现不算完成。
+- Provider 不只是 `stream()`：必须逐步包含 capability、auth、model catalog、usage/error normalization、Brain Ready Probe；Provider-specific JSON/headers 不得散落 Core Loop。
+- “Brain Ready / Provider supported”必须有真实 API 请求或目标 Runner E2E 证据；fixture/mock 不能改变产品支持状态。
+
+## 13. 上游参考纪律（锁死）
+
+XMA 长期参考三个上游，但**只吸收适合 XMA 的 Contract 和工程经验**：
+
+- OpenAI Codex：Coding Agent Runtime、Thread/Turn、Tool Router、Provider、Permission/Sandbox、App Protocol；
+- DeepSeek Harness：TypeScript Plugin Harness、Cordis Service/Event/Effect、Session、Tool Pipeline、Agent Loop extension；
+- Minecraft Host Agent：Agent-First、Minecraft Skills/Knowledge/Tools、会话/用量/确认门、真实上游验证。
+
+固定提交、许可证、路径级映射和吸收/拒绝项见 `docs/development/UPSTREAM-REFERENCE.md`。重要子系统开工前必须审阅对应上游固定 commit 下的相关目录全文件（源码 + README + 测试 + 协议），并记录吸收/拒绝理由。
+
+任何上游若与 XMA 语言所有权冲突，以 XMA 为准：**禁止把 Codex/MCHA 的 Rust Agent/业务架构搬进 XMA Rust Kernel；禁止因 DSH 大量拆包而过度拆 XMA。** 实质复制/改编上游代码必须单独完成许可证/NOTICE/版权标注审查。
+
+## 14. AI 开发上下文目录（锁死）
+
+- 根 `AGENTS.md` 是所有 AI / 开发者最高规则和单一架构权威入口。
+- `.agents/skills/` 是 XMA 公共 AI 开发 Skill 的单一事实源。
+- `.codex/` 是 Codex 专用环境/Skills 入口；`.claude/` 与根 `CLAUDE.md` 是 Claude Code 入口。
+- `.codex/.claude` 不得建立与 `AGENTS.md` 冲突的规则；公共 Skill 镜像必须由 Gate 校验与 `.agents/skills` 一致。
+- XMA Windows-first，不依赖 Git symlink；AI 工具入口用普通文件/受检查镜像。
+- AI 目录只保存开发规则、环境 action、Skill/命令说明；禁止保存 Secret、个人绝对路径、用户 Workspace、Session、私有 Prompt 或运行数据。
+
+## 15. Backend First / Desktop Workbench 顺序（锁死）
+
+当前 0.1.x **先做 Agent Runtime 与真实模型能力，不继续大规模堆 UI**。完整 Desktop UI 目标固定为现代三栏 Workbench：左栏默认展开，中间大 Workspace（Chat/Work），右栏 Inspector 默认收起，左右支持吸附拉伸，中央底部 Terminal 可展开，左下为用户/设置；详见 `docs/architecture/DESKTOP-WORKBENCH.md`。
+
+完整 Workbench 开工前至少应具备：Session/Turn/Step durable Runtime、两个不同协议族真实 Provider、ToolPlan/Approval/Native Capability、Workspace persistence、App Protocol/Event Stream、PTY/Process Native 能力和 Xiaoyu Code 最小真实闭环。UI 不得反向成为 Agent 状态源。

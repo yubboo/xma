@@ -29,3 +29,13 @@ XMA 的 Agent Harness 和业务变化速度快，TypeScript 更适合 Provider A
 ## 判断口诀
 
 **TypeScript 决定做什么；Rust 保证怎么安全地做。**
+
+## 上游参考不能改变 XMA 的语言所有权
+
+OpenAI Codex 与 Minecraft Host Agent 都有大量 Rust 产品/Agent 逻辑，DeepSeek Harness 则以 TypeScript Plugin Harness 为主。XMA 参考它们时只吸收适合自己的 Contract 和工程经验：
+
+- Codex 的 Thread/Turn、ToolRouter、Permission/Sandbox 语义在 XMA Core 中主要由 TypeScript 编排，只有真实 OS enforcement 下沉 Rust；
+- MCHA 的 Agent-First、Skills、Minecraft tools/knowledge 在 XMA 中 TypeScript 化，不能把其 Rust Agent Loop 搬进 `native/`；
+- DSH 的 Service/Event/Effect/Agent Loop 思想可以直接指导 TypeScript Core/Plugin Host，但不要求复制其 workspace package 粒度。
+
+任何“为了对标上游而把 Agent/业务写进 Rust”的改动都属于架构回退。

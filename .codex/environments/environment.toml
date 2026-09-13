@@ -1,0 +1,21 @@
+# XMA Codex 开发环境动作。依赖准备遵守项目既有工作流，本文件不自动安装依赖。
+version = 1
+name = "xma"
+
+[setup]
+script = ""
+
+[[actions]]
+name = "Check"
+icon = "run"
+command = "pnpm run check"
+
+[[actions]]
+name = "Web"
+icon = "run"
+command = "pnpm run dev:web"
+
+[[actions]]
+name = "CLI"
+icon = "run"
+command = "pnpm run dev:cli"

@@ -15,9 +15,22 @@ const required = [
   'native/protocol/src/lib.rs',
   'native/runtime/src/main.rs',
   'docs/architecture/PROJECT-ARCHITECTURE.md',
+  'docs/architecture/AGENT-RUNTIME.md',
+  'docs/architecture/MODEL-PROVIDER.md',
   'docs/architecture/PLUGIN-SYSTEM.md',
+  'docs/development/UPSTREAM-REFERENCE.md',
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
+
+
+const runtimeDoc = readFileSync('docs/architecture/AGENT-RUNTIME.md', 'utf8')
+for (const marker of ['Session', 'Turn', 'Step', 'Model-visible', 'ToolPlan', 'Tool Pipeline']) {
+  if (!runtimeDoc.includes(marker)) throw new Error(`XMA Agent Runtime architecture marker missing: ${marker}`)
+}
+const providerDoc = readFileSync('docs/architecture/MODEL-PROVIDER.md', 'utf8')
+for (const marker of ['Provider Capabilities', 'Model Catalog', 'Brain Ready Probe', 'Conformance Tests']) {
+  if (!providerDoc.includes(marker)) throw new Error(`XMA Model Provider architecture marker missing: ${marker}`)
+}
 
 const agents = readFileSync('core/src/agent.ts', 'utf8')
 if (!agents.includes('provider.stream') || !agents.includes('tools.execute')) throw new Error('XMA Agent Loop must remain Model -> Tool -> Observation -> Model')

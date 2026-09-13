@@ -2,76 +2,227 @@
 
 ## 1. 目的
 
-本文定义 XMA 的长期架构边界。它回答“哪些代码应该放在哪里、为什么这样放、未来如何扩展”。
+本文定义 Xiaoyu Management Agent（XMA）的长期产品架构边界。它回答“谁负责推理、状态放在哪里、工具如何执行、插件如何扩展、桌面/CLI 如何复用同一 Runtime”。具体 Agent Loop、Provider 和 Desktop 细节分别见：
 
-## 2. 总体结构
+- `docs/architecture/AGENT-RUNTIME.md`；
+- `docs/architecture/MODEL-PROVIDER.md`；
+- `docs/architecture/PLUGIN-SYSTEM.md`；
+- `docs/architecture/DESKTOP-WORKBENCH.md`。
 
-XMA 只保留五个长期核心区域：
+上游参考和吸收规则见 `docs/development/UPSTREAM-REFERENCE.md`。
 
-```text
-apps/     → 用户如何使用 XMA
-core/     → XMA 如何编排 Agent
-agents/   → Xiaoyu 有哪些专业身份
-plugins/  → 有哪些可复用能力与外部兼容层
-native/   → Rust 如何安全执行机器副作用
-```
+## 2. 产品原则
 
-这样做是为了避免一开始把每个概念拆成单独 npm 包，降低构建、依赖和理解成本。等某个模块真正成长到需要独立发布时再拆。
+### Model is replaceable. Agent is ours.
 
-## 3. TypeScript 与 Rust 的职责
+用户配置的真实 Provider Model 是每个 Run/Turn 的推理核心。XMA 不训练或隐藏一个“小鱼小模型”去替代它，也不在 Framework 中加入关键词路由、固定业务决策树或隐藏 Planner 抢走正常推理权。
 
-### TypeScript
+### Agent-First
 
-TypeScript 是默认开发语言，负责：
-
-- Agent Loop / RunManager；
-- 模型 Provider；
-- Plugin Host；
-- Workspace、Memory、Session、Context；
-- Tool Registry、Skills、Knowledge；
-- Minecraft / Code / Writer 业务；
-- CLI/TUI、Desktop/Web、HTTP/SSE/WebSocket。
-
-### Rust
-
-Rust 只负责 Native/Security/Performance Kernel：
-
-- PTY / ConPTY；
-- Process lifecycle；
-- Workspace-confined filesystem；
-- Sandbox / Capability；
-- Native network；
-- Hash / Archive；
-- 必要的高性能本地搜索和 OS 集成。
-
-Rust 不知道 Minecraft、Writer、Claude 或 GPT。
-
-## 4. Agent 运行关系
+XMA 的业务主链是：
 
 ```text
 用户目标
   ↓
-当前 Agent + Workspace
+Agent + Workspace + Session
   ↓
 Context / Skill / Knowledge
   ↓
-用户配置的真实大模型
+真实 Provider Model
   ↓
 Tool Call
   ↓
-XMA Tool / Permission / Native
+Policy / Approval / Capability
+  ↓
+Tool Runtime / Rust Native Kernel
   ↓
 Observation
   ↓
-同一个真实大模型继续推理
+同一个真实 Provider Model 继续推理
 ```
 
-禁止在中间插入隐藏的“Xiaoyu 小模型”或固定流程 Planner。
+Framework 可以限制权限、Schema、生命周期、预算和副作用，但不能替模型做本应由模型完成的专业判断。
 
-## 5. Agent 与 Workspace
+### 一个 Runtime，多种 Shell
 
-Agent 是专业身份，Workspace 是它的领地。
+CLI、Desktop、Web、Server 只是同一个 XMA Runtime 的不同入口。任何 Shell 都不能复制 Agent Loop、Session Store 或 Tool execution 逻辑。
 
-例如 Minecraft Agent 默认只操作当前 Minecraft Workspace。Writer Agent 不应读取或修改 Minecraft Workspace，除非用户显式授权跨工作区操作。
+## 3. 顶层目录
 
-这种隔离既防止文件污染，也防止 Memory、Knowledge 和业务上下文互相污染。
+XMA 产品代码长期只保留以下核心区域：
+
+```text
+apps/       CLI / Desktop / Web / Server Shell
+core/       TypeScript Agent 平台核心
+agents/     Minecraft / Code / Writer 等专业 Agent
+plugins/    Provider、Tool、Integration、兼容层
+native/     Rust Native / Security / Performance Kernel
+scripts/    开发、同步、构建、发布、Gate
+docs/       架构、规则、计划、安全文档
+```
+
+仓库根还允许 `.agents/`、`.codex/`、`.claude/` 和 `CLAUDE.md` 这类**开发者 AI 上下文**。它们不是产品 Runtime 目录，不保存用户会话、Workspace 或 Secret。
+
+## 4. TypeScript 与 Rust 的语言所有权
+
+### TypeScript：产品 / Agent / 业务主语言
+
+TypeScript 负责：
+
+- Agent Registry / Agent Loop / RunManager；
+- Session / Turn / Step；
+- Model Provider Registry / Model Catalog / Provider adapters；
+- Context Assembly / Memory / Compaction；
+- Tool Definition / ToolPlan / ToolRouter / Policy / Approval；
+- Workspace；
+- Plugin Host / Cordis compatibility；
+- Skills / Knowledge / MCP / Integrations；
+- Minecraft / Code / Writer 专业业务；
+- CLI/TUI / Desktop/Web App Protocol / Server API。
+
+### Rust：Native / Security / Performance Kernel
+
+Rust 负责：
+
+- PTY / ConPTY；
+- Process tree / lifecycle / Job Object；
+- filesystem confinement / canonical-path enforcement；
+- sandbox / OS capability enforcement；
+- native networking；
+- hash / archive；
+- OS integration；
+- 经基准证明需要的高性能本地能力。
+
+> **TypeScript decides WHAT to do. Rust guarantees HOW native side effects are executed safely.**
+
+Rust 不认识 Minecraft Agent、Writer Agent、Claude 或 GPT，也不决定应该调用哪个模型/工具。
+
+## 5. Core Runtime 分层
+
+0.1.x 不急于拆成几十个 npm package，但代码内部必须有清晰模块边界：
+
+```text
+core/
+  agent/        Agent Definition / Registry / Turn/Step driver
+  session/      durable events / store contract / projections
+  model/        Provider/Model contracts and normalized events
+  context/      prompt/context assembly, compaction
+  tools/        definition / registry / tool plan / router / policy
+  permissions/  approval and capability requests
+  workspace/    workspace identity, roots, instructions
+  plugin/       context/services/events/effects/lifecycle
+  skills/       skill registry/catalog/loading
+  protocol/     Shell ↔ Runtime commands/events
+```
+
+上述是目标模块，不要求本轮立刻把文件物理拆全。真正长大后再按独立发布、生命周期或团队边界拆 package。
+
+## 6. Session 是事实源
+
+XMA 必须把“模型看到了什么”和“用户界面显示了什么”建立在可重建的 Session facts 上。
+
+关键规则：
+
+- 用户输入、最终 assistant message、tool call/result、Provider route、usage、approval 等需要恢复/审计的事实进入 durable Session；
+- stream chunk、spinner、progress 等只作为 live event；
+- **Model-visible ⇔ reconstructable**：进入模型请求的动态事实必须能从 Session / Context source 重建；
+- UI 只是 durable/live events 的投影，不维护另一套秘密对话历史。
+
+这条原则参考成熟 Harness 的经验，但在 XMA 中由 TypeScript Session Core 实现。
+
+## 7. Provider 与 Model
+
+Provider 是可替换能力，不是一个裸 HTTP 函数。完整 Provider 需要：
+
+- auth；
+- capabilities；
+- model catalog；
+- request preparation；
+- streaming/tool-call normalization；
+- usage/error/retry normalization；
+- Brain Ready Probe。
+
+Agent Loop 只消费 XMA 标准 ModelRequest/ModelEvent，不理解各厂商原始 JSON。详见 `MODEL-PROVIDER.md`。
+
+## 8. Tool 与副作用
+
+模型不能直接碰 OS。所有副作用必须经过：
+
+```text
+Tool Call
+  → schema validation
+  → Plugin/Policy interception
+  → security guard
+  → user approval（需要时）
+  → Tool Runtime
+  → Native Capability Bridge（需要 Native 时）
+  → Rust Kernel enforce
+  → structured result
+  → durable Session result
+```
+
+模型决定是否请求；安全层决定是否允许；Rust 只执行最小授权副作用。
+
+## 9. Workspace
+
+Workspace 是 Agent 的工作领地和安全边界，不只是 cwd：
+
+- stable id；
+- root / allowed roots；
+- repo/project metadata；
+- Agent ownership；
+- instructions sources；
+- persistent state；
+- Native filesystem scope。
+
+默认一个 Agent 不得修改另一个 Agent 的 Workspace。跨 Workspace 操作需要用户显式授权，并留下 durable record。
+
+## 10. Plugin / Capability
+
+XMA Native Plugin 与 DeepSeek Harness/Cordis Compatibility 并存。
+
+Core 提供稳定 Service/extension points；新能力优先注册 Provider、Tool、Context contributor、Session projection、Policy 等，而不是修改 Agent Loop。注册必须可逆，mount/unmount/reload 不留幽灵副作用。
+
+Capability 设计至少回答：
+
+- Definition：消费者看到什么 Contract？
+- Provider：谁实现？
+- Consumer：谁使用？
+- Permission：需要什么权限？
+- Lifecycle：如何 mount/dispose？
+- Evidence：什么 Conformance/E2E 证明它真的工作？
+
+## 11. 专业 Agent
+
+### Xiaoyu Code
+
+不是单独复制一个 Codex，而是在 XMA Runtime 上组合：Code Agent definition + Code Skills + repository Workspace + shell/fs/patch/git/search/MCP tools + Coding-specific context。
+
+### Minecraft Agent
+
+不是把 Minecraft Host Agent 的 Rust 主循环搬进来，而是在同一 XMA Runtime 上组合：Minecraft Agent definition + server Skills/Knowledge + upstream API tools + Native process/network/file capabilities。
+
+### Writer / 其他 Agent
+
+同样复用 Session、Provider、Tool、Permission、Workspace、Plugin，不新增平行内核。
+
+## 12. App Protocol 与 Shell
+
+Core 要提供稳定 App Protocol / Event Stream：
+
+```text
+CLI ─────┐
+Desktop ─┼─ Commands / Events / Queries ─→ XMA Runtime
+Web ─────┤
+Server ──┘
+```
+
+Desktop 后期三栏 Workbench、CLI TUI、Web 管理页都只消费这层。这样 UI 可以大改而不改变 Agent 语义，也可以先完成底层再做复杂 UI。
+
+## 13. 参考项目的正确定位
+
+- **OpenAI Codex**：Coding Agent Runtime、Thread/Turn、ToolRouter、Provider/Permission/Sandbox、App Protocol 的重要实现参考；
+- **DeepSeek Harness**：TypeScript Plugin Harness、Cordis Service/Event/Effect、Session、Tool Pipeline、Agent Loop extension 的兼容与实现参考；
+- **Minecraft Host Agent**：Minecraft 垂直场景、Agent-First、Skill、Knowledge、真实上游工具和验收的实现参考。
+
+三者都是参考，不是 XMA 的父项目。XMA 的产品边界、语言所有权、目录结构和版本规则由自己的 `AGENTS.md` 决定。
