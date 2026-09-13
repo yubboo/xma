@@ -36,13 +36,27 @@ XMA 长期参考：
 - Context Assembly Contract；
 - App Protocol 基础 command/event types。
 
+### 当前落地（本批次）
+
+- `AgentRuntime / AgentSession` 已实现正式 Session → Turn → Step driver；
+- `MemorySessionStore / JsonlSessionStore` 已实现 create/open/append/flush/close/list/stat；
+- JSONL 已有单写者锁、stale lock 回收和末尾截断半行恢复；
+- Fake Provider 已覆盖两 Step Tool Loop；
+- assistant Tool Call + Tool Result 可从 durable event 重建成下一 Step 的模型历史；
+- 取消时对已发出的 Tool Call 写入 `TOOL_ABORTED` 结果；
+- Step 记录 Provider identity + 冻结 Tool Schema 快照；
+- 原始 reasoning 只走 live event，不默认进入 durable model history；
+- App Protocol 已建立第一批 command/result/event 类型。
+
+仍未完成：Context Assembly、Session export/redaction/migration、CLI/Server 真正接 Runtime command bus。
+
 ### 出口标准
 
-- Fake Provider 能完成 `user → model → tool → observation → same model → final` 多 Step；
-- 进程退出后 resume 同一 Session 继续；
-- 取消后历史结构合法；
-- Model-visible 动态内容可从 Session 重建；
-- CLI 和测试都走同一 Runtime API。
+- Fake Provider 能完成 `user → model → tool → observation → same model → final` 多 Step； **已覆盖**
+- 进程退出后 resume 同一 Session 继续； **已由 JSONL 恢复测试覆盖**
+- 取消后历史结构合法； **已覆盖 Tool Call aborted settlement**
+- Model-visible 动态内容可从 Session 重建； **当前 user/assistant/tool 已覆盖，Context 仍待接入**
+- CLI 和测试都走同一 Runtime API。 **测试已切正式 Runtime，CLI 待接 App Protocol**
 
 ## 4. 阶段 B：真实 Model Provider 平台
 

@@ -8,9 +8,16 @@
 
 ## 2. 已实现的骨架证据
 
-- XMA Core 最小 Agent Loop；
+- XMA Core 正式 `Session → Turn → Step` Runtime 第一版；
+- Durable Session Event / Live Runtime Event 分层；
+- Memory Session Store + JSONL Session Store；
+- JSONL create/open/append/flush/close/list/stat + 单写者锁；
+- Session resume 与末尾截断 JSONL 恢复；
+- 多 Step `model → tool → observation → same model` Runtime；
+- Tool Call 取消结算，保证 durable 历史结构合法；
+- 每 Step 冻结 Provider / Tool Schema 请求快照；
 - Model Provider 最小 Contract；
-- Tool Registry；
+- Tool Registry + 结构化普通错误/取消结果；
 - Workspace Registry；
 - Plugin Host；
 - `ctx.<service>` Service Proxy；
@@ -30,10 +37,8 @@
 
 以下是当前 0.1.x 真正的开发主线：
 
-- Session / Turn / Step durable Runtime；
-- Durable Event / Live Event 分层；
-- Session JSONL Store / resume / export；
-- Context Assembly / compaction；
+- Session export / redaction / format migration（create/open/append/flush/close/list/stat/resume 已有第一版）；
+- Context Assembly / system-message reconciliation / compaction；
 - Provider Registry / Profile / Credentials；
 - Provider capability / Model catalog；
 - Brain Ready Probe；
@@ -85,13 +90,15 @@ XMA 已建立三条固定参考线：
 
 ## 7. 下一开发批次
 
-下一批不是继续扩 UI，而是：
+Stage A 的第一块 Runtime 已经进入代码，下一批继续按底层顺序推进：
 
-1. Agent Runtime Session/Turn/Step Contract；
-2. Session durable log；
+1. Context Assembly + system/context durable source；
+2. Session export/redaction + format/migration Contract；
 3. Provider Registry/Capabilities/Credentials；
-4. 第一个真实 Provider + tool-call round trip；
+4. 第一个真实 Provider + Brain Ready + tool-call round trip；
 5. ToolPlan/Policy/Approval；
 6. Native FS/Process 最小安全链。
+
+完整 Workbench UI 仍后置；新增参考图已经固化到 `DESKTOP-WORKBENCH.md`。
 
 详细分阶段出口见 `DEVELOPMENT-PLAN.md`。

@@ -1,8 +1,8 @@
 /**
- * 文件作用：证明 XMA Agent Loop 把 Tool Observation 回灌给同一个 Provider。
+ * 文件作用：保留旧 runAgent 兼容 API 的最小回归测试，确保迁移到正式 Runtime 期间旧调用方不会立即失效。
  * 关联模块：core/src/agent.ts、model.ts、tools.ts。
- * 当前实现：两轮假 Provider 测试，不使用关键词路由。
- * 职责边界：Fake Provider 只用于测试，不代表 XMA 有内置模型。
+ * 当前实现：两轮假 Provider 测试，验证 Tool Observation 仍回灌给同一 Provider。
+ * 职责边界：正式 Session/Turn/Step 行为由 runtime-session.test.ts 验证；Fake Provider 不代表 XMA 有内置模型。
  */
 
 import test from 'node:test'
@@ -25,11 +25,11 @@ class FakeProvider implements ModelProvider {
   }
 }
 
-test('model -> tool -> observation -> same model', async () => {
+test('legacy runAgent keeps model -> tool -> observation -> same model behavior', async () => {
   const tools = new ToolRegistry()
   tools.register({
     spec: { name: 'demo.inspect', description: 'test', inputSchema: { type: 'object' } },
-    async execute() { return { ok: true, content: 'observation-ok' } },
+    async execute() { return { ok: true, code: 'OK', content: 'observation-ok' } },
   })
   const provider = new FakeProvider()
   const result = await runAgent({ runId: 'run-1', provider, tools, messages: [{ role: 'user', content: 'do it' }], signal: new AbortController().signal })

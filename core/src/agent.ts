@@ -1,8 +1,8 @@
 /**
- * 文件作用：实现 XMA 最小 Agent Loop，证明“真实厂商模型 → Tool → Observation → 同一模型”是唯一推理主链。
- * 关联模块：model.ts、tools.ts、workspace.ts、各专业 Agent。
- * 当前实现：多轮 Tool Call、Observation 回灌、文本结果收集。
- * 职责边界：不得添加关键词路由或固定 Minecraft/Writer 流程替代模型判断。
+ * 文件作用：保留 XMA 早期无持久化 runAgent() 兼容入口，供迁移期旧调用方继续使用。
+ * 关联模块：runtime.ts、model.ts、tools.ts；新代码应优先使用 AgentRuntime / AgentSession。
+ * 当前实现：多轮 Tool Call、结构化 Tool Call 历史、Observation 回灌和文本结果收集。
+ * 职责边界：本文件不再承担正式 Session 生命周期；不得在这里加入关键词路由或专业 Agent 固定流程。
  */
 
 import type { ModelMessage, ModelProvider } from './model.ts'
@@ -23,6 +23,9 @@ export interface AgentRunResult {
   toolCalls: number
 }
 
+/**
+ * @deprecated 正式产品 Runtime 使用 AgentRuntime / AgentSession；这里只保留 0.1.x 迁移兼容。
+ */
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   const messages = [...input.messages]
   let text = ''
@@ -39,8 +42,12 @@ export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
       calledTool = true
       toolCalls += 1
       const observation = await input.tools.execute(event.name, event.arguments, { runId: input.runId, signal: input.signal })
-      messages.push({ role: 'assistant', content: `[tool-call] ${event.name}`, toolCallId: event.callId })
-      messages.push({ role: 'tool', content: observation.content, toolCallId: event.callId })
+      messages.push({
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ callId: event.callId, name: event.name, arguments: structuredClone(event.arguments) }],
+      })
+      messages.push({ role: 'tool', content: observation.content, toolCallId: event.callId, toolName: event.name })
     }
 
     if (!calledTool) return { text, messages, toolCalls }

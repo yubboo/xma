@@ -276,3 +276,17 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 - Tool Schema、Policy、Approval、Native Capability 至少有一条完整链；
 - UI/CLI 从同一事件流展示，不复制状态；
 - 集成测试覆盖 model → tool → observation → same model。
+## 14. 当前代码落地（0.1.0 未冻结）
+
+当前第一版已经不再只有 `messages[] + runAgent()`：
+
+- `core/src/runtime.ts`：`AgentRuntime / AgentSession`，负责 create/resume 与 Turn/Step driver；
+- `core/src/session.ts`：durable event Contract 和 `deriveModelMessages()`；
+- `core/src/session-store.ts`：Memory / JSONL Store；
+- `core/src/app-protocol.ts`：Host command/result/event envelope 第一版；
+- `core/src/tools.ts`：结构化 Tool Result 和普通异常/取消归一化。
+
+第一版 durable event 已包含：`session/created`、`turn/start`、`user/message`、`step/start`、`assistant/message`、`tool/result`、`usage`、`step/end`、`turn/end`。`step/start` 保存当次 Provider identity 与 Tool Schema 快照；模型历史由 user/assistant/tool 三类 durable fact 重新投影。原始 provider reasoning 目前只发布 live delta，不写入后续模型历史。
+
+JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；这仍是 0.1.x baseline，不代表 format migration/export/redaction 已完成。Context Assembly 也尚未接入，所以“Model-visible ⇔ reconstructable”当前只完成对 conversation/tool history 的第一段闭环。
+
