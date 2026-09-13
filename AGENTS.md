@@ -48,7 +48,8 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - Provider-specific thinking/reasoning/tool/usage 能力必须按真实 API Contract 透传和验证；XMA 不伪造模型没有提供的能力，也不得为了统一接口主动把顶级模型能力裁成最低公分母。若 thinking+tools 协议强制要求隐藏续传状态，必须用 Adapter-owned opaque continuation 保持真实协议语义，不得因为 XMA 的统一消息格式把该能力静默关掉。
 - **Canonical Tool Name ≠ Provider wire function name。** XMA Core/ToolPlan 可使用带 `.` / `:` / `/` 的稳定领域名；若目标 Provider 的 function/tool name 线协议更严格，必须只在 Provider Adapter 边界做稳定可逆映射，并在模型 Tool Call 回流时恢复 canonical 名。禁止为了迎合某一家 API 改坏 Core Tool identity，也禁止把不合法 canonical 名原样发送导致真实模型请求失败。
 - Provider/Profile/Model 配置属于可恢复的产品交互：凭据写入、Profile 保存、模型发现、Probe 任一步失败都必须在当前 Host 内明确提示并保持进程可用；禁止未处理 Promise/异常因为“Brain 未配置/模型目录失败”直接终止 CLI/TUI。Profile 一旦持久化成功，后续模型目录或 Probe 失败不得反向伪装成“Provider 保存失败”或清除已保存 Profile。
-- Terminal 首次没有已配置 Brain/Profile 时，Workspace Trust 通过后必须自动进入真实 Provider 配置；Profile 一旦存在，后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 是长期管理入口，始终保留。
+- `xiaoyu / xma` 每次交互式启动都必须先解析调用者当前目录并显示 Workspace Trust；授权只对本次启动有效，不得因为普通项目、历史信任或已有 Brain 而静默跳过。Home/文件系统根/Windows 系统目录继续作为高风险 Workspace，默认选择退出。
+- Workspace Trust 通过后，只有当前没有已配置 Brain/Profile 时才自动进入**同一 Xiaoyu TUI 内的居中 Brain Setup**；Profile 已存在的后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 是长期管理入口，始终保留，并与首次 Setup 复用同一 Provider/Model/Credential/Probe 能力。
 
 ## 4. Agent / Workspace / Plugin / Skill / Host 边界
 
@@ -244,7 +245,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - Windows 默认每用户安装到 `%LOCALAPPDATA%\Programs\Xiaoyu`，只修改 User PATH；Linux/macOS 默认使用 `~/.local/bin` + `~/.local/share/xiaoyu`，不默认要求 root。
 - `scripts/install/xma-install.ps1` 与 `scripts/install/xma-install.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。
 - portable Terminal bundle 第一批内置 Node Runtime、bundled CLI/Server/Web 与 Rust Native Kernel；未来可评估 Node SEA，但不能因此破坏可验证升级和安全边界。
-- Terminal 打开 Home/文件系统根目录必须显式警告，默认退出，只允许用户“仅本次信任”；不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
+- Terminal 每次交互式启动都必须先显示当前目录的 Workspace Trust；普通项目也不得跳过。Home/文件系统根目录/Windows 系统目录必须追加高风险警告并默认退出；授权只对本次启动有效，不得因为 CLI 方便绕过 Workspace/Tool/Native 权限。
 - Terminal Home/Prompt Dock 必须按终端高度保留可操作留白；命令/设置/Provider/模型等 Overlay 打开时必须进入 modal focus，背景输入区只保留紧凑状态 Dock，并隐藏无关快捷键/提示，禁止 Overlay 与 Prompt 在常见 Windows Terminal 高度下视觉挤压。对话区、输入 Dock、快捷键与提示区之间必须保留稳定空行，不能把所有组件堆在底部。Terminal 模式固定支持 `Build → Plan → Compose (legacy)`，Tab / Shift+Tab 循环切换：Build 使用完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具；三者继续使用用户当前选择的同一个真实 Provider/Model，禁止把 Plan 实现成隐藏 Planner。Prompt Dock 必须持续显示 Mode + Provider/Model + Reasoning，并用稳定颜色区分状态。品牌 Provider 首次配置流程优先固定为 API Key → 真实模型 → 推理强度 → Brain Ready，避免无关表单打断主路径。
 - **Terminal 实时输出锁死：** Provider SSE 的 `reasoning/text delta` 必须先进入 Runtime live event，再由 TUI 在生成过程中持续投影；Tool Call / Tool Result 也必须在执行链推进时可见。禁止把整轮文本缓存到 `sendMessage()` 完成后才一次性显示。UI 只展示 Provider 实际返回、允许展示的 reasoning；Provider 不返回时不得伪造思维链。当前固定 `@earendil-works/pi-tui@0.74.0` 存在差分聊天区域漏刷风险，Host 必须采用受控的强制 repaint/等价机制保证流式增量真实上屏，且要限制刷新频率避免每 token 全屏清屏。
 - 发行 staging 属于 `.cache/release/`；正式下载资产属于 `dist/release/`；两者都不得提交 Git。

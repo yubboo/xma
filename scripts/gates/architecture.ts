@@ -82,6 +82,26 @@ const required = [
 ]
 for (const path of required) if (!existsSync(path)) throw new Error(`XMA Architecture Gate: missing ${path}`)
 
+
+const rootAllowedDirectories = new Set([
+  '.agents', '.cargo', '.claude', '.codex', '.github',
+  'agents', 'apps', 'core', 'docs', 'native', 'packages', 'plugins', 'scripts', 'skills',
+])
+const rootAllowedFiles = new Set([
+  '.gitattributes', '.gitignore',
+  'AGENTS.md', 'CLAUDE.md', 'CODEMAP.md', 'README.md',
+  'Cargo.lock', 'Cargo.toml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.json',
+  'xma-dev', 'xma-dev.bat', 'XMA-GitHub.bat', 'XMA-Sync.bat',
+  'LICENSE', 'LICENSE.md', 'SECURITY.md', 'CONTRIBUTING.md',
+])
+const rootLocalState = new Set(['.git', '.cache', '.xma', '.xma-package', 'node_modules', 'dist', 'target'])
+for (const name of readdirSync('.')) {
+  if (rootLocalState.has(name)) continue
+  const stat = statSync(name)
+  const allowed = stat.isDirectory() ? rootAllowedDirectories.has(name) : rootAllowedFiles.has(name)
+  if (!allowed) throw new Error(`XMA Root Hygiene Rule: unexpected repository-root entry: ${name}`)
+}
+
 const engineStrategy = readFileSync('docs/architecture/AGENT-ENGINE-STRATEGY.md', 'utf8')
 for (const marker of [
   'Upstream-first',
@@ -102,7 +122,7 @@ for (const marker of [
 
 
 const directoryDoc = readFileSync('docs/architecture/DIRECTORY-STRUCTURE.md', 'utf8')
-for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'Feature Cluster Rule', 'Predictable Location Rule', 'Stable Import Rule', 'plugins/deepseek/', 'packages/xma-agent-loop/', 'CODEMAP.md', 'UPDATE-LOG.md']) {
+for (const marker of ['kebab-case', 'snake_case', '父目录去重', 'Feature Cluster Rule', 'Predictable Location Rule', 'Stable Import Rule', 'Root Hygiene Rule', 'plugins/deepseek/', 'packages/xma-agent-loop/', 'CODEMAP.md', 'UPDATE-LOG.md']) {
   if (!directoryDoc.includes(marker)) throw new Error(`XMA naming/directory architecture marker missing: ${marker}`)
 }
 const developmentRules = readFileSync('docs/development/DEVELOPMENT-RULES.md', 'utf8')
@@ -385,7 +405,7 @@ for (const marker of ['packages/xma-agent-loop/', 'plugins/deepseek/', 'plugins/
   if (!codeMap.includes(marker)) throw new Error(`XMA CODEMAP marker missing: ${marker}`)
 }
 const updateLog = readFileSync('docs/development/UPDATE-LOG.md', 'utf8')
-for (const marker of ['##01', '##02', '##03', '##04', 'Platform Skeleton v1', 'Stable Imports', 'Platform Skeleton 源码归位']) {
+for (const marker of ['##01', '##02', '##03', '##04', '##08', 'Platform Skeleton v1', 'Stable Imports', 'Platform Skeleton 源码归位', 'Root Hygiene 与 Terminal 启动契约']) {
   if (!updateLog.includes(marker)) throw new Error(`XMA UPDATE-LOG marker missing: ${marker}`)
 }
 

@@ -84,3 +84,17 @@
 - 验证：75 个可离线 TypeScript 测试 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9 项 Gate PASS；本批 CLI/TUI/Windows Gate targeted strict `tsc --noEmit` PASS；`xma-dev`、Unix console、`xma-install.sh` 通过 `sh -n`。完整 root typecheck 仍因当前沙箱缺少 Electron package/types 不能替代 Windows `[7]`；当前环境也不能真实写 Windows User PATH，因此 PATH shim 仍需用户 Windows 实机验收。
 - Source Manifest：204 个受管源码文件；相对当前已推送 `6154e61` 基线预计 Source Sync 为新增 5、更新 29、删除 3、未变化 170，共 37 个实际源码变更。
 - 下一步：Stage P1 顺延为 `##08 · Pi Agent Engine 行为研究与迁移设计`，先列行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。
+
+
+##08 · Root Hygiene 与 Terminal 启动契约
+
+- 日期：2026-09-13
+- 目的：锁定仓库根目录长期卫生规则，并纠正 Terminal onboarding 语义：Workspace Trust 是每次启动的第一层；首次 Brain Setup 是仅无 Profile 时出现的第二层。
+- Workspace Trust：`xiaoyu / xma` 每次交互式启动都解析调用者当前目录并显示信任确认；普通项目也必须显式确认，本次授权不持久化为下次跳过。Home、文件系统根与 Windows 系统目录继续显示额外高风险提示并默认选择退出。
+- Brain Setup：Trust 通过后，仅当当前没有已配置 Brain/Profile 时，在**同一个 Xiaoyu TUI** 中以居中 modal 启动 Provider → API Key → 真实 Model Catalog → Reasoning → Brain Ready 流程；已有 Profile 后续启动跳过第二层。
+- 长期管理：`Ctrl+P → Brain / Provider` 始终保留；首次 Setup 与 Ctrl+P 共享同一 Provider/Profile/Credential/Model/Probe 实现，禁止维护两套配置业务逻辑。首次 Setup 未完成时不能通过 Esc 静默绕过进入无 Brain 工作台；可继续配置或用 Ctrl+C 退出。
+- Root Hygiene：根目录只允许一级领域目录、标准工具链根配置、导航文档和极少量顶级 Launcher；普通实现文件与临时脚本必须进入真实 ownership。`.git/.cache/.xma/node_modules/dist` 为本机状态，不属于源码架构。
+- Gate：Architecture Gate 新增 root allowlist/本机状态忽略集；Distribution Gate 锁定“每次 Workspace Trust + 居中首次 Brain Setup + Ctrl+P 长期入口”标记。
+- 验证：75 个可离线 TypeScript 测试 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 共 9 项 Gate PASS；`apps/cli + core + packages + agents + plugins + gates` targeted strict `tsc --noEmit` PASS；Unix launcher/install 脚本 `sh -n` PASS。
+- Source Manifest：仍为 204 个受管源码文件；相对上一正式源码包为新增 0、更新 15、删除 0、未变化 189。当前环境无法代替 Windows Terminal 做真实键盘/alternate-screen E2E，Workspace Trust 与首次 Brain Setup 的最终视觉/交互仍需 Windows 实机验收。
+- 下一步：Stage P1 顺延为 `##09 · Pi Agent Engine 行为研究与迁移设计`，先完成能力/行为迁移矩阵，再改 `xma-ai / xma-agent-loop`。

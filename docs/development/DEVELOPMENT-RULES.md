@@ -138,7 +138,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
 - “Brain Ready”必须有真实请求证据；fixture/mock 不能改变产品 Ready 状态。
-- Terminal 首次没有已配置 Brain/Profile 时，Workspace Trust 通过后必须自动进入 Provider 配置；已有 Profile 的后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 必须始终可用，首次引导不能替代长期管理入口。
+- Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → Brain / Provider` 必须始终可用，并与首次 Setup 复用同一配置实现。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
 - **Provider Truth Contract：** 用户选择的 `providerId + profileId + modelId` 必须对应真实请求目标，禁止隐藏换模、隐藏降级、便宜模型代跑或本地 Planner 接管正常推理。
@@ -328,8 +328,14 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - 普通用户 installer 固定为 `xma-install.ps1`（Windows）/ `xma-install.sh`（Linux/macOS），只安装预构建资产，不得 clone 源码或运行 pnpm/cargo/MSVC。
 - Windows 使用 `%LOCALAPPDATA%\Programs\Xiaoyu` + User PATH；Unix 使用 `~/.local/share/xiaoyu` + `~/.local/bin`。
 - 安装资产必须 HTTPS + SHA-256 + staging 验证后再替换正式目录；开发缓存、源码、`node_modules` 不得进入用户包。
-- Home/根目录属于高风险 Workspace，Terminal 必须默认拒绝并要求“仅本次信任”。
+- 普通 Workspace 也必须在每次交互式启动显式确认；Home/根目录/Windows 系统目录属于高风险 Workspace，必须追加风险提示并默认选择退出。
 - 当前第一批 portable bundle 内置 Node Runtime；Node SEA 只作为未来优化，不得先于安装/升级/回滚合同。
+
+### Root Hygiene Rule
+
+- 仓库根只允许一级领域目录、标准工具链根配置、项目导航文档与极少量顶级 Launcher；普通实现文件、临时脚本、业务模块必须进入真实 ownership 目录。
+- `.git / .cache / .xma / node_modules / dist` 是本机状态，不属于源码架构；不得为了视觉上“目录更少”把生态工具要求的根配置搬进自造目录。
+- 新增根级源码条目必须同时更新 `DIRECTORY-STRUCTURE.md` / `CODEMAP.md`（需要时）并通过 Architecture Gate 的 Root Hygiene 检查。
 
 ### 源码开发入口与路径可移植性
 

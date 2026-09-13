@@ -99,8 +99,8 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - `xiaoyu --help / --version / doctor`；
 - `xiaoyu server / web` 发行入口；
-- Home / 文件系统根目录 / Windows 系统目录（例如 `C:\Windows\System32`）风险确认，只允许“退出”或“仅本次信任”；
-- **首次 Brain 配置**：Workspace Trust 通过后，如果当前没有已配置 Brain/Profile，TUI 必须自动打开 Provider 配置；一旦 Profile 成功持久化，后续启动不得重复强制弹出。`Ctrl+P → Brain / Provider` 永久保留，负责后续新增/切换/修改/Probe；
+- **每次启动 Workspace Trust**：`xiaoyu / xma` 每次交互式启动都先以调用者当前目录作为 Workspace 并显示信任确认；普通项目也不跳过，授权只对本次启动有效。Home / 文件系统根目录 / Windows 系统目录（例如 `C:\Windows\System32`）追加高风险提示并默认选择退出；
+- **首次 Brain 配置**：Workspace Trust 通过后，如果当前没有已配置 Brain/Profile，必须在**同一 Xiaoyu TUI 的居中 modal**自动打开 Provider 配置；一旦 Profile 已配置，后续启动跳过此第二步。`Ctrl+P → Brain / Provider` 永久保留，并与首次 Setup 复用同一 Provider/API Key/Model/Reasoning/Brain Ready 实现；
 - Workspace Session 绑定到正式 Agent Runtime；
 - `Xiaoyu Code` 当前会加载根 `skills/` 的 canonical Skills，并通过 `agent/skills` Context Source 进入正式 Context Assembly；portable launcher 使用 `XIAOYU_SKILLS_HOME` 指向随包分发的 `skills/`，普通用户不依赖源码仓库读取 Skill；
 - Terminal 已提供用户级 `brain.json` Provider Profile：可通过 `Ctrl+P → Brain / Provider` 从真实 Provider Catalog 添加 DeepSeek Official 或自定义 OpenAI-compatible Profile；同一品牌可保存多个账号/Profile。品牌 Provider 首次配置主路径固定为 API Key → 真实远程模型选择 → 推理强度 → Brain Ready；API Key 默认写入 OS Credentials，环境变量引用继续作为兼容路径，`/model` 可再次切换真实模型，Reasoning effort 作为非 Secret Profile option 持久化。`brain.json` v3 保存真实 Provider/Profile/Adapter/Model 与 Credential Reference，永远不保存 Secret 值，也不写入 Session；v1 `credentialEnv`、v2 generic Profile 与 `XIAOYU_BASE_URL / XIAOYU_MODEL / XIAOYU_API_KEY` 继续兼容迁移读取；

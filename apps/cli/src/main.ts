@@ -585,7 +585,7 @@ async function main(): Promise<number> {
   }
 
   if (!await confirmWorkspaceTrust(args.workspace)) {
-    process.stderr.write('已取消：未授权高风险 Workspace。\n')
+    process.stderr.write('已取消：未授权当前 Workspace。\n')
     return 3
   }
   const backend = await createBackend(args.workspace, currentVersion)

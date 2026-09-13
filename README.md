@@ -156,7 +156,7 @@ xiaoyu server        Headless Server（发行包）
 xiaoyu web           本地 Web + Server（发行包）
 ```
 
-Terminal 已接正式 Workspace/Session Runtime。启动 `xiaoyu` 后先执行 Workspace Trust；**若当前没有任何已配置 Brain/Profile，进入 TUI 后会自动打开首次 Brain / Provider 配置**，完成后后续启动不再重复弹出。`Ctrl+P → Brain / Provider` 始终保留，用于后续新增账号/Profile、切换 Provider/Model、修改推理强度或重新执行 Brain Ready。当前首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留。Secret 默认通过 OS Credentials 稳定别名保存，环境变量路径继续兼容；`brain.json` 只保存引用，不写 Secret。Brain Ready 会做真实 catalog/text/tool round trip Probe。Home/文件系统根目录默认触发“仅本次信任”风险确认。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
+Terminal 已接正式 Workspace/Session Runtime。每次启动 `xiaoyu / xma` 都会先解析**当前调用目录**并显示 Workspace Trust；这一步每次启动都出现，授权只对本次运行有效。通过后，**仅当当前没有任何已配置 Brain/Profile 时**，同一 Xiaoyu TUI 会自动在中央打开 Brain / Provider Setup；配置完成后以后启动跳过第二步，但 `Ctrl+P → Brain / Provider` 始终保留，用于后续新增账号/Profile、切换 Provider/Model、修改推理强度或重新执行 Brain Ready。当前首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留。Secret 默认通过 OS Credentials 稳定别名保存，环境变量路径继续兼容；`brain.json` 只保存引用，不写 Secret。Brain Ready 会做真实 catalog/text/tool round trip Probe。Home/文件系统根目录/Windows 系统目录会在每次 Workspace Trust 上追加高风险警告并默认选择退出。若 Native Kernel 可用，Terminal 会注册 Rust-backed `native.fs.read_text/write_text`；文件写入必须在 TUI 进行 deny / allow-once / allow-session Approval。进程工具默认不开放，直到 Host 明确配置 absolute executable allowlist。
 
 发行架构、Windows `%LOCALAPPDATA%\Programs\Xiaoyu`、Linux/macOS `~/.local` 合同与一键安装 bootstrap 见 `docs/architecture/DISTRIBUTION.md`。公网 `irm/curl` 安装命令只有在 Release/域名真实部署后才算可用。
 

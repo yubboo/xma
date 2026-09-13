@@ -157,7 +157,7 @@ for (const marker of [
 }
 
 const readmeSource = readFileSync('README.md', 'utf8')
-for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`', '.xma\\dev-bin', 'User PATH', '首次 Brain / Provider 配置']) {
+for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`', '.xma\\dev-bin', 'User PATH', '同一 Xiaoyu TUI']) {
   if (!readmeSource.includes(marker)) throw new Error(`README public source quick-start contract missing: ${marker}`)
 }
 const windowsWorkflowSource = readFileSync('docs/development/WINDOWS-WORKFLOW.md', 'utf8')

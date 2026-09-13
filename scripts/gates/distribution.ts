@@ -44,7 +44,7 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['安全提示：你即将打开', '仅本次信任', '↑↓ 选择 · Enter 确认', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', 'showInputOverlay', 'Brain Ready 测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
+for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险 Workspace', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu Brain', 'Ctrl+P → Brain / Provider', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", 'showListOverlay', 'showInputOverlay', 'Brain Ready 测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
   if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
 }
 if (tui.includes('new toolkit.Editor') || tui.includes('new toolkit.Input') || tui.includes("\u001b[7m") || tui.includes("\x1b[7m")) {

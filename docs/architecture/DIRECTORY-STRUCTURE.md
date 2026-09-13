@@ -47,6 +47,18 @@ xma/
 - 禁止恢复根 `XMA.bat` / `xma.bat` 作为源码开发入口，避免与正式 `xma` 产品命令概念冲突；
 - 维护者专用 `XMA-Sync.bat` / `XMA-GitHub.bat` 保持独立职责，不属于普通用户启动链。
 
+
+### 2.3 Root Hygiene Rule
+
+仓库根目录只允许四类内容：
+
+1. **一级领域目录**：`apps/`、`agents/`、`packages/`、`plugins/`、`native/`、`skills/`、`docs/`、`scripts/`，以及迁移期 `core/`；
+2. **工具链/平台根配置**：`package.json`、`pnpm-*`、`tsconfig.json`、`Cargo.toml`、`Cargo.lock`、`.git*`、`.cargo/`、`.github/` 与 AI 开发配置目录；
+3. **项目导航文档**：`README.md`、`AGENTS.md`、`CLAUDE.md`、`CODEMAP.md` 等固定入口；
+4. **极少量顶级 Launcher**：`xma-dev.bat`、`xma-dev` 与当前维护者专用 `XMA-Sync.bat / XMA-GitHub.bat`。
+
+普通实现文件、临时脚本、业务模块不得直接堆到仓库根；应进入其真实 ownership 目录。`.git/`、`.cache/`、`.xma/`、`node_modules/`、`dist/` 等本机状态不属于源码架构，也不作为“根目录太多”的理由去破坏工具默认位置。Root Hygiene 由 Architecture Gate 静态检查。
+
 ## 3. 稳定 Platform Package
 
 当前第一批真实 package：

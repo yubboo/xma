@@ -10,12 +10,13 @@ import {
   DEFAULT_TERMINAL_UI_SETTINGS,
   renderHome,
   needsInitialBrainSetup,
-  renderWorkspaceTrustWarning,
+  renderWorkspaceTrustPrompt,
   SafePromptInput,
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
   workspaceRisk,
+  workspaceTrustDefaultSelection,
   type TerminalTranscriptItem,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs } from '../src/main.ts'
@@ -71,13 +72,20 @@ test('TUI warns for home, filesystem root and Windows system directories but not
 })
 
 
-test('TUI risk screen explains home/root scope before entering the fullscreen workbench', () => {
-  const warning = renderWorkspaceTrustWarning(homedir())
-  assert.match(warning, /安全提示/)
+test('TUI Workspace Trust renders on every launch and explains elevated risk when needed', () => {
+  const normal = renderWorkspaceTrustPrompt(path.join(homedir(), 'xma-project'))
+  assert.match(normal, /访问工作区/)
+  assert.match(normal, /安全确认/)
+  assert.match(normal, /是的，我信任此目录/)
+  assert.match(normal, /否，退出/)
+  assert.match(normal, /本次授权不会跳过下次启动确认/)
+
+  const warning = renderWorkspaceTrustPrompt(homedir())
+  assert.match(warning, /高风险 Workspace/)
   assert.match(warning, /用户主目录/)
-  assert.match(warning, /仅本次信任/)
-  assert.match(warning, /退出（推荐）/)
-  assert.match(warning, /↑↓ 选择 · Enter 确认/)
+  assert.match(warning, /↑↓ \/ Tab 选择 · Enter 确认/)
+  assert.equal(workspaceTrustDefaultSelection(workspaceRisk(homedir())), 'exit')
+  assert.equal(workspaceTrustDefaultSelection(workspaceRisk(path.join(homedir(), 'xma-project'))), 'trust')
 })
 
 test('TUI home renders the canonical xiaoyu identity and current runtime facts', () => {
@@ -184,11 +192,11 @@ test('TUI visual setting toggles vivid/minimal without changing other terminal s
   assert.equal(vivid.visual, 'vivid')
 })
 
-test('TUI trust warning defaults to exit and can render the one-time trust selection', () => {
-  const exit = renderWorkspaceTrustWarning(homedir(), workspaceRisk(homedir()), 'exit')
-  const trust = renderWorkspaceTrustWarning(homedir(), workspaceRisk(homedir()), 'trust')
-  assert.match(exit, /●\u001b\[0m 退出（推荐）/)
-  assert.match(trust, /●\u001b\[0m 我了解风险，仅本次信任/)
+test('TUI Workspace Trust keeps high-risk default deny while still allowing explicit one-run trust', () => {
+  const exit = renderWorkspaceTrustPrompt(homedir(), workspaceRisk(homedir()), 'exit')
+  const trust = renderWorkspaceTrustPrompt(homedir(), workspaceRisk(homedir()), 'trust')
+  assert.match(exit, /●\u001b\[0m .*否，退出/)
+  assert.match(trust, /●\u001b\[0m .*是的，我信任此目录/)
 })
 
 
