@@ -1,24 +1,35 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions DisableDelayedExpansion
 set "CALLER_CWD=%CD%"
-cd /d "%~dp0"
-set "SCRIPT=%~dp0scripts\windows\xma-console.ps1"
+set "ROOT=%~dp0"
+set "SCRIPT=%ROOT%scripts\windows\xma-console.ps1"
+
 if not exist "%SCRIPT%" (
   echo [ERROR] scripts\windows\xma-console.ps1 not found.
   if "%~1"=="" pause
   exit /b 1
 )
 
+pushd "%ROOT%" >nul 2>&1
+if errorlevel 1 (
+  echo [ERROR] Cannot enter XMA source directory: "%ROOT%"
+  if "%~1"=="" pause
+  exit /b 1
+)
+
 if /I "%~1"=="cli" (
   if "%~2"=="" (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" cli "%CALLER_CWD%"
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Command cli -Workspace "%CALLER_CWD%"
   ) else (
-    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*
+    powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Command cli -Workspace "%~2"
   )
+) else if "%~1"=="" (
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Command menu
 ) else (
-  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %*
+  powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -Command "%~1"
 )
 set "RC=%ERRORLEVEL%"
+popd >nul 2>&1
 
 if not "%~1"=="" exit /b %RC%
 

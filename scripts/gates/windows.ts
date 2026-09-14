@@ -42,7 +42,7 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
-for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', '-File "%SCRIPT%" %*']) {
+for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
 }
 if (/H:\\|H:\//i.test(devLauncherSource)) {
@@ -55,7 +55,9 @@ if (existsSync('XMA.bat') || existsSync('xma.bat')) {
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')",
-  "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('default','stable')",
+  "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('override','set','stable')",
+  '当前 XMA 目录没有可用的 Rust stable toolchain',
+  'Refresh-XmaPath',
   '[检查] 正在检查 Git 是否可用...',
   '[完成] XMA 开发环境与通用项目依赖已准备完成。',
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')",
@@ -110,7 +112,7 @@ for (const marker of [
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
 // 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
-// 导致 `pnpm check`、`rustup default stable` 等命令退化成裸 `pnpm` / `rustup`。
+// 导致 `pnpm check`、`rustup override set stable` 等命令退化成裸 `pnpm` / `rustup`。
 const commonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
 for (const marker of [
   'function Invoke-XmaExternal',

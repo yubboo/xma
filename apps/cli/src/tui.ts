@@ -46,8 +46,8 @@ const HOME_TIPS = [
 ] as const
 
 export function terminalHomeTip(index: number, providerConfigured: boolean, providerReady: boolean): string {
-  if (!providerConfigured) return 'Ctrl+P → 模型 / 提供方 配置模型与 API Key'
-  if (!providerReady) return '模型未就绪 · Ctrl+P → 模型 / 提供方 检查配置'
+  if (!providerConfigured) return '模型未配置 · Ctrl+P → 模型 / 提供方，或输入 /provider'
+  if (!providerReady) return '模型已配置 · 尚未就绪 · Ctrl+P → 模型 / 提供方 → 连接测试'
   const normalized = ((index % HOME_TIPS.length) + HOME_TIPS.length) % HOME_TIPS.length
   return HOME_TIPS[normalized]!
 }
@@ -1392,16 +1392,24 @@ class XiaoyuSurface {
   }
 
   private renderPromptStatus(width: number): string {
-    const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
-    const provider = this.backend.providerLabel
     const mode = modeLabel(this.agentMode)
+    const left = `${modeColor(this.agentMode)}${bold}${mode}${reset}`
+    const leftWidth = cellWidth(mode)
+
+    if (!this.backend.providerConfigured) {
+      const rightPlain = '○ 模型未配置 · Ctrl+P /provider'
+      const right = `${yellow}○${reset} ${text}${rightPlain.slice(2)}${reset}`
+      return `${left}${spaces(Math.max(1, width - leftWidth - cellWidth(rightPlain)))}${right}`
+    }
+
     const effort = this.backend.reasoningSupported ? this.backend.reasoningEffort : 'default'
     const effortText = this.backend.reasoningSupported ? effort : 'reasoning n/a'
-    const reserved = cellWidth(mode) + cellWidth(effortText) + 12
-    const plainProvider = truncateCells(provider, Math.max(8, width - reserved))
-    const styled = `${modeColor(this.agentMode)}${bold}${mode}${reset}${textSoft} · ${reset}${providerDot} ${text}${plainProvider}${reset}${textSoft} · ${reset}${reasoningColor(effort)}${bold}${effortText}${reset}`
-    const visible = cellWidth(mode) + 3 + 2 + cellWidth(plainProvider) + 3 + cellWidth(effortText)
-    return `${styled}${spaces(Math.max(0, width - visible))}`
+    const providerDot = this.backend.providerReady ? `${green}●${reset}` : `${yellow}○${reset}`
+    const rightBudget = Math.max(8, width - leftWidth - cellWidth(effortText) - 8)
+    const plainProvider = truncateCells(this.backend.providerLabel, rightBudget)
+    const rightPlain = `○ ${plainProvider} · ${effortText}`
+    const right = `${providerDot} ${text}${plainProvider}${reset}${textSoft} · ${reset}${reasoningColor(effort)}${bold}${effortText}${reset}`
+    return `${left}${spaces(Math.max(1, width - leftWidth - cellWidth(rightPlain)))}${right}`
   }
 
   startInitialBrainSetup(): void {

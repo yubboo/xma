@@ -89,10 +89,27 @@ function Confirm-XmaAction([string]$Message) {
 }
 
 function Refresh-XmaPath {
-  $machine = [Environment]::GetEnvironmentVariable('Path','Machine')
-  $user = [Environment]::GetEnvironmentVariable('Path','User')
+  # 中文说明：新电脑上 winget/rustup/npm 可能刚写入 User/Machine PATH，而当前 PowerShell 进程仍保留旧 PATH。
+  # 这里合并“当前进程 + Machine + User + .cargo\bin”，并做大小写不敏感去重；禁止为了刷新 PATH 丢掉调用者已有的临时路径。
   $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
-  $env:Path = "$cargoBin;$machine;$user"
+  $sources = @(
+    $cargoBin,
+    [Environment]::GetEnvironmentVariable('Path','Machine'),
+    [Environment]::GetEnvironmentVariable('Path','User'),
+    $env:Path
+  )
+  $entries = New-Object System.Collections.Generic.List[string]
+  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  foreach ($source in $sources) {
+    if ([string]::IsNullOrWhiteSpace($source)) { continue }
+    foreach ($entry in ($source -split ';')) {
+      $candidate = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+      if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+      $normalized = $candidate.TrimEnd([char[]]@('\','/'))
+      if ($seen.Add($normalized)) { [void]$entries.Add($candidate) }
+    }
+  }
+  $env:Path = ($entries -join ';')
 }
 
 function Ensure-XmaWinget {
@@ -234,6 +251,8 @@ Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖�
 Write-Host '说明：会安装 Workspace JavaScript 依赖、固定 Bun/OpenTUI Runtime、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
+# 中文说明：先刷新当前进程 PATH，确保新电脑刚安装到 User/Machine PATH 的工具无需重开终端即可被发现。
+Refresh-XmaPath
 
 Write-Host '[1/9] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
@@ -300,28 +319,58 @@ $bunExe = Install-XmaBunRuntime
 Write-Host ''
 Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
+# 中文说明：rustup 会先安装 cargo.exe/rustc.exe shim；“命令存在”不代表已经有默认/项目 toolchain。
+# 新电脑最常见状态就是 shim 已存在但 `rustup default` 为空，此时 cargo --version 会直接失败。
+Refresh-XmaPath
+$hasRustup = [bool](Get-Command rustup.exe -ErrorAction SilentlyContinue)
 $hasCargo = [bool](Get-Command cargo.exe -ErrorAction SilentlyContinue)
 $hasRustc = [bool](Get-Command rustc.exe -ErrorAction SilentlyContinue)
-$hasRustup = [bool](Get-Command rustup.exe -ErrorAction SilentlyContinue)
-if (-not $hasCargo -or -not $hasRustc) {
-  Write-Host '[缺少] Rust toolchain 不完整。' -ForegroundColor Yellow
-  if (-not $hasRustup) {
-    if (-not (Confirm-XmaAction '是否通过 rustup 自动安装 Rust？')) { throw 'Rust 是 XMA Native Runtime 的必要依赖。' }
-    Ensure-XmaWinget
-    Write-Host '[安装] 正在安装 rustup...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Rustlang.Rustup','--exact','--accept-source-agreements','--accept-package-agreements')
-    Refresh-XmaPath
+
+if (-not $hasRustup -and (-not $hasCargo -or -not $hasRustc)) {
+  Write-Host '[缺少] Rust/rustup 尚未完整安装。' -ForegroundColor Yellow
+  if (-not (Confirm-XmaAction '是否通过 rustup 自动安装 Rust？')) { throw 'Rust 是 XMA Native Runtime 的必要依赖。' }
+  Ensure-XmaWinget
+  Write-Host '[安装] 正在安装 rustup...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Rustlang.Rustup','--exact','--accept-source-agreements','--accept-package-agreements')
+  Refresh-XmaPath
+  $hasRustup = [bool](Get-Command rustup.exe -ErrorAction SilentlyContinue)
+}
+
+if ($hasRustup) {
+  $toolchainOutput = @(& rustup.exe toolchain list 2>&1)
+  if ($LASTEXITCODE -ne 0) { throw "rustup 无法读取已安装 toolchain：$($toolchainOutput -join ' ')" }
+  $stableInstalled = [bool]($toolchainOutput | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
+  if (-not $stableInstalled) {
+    Write-Host '[安装] 当前 rustup 没有 stable toolchain，正在安装 minimal stable...' -ForegroundColor Yellow
+    Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')
   }
-  if (-not (Get-Command rustup.exe -ErrorAction SilentlyContinue)) { throw 'rustup 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
-  Write-Host '[安装] 正在安装 Rust stable minimal toolchain...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')
-  Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('default','stable')
+
+  # 中文说明：使用“项目目录 override”而不是修改用户全局 default。
+  # 这样即使新电脑没有 default，或开发者全局使用 nightly，XMA 根目录及子目录仍固定使用 stable，同时不污染其他项目。
+  $activeOutput = @(& rustup.exe show active-toolchain 2>&1)
+  $activeStable = ($LASTEXITCODE -eq 0) -and [bool]($activeOutput | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
+  if (-not $activeStable) {
+    Write-Host '[修复] 当前 XMA 目录没有可用的 Rust stable toolchain，正在绑定项目级 stable override...' -ForegroundColor Yellow
+    Push-Location $Root
+    try {
+      Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('override','set','stable')
+    } finally {
+      Pop-Location
+    }
+  }
   Refresh-XmaPath
 }
-if (-not (Get-Command rustc.exe -ErrorAction SilentlyContinue)) { throw '未检测到 rustc。' }
-if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 cargo。' }
-Write-Host "[通过] $(& rustc.exe --version)" -ForegroundColor Green
-Write-Host "[通过] $(& cargo.exe --version)" -ForegroundColor Green
+
+if (-not (Get-Command rustc.exe -ErrorAction SilentlyContinue)) { throw '未检测到 rustc。请重新运行 [1]，XMA 会修复 Rust stable toolchain。' }
+if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 cargo。请重新运行 [1]，XMA 会修复 Rust stable toolchain。' }
+$rustcVersionOutput = @(& rustc.exe --version 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "rustc 命令存在但 toolchain 不可用：$($rustcVersionOutput -join ' ')" }
+$cargoVersionOutput = @(& cargo.exe --version 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "cargo 命令存在但 toolchain 不可用：$($cargoVersionOutput -join ' ')" }
+$rustcVersion = ($rustcVersionOutput -join ' ').Trim()
+$cargoVersion = ($cargoVersionOutput -join ' ').Trim()
+Write-Host "[通过] $rustcVersion" -ForegroundColor Green
+Write-Host "[通过] $cargoVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[6/9] MSVC C++ Build Tools' -ForegroundColor Cyan

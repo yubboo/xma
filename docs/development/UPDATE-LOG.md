@@ -321,3 +321,23 @@
 - 动画：流星继续保持 50ms 轨迹帧，不为性能牺牲坠落平滑度；星星帧通过独立 `starFrame` memo 降频。Braille 流星尾部采样点预计算，活动帧使用数字 cell key 代替字符串 key/split，减少 Map 热路径中的短生命周期分配。
 - 回归：OpenTUI 静态合同新增慢光标、30FPS renderer、关闭 mouse-move、1s clock 与流星低分配热路径检查。
 - 交付：`0.1.0` 未冻结，继续只生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`。
+
+
+##27 · Provider 配置真值与 Prompt 状态左右布局
+
+- 日期：2026-09-14
+- 目的：修复主工作台同时显示具体 Provider/Model，但提示区又写“模型未就绪/像未配置”的语义冲突；并把 Prompt 状态行改为左右两端布局，左侧固定 Build/Plan/Compose，右侧展示 Brain 配置真值。
+- 真值语义：`providerConfigured` 只表示已经存在活动 Provider/Profile/Model 配置；`providerReady` 表示该配置当前已经通过凭据与真实 Provider Probe。两者不再混写。未配置时明确提示“模型未配置”，已配置但未 Ready 时明确提示“模型已配置 · 尚未就绪”，避免把“尚未验证/连接未通过”误说成“没有配置”。
+- 主状态行：OpenTUI Prompt 第三行改为两端对齐。左侧模式标签保持原位置；右侧在已配置时显示 `●/○ Provider · Model · Reasoning`，未配置时显示 `○ 模型未配置 · Ctrl+P /provider`。Reasoning 只在存在 Provider 配置时展示。
+- 提示入口：未配置提示统一给出 `Ctrl+P → 模型 / 提供方` 和 `/provider` 两条可执行入口；已配置但未 Ready 时提示进入“连接测试”。Ready 后恢复普通轮播提示。
+- 兼容：旧 Pi TUI compatibility renderer 同步采用相同左右布局与配置真值语义，避免未来 fallback/测试路径再次产生不同产品表达。
+- 回归：更新 `tui.test.ts` 的配置/Ready 三态语义，并新增 OpenTUI 状态行 `space-between`、未配置文案与 Reasoning 条件展示合同。
+
+## 20 · Windows 新电脑 Rustup/Path 自愈
+
+- 日期：2026-09-14
+- 目的：修复新电脑运行 `xma-dev.bat → [1]` 时，`rustup` shim 已存在但没有 default/active toolchain，导致 `[8/9] cargo fetch` 报 `rustup could not choose a version of cargo to run`；同时增强源码入口对不同盘符、空格/中文路径和刚安装工具 PATH 尚未刷新场景的兼容。
+- Rust：准备流程不再把“存在 cargo.exe/rustc.exe”误判成 Rust 已可用。若检测到 rustup，会先检查 stable toolchain 是否已安装；缺少时只安装 minimal stable，并在 XMA 项目目录设置 `rustup override set stable`，不修改开发者其他项目使用的全局默认 toolchain。随后真实执行 `rustc --version` / `cargo --version` 验证，失败即在 `[5/9]` 明确中止，不再拖到 `[8/9]` 才暴露错误。
+- PATH：`Refresh-XmaPath` 改为合并 `.cargo\\bin + Machine PATH + User PATH + 当前进程 PATH` 并去重，不再为了刷新 winget/rustup/npm 安装结果而丢失调用者已有的临时路径；进入 `[1/9]` 前先刷新一次，因此新终端和刚安装工具都能在同一轮准备流程被发现。
+- Launcher：`xma-dev.bat` 使用 `pushd "%~dp0"` 和 PowerShell 命名参数转发 `-Command/-Workspace`，不再直接 `%*` 拼接；保留调用者 Workspace，并加强任意盘符、空格、中文路径下的入口稳定性。
+- Gate：Windows Gate 更新为锁定项目级 stable override、PATH 自愈和安全 launcher 参数转发，防止后续回退到只检查 shim/全局 default 的旧逻辑。

@@ -720,6 +720,17 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
+  const providerStatus = createMemo(() => providerConfigured()
+    ? {
+        dot: providerReady() ? '●' : '○',
+        dotColor: providerReady() ? COLOR.green : COLOR.yellow,
+        label: providerLabel(),
+      }
+    : {
+        dot: '○',
+        dotColor: COLOR.yellow,
+        label: '模型未配置 · Ctrl+P /provider',
+      })
   const starFrame = createMemo(() => Math.floor(phase() / 4))
   const logoFrame = createMemo(() => Math.floor(phase() / 2))
   const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][Math.floor(phase() / 3) % 4]!)
@@ -1486,13 +1497,16 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
             </box>
             <box flexDirection="row">
               <text fg={MODE_META[mode()].color}>▌</text>
-              <box flexDirection="row" paddingLeft={1}>
+              <box flexGrow={1} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
                 <text fg={MODE_META[mode()].color}><strong>{MODE_META[mode()].label}</strong></text>
-                <text fg={COLOR.soft}> · </text>
-                <text fg={providerReady() ? COLOR.green : COLOR.yellow}>{providerReady() ? '●' : '○'}</text>
-                <text fg={COLOR.text}> {providerLabel()}</text>
-                <text fg={COLOR.soft}> · </text>
-                <text fg={reasoningColor(reasoningEffort())}><strong>{reasoningEffort()}</strong></text>
+                <box flexDirection="row">
+                  <text fg={providerStatus().dotColor}>{providerStatus().dot}</text>
+                  <text fg={COLOR.text}> {providerStatus().label}</text>
+                  <Show when={providerConfigured()}>
+                    <text fg={COLOR.soft}> · </text>
+                    <text fg={reasoningColor(reasoningEffort())}><strong>{reasoningEffort()}</strong></text>
+                  </Show>
+                </box>
               </box>
             </box>
           </box>

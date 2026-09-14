@@ -279,3 +279,14 @@ test('meteor frame path reuses tail samples and numeric cell keys to reduce per-
   assert.match(source, /const key = cellY \* width \+ cellX/)
   assert.doesNotMatch(source, /key\.split\(','\)/)
 })
+
+
+test('OpenTUI prompt status keeps Build left aligned and provider truth right aligned', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const providerStatus = createMemo/)
+  assert.match(source, /label: '模型未配置 · Ctrl\+P \/provider'/)
+  assert.match(source, /flexGrow=\{1\} flexDirection="row" justifyContent="space-between" paddingLeft=\{1\}/)
+  assert.match(source, /<text fg=\{MODE_META\[mode\(\)\]\.color\}><strong>\{MODE_META\[mode\(\)\]\.label\}<\/strong><\/text>/)
+  assert.match(source, /<text fg=\{providerStatus\(\)\.dotColor\}>\{providerStatus\(\)\.dot\}<\/text>/)
+  assert.match(source, /<Show when=\{providerConfigured\(\)\}>/)
+})

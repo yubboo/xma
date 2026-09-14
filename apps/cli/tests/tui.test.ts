@@ -205,8 +205,8 @@ test('TUI chat shortcut row distributes items evenly and aligns Esc to the same 
 test('TUI home tips rotate when ready and become provider-aware when setup is incomplete', () => {
   assert.equal(terminalHomeTip(0, true, true), 'Ctrl+P 打开命令面板')
   assert.equal(terminalHomeTip(1, true, true), 'Ctrl+K 直接搜索命令')
-  assert.match(terminalHomeTip(0, false, false), /配置模型与 API Key/)
-  assert.match(terminalHomeTip(0, true, false), /模型未就绪/)
+  assert.match(terminalHomeTip(0, false, false), /模型未配置.*\/provider/)
+  assert.match(terminalHomeTip(0, true, false), /模型已配置.*尚未就绪.*连接测试/)
 })
 
 test('TUI captures ordinary mouse drag while active and releases terminal state on exit', () => {
