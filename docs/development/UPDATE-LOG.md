@@ -298,3 +298,15 @@
 - 配置：再次添加 DeepSeek 时更新现有 DeepSeek 配置，不再自动创建 `DeepSeek 2/3`。模型 / 提供方页的官方 Profile 行只显示一次品牌名，说明列只显示当前模型。
 - Workbench：状态栏统一显示 `DeepSeek · <model> · <reasoning>`；不会再拼接 Provider 品牌与 Profile 别名两层身份。
 - 回归：新增 Brain consolidation 测试与 OpenTUI Provider identity 静态合同测试，锁住官方 Provider 单例与主界面单品牌显示。
+
+
+##25 · MiMo 同类 Braille 子像素流星与透明前景层
+
+- 日期：2026-09-14
+- 目的：修复现有流星“整体向左平移、字符折线感明显、中部被大面积背景遮罩吃掉”的视觉问题；继续保留 Ctrl+P → 设置 → 特效 中的独立开关。
+- 上游研究：直接审阅 XiaomiMiMo/MiMo-Code 当前 `packages/opencode/src/cli/cmd/tui/component/starry-background.tsx`。其流星不是预制 glyph 队列，而是使用单一 `StyledText` 背景平面，把连续浮点轨迹按 2×4 Unicode Braille 子像素采样；头部为小型高亮核，长尾沿真实运动向量反向延伸并按距离/生命周期衰减。星空以较低 200ms 粒度更新局部亮度，流星仅在活动期间以 50ms 刷新。
+- Xiaoyu 实现：移除 `METEOR_TRACKS + METEOR_TRAIL` 固定字符步进；采用 `METEOR_ANGLE=0.36 / TAIL=32 / STEP=0.15 / DURATION=3600ms / FRAME=50ms` 的连续轨迹。起点位于右上约 15% 区域，运动向量固定左下，速度根据当前终端高度计算，避免宽屏下只水平滑过。
+- 性能：星空和流星合并为一个全屏 `StyledText`，不再为每个星点/尾迹创建独立绝对定位 Box；无流星时只由 200ms 星点亮度变化触发，流星活动期间才进入 50ms 帧刷新。
+- 层级：StarryBackground 继续固定 `zIndex=0`，业务 UI 在前景层；Logo、Transcript、快捷栏、提示、footer 去掉无必要的大块 `COLOR.background` 遮罩，使流星可在空白区域连续穿过中部，但 Prompt 卡片等需要可读性的实体面板仍保持前景背景，不让装饰覆盖文本。
+- 稳定性：清理迁移过程中误落入 ListDialog/InputDialog 的重复 `runInitialSetup` helper，并补回 `createEffect` 显式导入；避免后续 `[7]` TypeScript 检查出现无关回归。
+- 回归：OpenTUI 静态合同改为锁定 Braille 位映射、连续左下运动向量、StyledText 单背景面、MiMo 同类帧率/尾长参数，并禁止恢复旧 `METEOR_TRACKS/METEOR_TRAIL` 字符队列。

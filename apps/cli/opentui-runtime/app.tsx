@@ -90,39 +90,13 @@ const STAR_FRAMES = [
   { glyph: '·', color: '#303436' },
 ] as const
 
-/**
- * 中文说明：流星轨迹按 MiMo Code 的视觉方向从右上向左下掠过。
- * period/span 采用错峰周期，让“时不时出现”的感觉稳定又不会同时刷满屏幕。
- */
-const METEOR_TRACKS = [
-  { x: 1.02, y: 0.04, dx: -0.74, dy: 0.67, period: 176, span: 38, offset: 0 },
-  { x: 0.98, y: 0.02, dx: -0.66, dy: 0.60, period: 257, span: 40, offset: 103 },
-] as const
-
-const METEOR_TRAIL = [
-  { dx: 0, dy: 0, glyph: '✦', color: '#f4f4f4' },
-  { dx: 1, dy: -1, glyph: '•', color: '#c7ddf4' },
-  { dx: 2, dy: -1, glyph: '·', color: '#9ec4e7' },
-  { dx: 3, dy: -2, glyph: '•', color: '#7caed8' },
-  { dx: 4, dy: -2, glyph: '·', color: '#6798c5' },
-  { dx: 5, dy: -3, glyph: '·', color: '#5f8fb9' },
-  { dx: 6, dy: -3, glyph: '·', color: '#537da3' },
-  { dx: 7, dy: -4, glyph: '·', color: '#476a89' },
-  { dx: 8, dy: -4, glyph: '·', color: '#3b5a75' },
-  { dx: 9, dy: -5, glyph: '·', color: '#344c61' },
-  { dx: 10, dy: -5, glyph: '·', color: '#2d4052' },
-  { dx: 11, dy: -6, glyph: '·', color: '#273746' },
-  { dx: 12, dy: -6, glyph: '·', color: '#222f3a' },
-  { dx: 13, dy: -7, glyph: '·', color: '#1f2932' },
-  { dx: 14, dy: -7, glyph: '·', color: '#1b242b' },
-  { dx: 15, dy: -8, glyph: '·', color: '#182026' },
-  { dx: 16, dy: -8, glyph: '·', color: '#151c21' },
-  { dx: 17, dy: -9, glyph: '·', color: '#13191d' },
-  { dx: 18, dy: -9, glyph: '·', color: '#111619' },
-  { dx: 19, dy: -10, glyph: '·', color: '#0f1316' },
-  { dx: 20, dy: -10, glyph: '·', color: '#0d1012' },
-  { dx: 21, dy: -11, glyph: '·', color: '#0c0e10' },
-] as const
+const METEOR_INTERVAL_FRAMES = 160
+const METEOR_DURATION_FRAMES = 72
+const METEOR_FRAME_MS = 50
+const METEOR_DURATION_MS = METEOR_DURATION_FRAMES * METEOR_FRAME_MS
+const METEOR_ANGLE = 0.36
+const METEOR_TAIL = 32
+const METEOR_STEP = 0.15
 
 interface SkyGlyph {
   left: number
@@ -149,35 +123,112 @@ function starGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
   })
 }
 
+function brailleBit(column: number, row: number): number {
+  if (column === 0) return row === 3 ? 6 : row
+  return row === 3 ? 7 : 3 + row
+}
+
+function parseHex(color: string): [number, number, number] {
+  const value = color.startsWith('#') ? color.slice(1) : color
+  return [
+    Number.parseInt(value.slice(0, 2), 16),
+    Number.parseInt(value.slice(2, 4), 16),
+    Number.parseInt(value.slice(4, 6), 16),
+  ]
+}
+
+function blendHex(from: string, to: string, amount: number): string {
+  const t = Math.max(0, Math.min(1, amount))
+  const a = parseHex(from)
+  const b = parseHex(to)
+  const channel = (index: number) => Math.round(a[index]! + (b[index]! - a[index]!) * t).toString(16).padStart(2, '0')
+  return `#${channel(0)}${channel(1)}${channel(2)}`
+}
+
+/**
+ * 中文说明：只生成“真正有像素”的 Braille 流星单元，不再绘制一张覆盖全屏的 StyledText。
+ * 这样既保留 MiMo Code 的 2×4 子像素斜向光束，也不会在 OpenTUI 0.1.101 下用空格重绘覆盖主界面文字。
+ */
 function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
-  const glyphs: SkyGlyph[] = []
-  for (const track of METEOR_TRACKS) {
-    const step = (frame + track.offset) % track.period
-    if (step >= track.span) continue
-    const progress = track.span <= 1 ? 1 : step / (track.span - 1)
-    const headLeft = toCell(width, track.x + track.dx * progress, 2)
-    const headTop = toCell(height, track.y + track.dy * progress, 1)
-    for (const trail of METEOR_TRAIL) {
-      const left = headLeft + trail.dx
-      const top = headTop + trail.dy
-      if (left < 0 || left >= width || top < 0 || top >= height) continue
-      glyphs.push({ left, top, text: trail.glyph, color: trail.color })
+  if (width <= 0 || height <= 0) return []
+  const step = frame % METEOR_INTERVAL_FRAMES
+  if (step >= METEOR_DURATION_FRAMES) return []
+
+  const sequence = Math.floor(frame / METEOR_INTERVAL_FRAMES)
+  const jitter = ((sequence * 37 + 17) % 100) / 100
+  const startX = Math.max(2, width - 2 - jitter * Math.max(1, width * 0.15))
+  const startY = sequence % 2
+  const speed = Math.max(0.011, Math.min(0.038, (height - startY) / (Math.sin(METEOR_ANGLE) * METEOR_DURATION_MS)))
+  const elapsed = step * METEOR_FRAME_MS
+  const distance = elapsed * speed
+  const dx = -Math.cos(METEOR_ANGLE)
+  const dy = Math.sin(METEOR_ANGLE)
+  const headX = startX + distance * dx
+  const headY = startY + distance * dy
+  const envelope = Math.sin((step / METEOR_DURATION_FRAMES) * Math.PI)
+  const cells = new Map<string, { dots: number; nearestTailPoint: number }>()
+
+  const setDot = (pixelX: number, pixelY: number, tailPoint: number) => {
+    const subX = Math.floor(pixelX * 2)
+    const subY = Math.floor(pixelY * 4)
+    const cellX = subX >> 1
+    const cellY = subY >> 2
+    if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) return
+    const bit = brailleBit(subX & 1, subY & 3)
+    const key = `${cellX},${cellY}`
+    const previous = cells.get(key)
+    cells.set(key, {
+      dots: (previous?.dots ?? 0) | (1 << bit),
+      nearestTailPoint: Math.min(previous?.nearestTailPoint ?? Number.POSITIVE_INFINITY, tailPoint),
+    })
+  }
+
+  for (let tailPoint = 0; tailPoint <= METEOR_TAIL; tailPoint += METEOR_STEP) {
+    setDot(headX - tailPoint * dx, headY - tailPoint * dy, tailPoint)
+  }
+
+  const headSubX = Math.floor(headX * 2)
+  const headSubY = Math.floor(headY * 4)
+  for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      if (offsetX * offsetX + offsetY * offsetY > 1) continue
+      const subX = headSubX + offsetX
+      const subY = headSubY + offsetY
+      const cellX = subX >> 1
+      const cellY = subY >> 2
+      if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) continue
+      const bit = brailleBit(subX & 1, subY & 3)
+      const key = `${cellX},${cellY}`
+      const previous = cells.get(key)
+      cells.set(key, { dots: (previous?.dots ?? 0) | (1 << bit), nearestTailPoint: 0 })
     }
   }
+
+  const glyphs: SkyGlyph[] = []
+  for (const [key, value] of cells) {
+    const [leftText, topText] = key.split(',')
+    const left = Number(leftText)
+    const top = Number(topText)
+    const fade = Math.pow(1 - value.nearestTailPoint / METEOR_TAIL, 1.3) * envelope
+    const headBlend = Math.max(0, 1 - value.nearestTailPoint / 5)
+    const beam = blendHex('#b4d7ff', '#ffffff', headBlend)
+    const color = blendHex(COLOR.background, beam, Math.max(0.08, fade))
+    glyphs.push({ left, top, text: String.fromCharCode(0x2800 + value.dots), color })
+  }
+  glyphs.sort((a, b) => a.top - b.top || a.left - b.left)
   return glyphs
 }
 
 function BackgroundSky(props: {
   width: number
   height: number
-  starFrame: number
-  meteorFrame: number
+  frame: number
   vivid: boolean
   stars: boolean
   meteors: boolean
 }) {
-  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, props.starFrame) : [])
-  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.meteorFrame) : [])
+  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, Math.floor(props.frame / 4)) : [])
+  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.frame) : [])
   return (
     <Show when={props.vivid && (props.stars || props.meteors)}>
       <box position="absolute" zIndex={0} width={props.width} height={props.height} left={0} top={0}>
@@ -315,7 +366,7 @@ function Logo(props: { compact: boolean; frame: number; gradient: boolean }) {
               />
             )}</For>
           </box>
-          <box paddingTop={1} backgroundColor={COLOR.background}>
+          <box paddingTop={1}>
             <text fg={COLOR.faint}>Model is replaceable. Agent is ours.</text>
           </box>
         </box>
@@ -383,17 +434,6 @@ function ListDialog(props: {
     if (props.searchable) return
     key(event)
   })
-
-  const runInitialSetup = async () => {
-    setSetupFlow({ active: true, message: '首次使用 · 配置提供方与模型' })
-    try {
-      await providerManager(true)
-    } finally {
-      setSetupFlow({ active: false, message: '' })
-      refocusPrompt()
-      renderer.requestRender()
-    }
-  }
 
   onMount(() => {
     if (props.searchable) {
@@ -540,17 +580,6 @@ function InputDialog(props: {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   let field: TextareaRenderable | undefined
-  const runInitialSetup = async () => {
-    setSetupFlow({ active: true, message: '首次使用 · 配置提供方与模型' })
-    try {
-      await providerManager(true)
-    } finally {
-      setSetupFlow({ active: false, message: '' })
-      refocusPrompt()
-      renderer.requestRender()
-    }
-  }
-
   onMount(() => {
     if (!props.secret) {
       queueMicrotask(() => field?.focus())
@@ -686,7 +715,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
-  const starFrame = createMemo(() => Math.floor(phase() / 3))
   const logoFrame = createMemo(() => Math.floor(phase() / 2))
   const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][Math.floor(phase() / 3) % 4]!)
   const tip = createMemo(() => {
@@ -1350,15 +1378,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       <BackgroundSky
         width={dimensions().width}
         height={dimensions().height}
-        starFrame={starFrame()}
-        meteorFrame={phase()}
+        frame={phase()}
         vivid={settings().visual === 'vivid'}
         stars={settings().stars}
         meteors={settings().meteors}
       />
       <box position="relative" zIndex={10} flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
         <Show when={showLogo()}>
-          <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2} backgroundColor={COLOR.background}>
+          <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
             <Logo
               compact={compactLogo()}
               frame={logoFrame()}
@@ -1380,7 +1407,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
             scrollbarOptions={{ visible: false }}
           >
             <box width={dimensions().width} flexDirection="column" alignItems="center">
-              <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
+              <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
                 <For each={transcript()}>{item => {
                   const meta = roleMeta(item.role)
                   return (
@@ -1451,18 +1478,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           </box>
         </box>
 
-        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
+        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
           <For each={hintItems()}>{item => <text fg={COLOR.soft}>{item}</text>}</For>
         </box>
         <Show when={settings().tips}>
-          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1} backgroundColor={COLOR.background}>
+          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1}>
             <text fg={COLOR.orange}>●  提示</text>
             <text fg={COLOR.soft}>{tip()}</text>
           </box>
         </Show>
       </box>
 
-      <box position="relative" zIndex={10} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1} backgroundColor={COLOR.background}>
+      <box position="relative" zIndex={10} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
         <text fg={COLOR.faint}>{props.backend.workspace}</text>
         <text fg={COLOR.faint}>{props.backend.version}</text>
       </box>

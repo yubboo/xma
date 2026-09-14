@@ -323,3 +323,5 @@ DeepSeek 产品入口以目标厂商**当前官方 API 文档**为实时 Contrac
 本批只把 `XiaomiMiMo/MiMo-Code` 作为 **Terminal UI/UX 视觉参考**，固定参考 commit `6fbb1732232c9d0ecefee209798a8586d78cb70d`（MIT）。重点审阅 `packages/opencode/src/cli/cmd/tui/routes/home.tsx`、`component/prompt/index.tsx`、`component/logo.tsx` 与中文 i18n 提示：吸收居中 Home、约 75 列 Prompt、真实输入区、状态/快捷键弱化层级与适度背景装饰。
 
 XMA 不复制 MiMo 品牌、Logo、文案、Agent/Provider/命令体系。经 Windows Terminal 实机验证，旧 Pi TUI + 手写 ANSI caret/mouse 补丁会与宿主 Text Cursor Indicator/focus 状态互相干扰，因此 Active Terminal Host 改为参考该 commit 已验证的 `Bun 1.3.14 + @opentui/core/@opentui/solid 0.1.101 + solid-js 1.9.11`。吸收范围严格限定为 Renderer、Textarea、Keyboard、Dialog/Flex layout 与构建方式；Core Agent Runtime、Workspace Policy、Tool Approval 语义、Provider、Session 和 Rust Native Kernel 继续由 XMA 自己控制。
+
+2026-09-14 为修正流星轨迹进一步审阅 MiMo Code 当前 `packages/opencode/src/cli/cmd/tui/component/starry-background.tsx`：其关键不是“多个字符块沿 x/y 跳格移动”，而是一个全屏 `StyledText` 背景平面，将连续浮点轨迹采样到 Unicode Braille 2×4 子像素，按真实运动向量生成长尾并对亮度做包络衰减；星点则以低频随机亮度更新。XMA 只吸收这种渲染技术与参数量级，颜色、Logo、菜单、品牌与产品交互仍保持 Xiaoyu 自己的实现。
