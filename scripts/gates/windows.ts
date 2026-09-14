@@ -65,13 +65,14 @@ for (const marker of [
   'Electron Chromium Runtime 不会在这里下载',
   'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
   'package/lockfile/node_modules 是否仍一致',
-  "$cliTuiPackage = Join-Path $Root 'apps\\cli\\node_modules\\@earendil-works\\pi-tui\\package.json'",
+  "$openTuiRuntimeRoot = Join-Path $Root 'apps\\cli\\opentui-runtime'",
+  "Invoke-XmaExternal -FilePath $bunExe -ArgumentList @('install','--no-save')",
   'Xiaoyu TUI framework 已准备完成',
   'function Install-XmaDevelopmentCommands',
   "$devBin = Join-Path $Root '.xma\\dev-bin'",
   "@('xiaoyu.cmd','xma.cmd')",
   "[Environment]::SetEnvironmentVariable('Path', ($nextUserEntries -join ';'), 'User')",
-  '[8/8] 开发态 Xiaoyu 命令',
+  '[9/9] 开发态 Xiaoyu 命令',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -92,7 +93,9 @@ if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/
 const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
   'function Assert-CliJsDependencies',
-  '@earendil-works\\pi-tui\\package.json',
+  'opentui-runtime\\node_modules\\@opentui\\core\\package.json',
+  'opentui-runtime\\node_modules\\@opentui\\solid\\package.json',
+  'Bun/OpenTUI Runtime',
   'Assert-CliJsDependencies\r\n  Assert-DesktopJsDependencies',
   "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]",
   "'cli' { Start-Cli -WorkspacePath $Workspace }",

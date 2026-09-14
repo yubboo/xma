@@ -265,7 +265,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 
 - `xiaoyu` canonical command + `xma` compatibility alias；
 - 持续 TUI，而不是欢迎页打印后退出；
-- 固定 Pi TUI 0.74.0 作为 Node 22 兼容差分渲染/Overlay/IME 光标定位基础层；主输入使用 XMA `SafePromptInput`，禁止使用上游 Editor/Input 的 reverse-video cursor；`CURSOR_MARKER` 仅定位隐藏硬件光标供 CJK IME 跟随，可见插入点由 XMA 软光标绘制；历史、多行与已实现命令的 `/` 自动补全继续保留。Home/Prompt Dock 固定锚点并按可见内容居中，横向宽度按终端列数响应式扩展，避免固定窄宽度压缩对话正文；`Ctrl+P` 与 `Ctrl+K` 的命令面板固定“左命令 / 中菜单 / 右说明”，Provider/Model 使用同一栅格的菜单/说明两列；交互期间通过完整 mouse reporting 接管普通拖动并在 Pi TUI 启动后重申模式，退出时恢复；底部提示必须按 Provider/Ready/快捷能力自动轮换，短暂通知不得永久覆盖提示；Terminal Settings（丰富/简洁、提示、Logo）继续作为真正可操作的 Overlay，不推动主布局；
+- Xiaoyu Active Terminal Host 固定采用 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.10`，只迁移 Renderer/Input/Focus/Dialog/Flex layout，不复制 MiMo Code 的 Agent/Provider/Session 业务。主输入必须使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、selection、paste 与多行；Active Renderer 禁止重新引入 `CURSOR_MARKER`、手写 DECTCEM、手写 mouse-reporting 或 reverse-video 假光标。Home/Transcript/Prompt/Shortcut/Notice 共享响应式居中栅格并保持左右留白对称；`Ctrl+P` 与 `Ctrl+K` 共用可搜索命令面板，Provider/Model/Reasoning/Tool Approval 使用同一 OpenTUI Dialog/focus/key event 生命周期。旧 Pi TUI 仅迁移期保留 Workspace Trust 与纯合同/历史回归兼容，不得重新成为主工作台 Renderer；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
 - OpenAI-compatible Brain Terminal 配置闭环：用户级非 Secret Profile Store、OS Credentials 默认安全录入、Credential Env Reference 兼容、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；

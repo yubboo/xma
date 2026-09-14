@@ -7,6 +7,9 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 cd "$ROOT"
 
+BUN_VERSION="1.3.14"
+OPENTUI_VERSION="0.1.101"
+
 say_header() {
   version="$(node -p "require('./package.json').version" 2>/dev/null || printf '0.1.0')"
   printf '%s\n' '===================================================================='
@@ -29,6 +32,40 @@ ensure_pnpm() {
   require_command npm
   printf '%s\n' '[安装] Installing pnpm 11.17.0...'
   npm install --global pnpm@11.17.0
+}
+
+ensure_bun() {
+  target="$ROOT/.xma/tools/bun/$BUN_VERSION/bun"
+  if [ -x "$target" ] && [ "$($target --version 2>/dev/null || true)" = "$BUN_VERSION" ]; then
+    printf '[通过] Bun %s · Xiaoyu OpenTUI Runtime\n' "$BUN_VERSION"
+    return 0
+  fi
+  require_command curl
+  require_command unzip
+  os="$(uname -s)"
+  arch="$(uname -m)"
+  case "$os:$arch" in
+    Linux:x86_64) asset='bun-linux-x64' ;;
+    Linux:aarch64|Linux:arm64) asset='bun-linux-aarch64' ;;
+    Darwin:x86_64) asset='bun-darwin-x64' ;;
+    Darwin:arm64) asset='bun-darwin-aarch64' ;;
+    *) printf '[ERROR] Unsupported Bun platform: %s/%s\n' "$os" "$arch" >&2; return 1 ;;
+  esac
+  cache="$ROOT/.cache/bun"
+  zip="$cache/$asset-$BUN_VERSION.zip"
+  extract="$cache/extract-$BUN_VERSION-$asset"
+  mkdir -p "$cache" "$ROOT/.xma/tools/bun/$BUN_VERSION"
+  rm -rf "$extract"
+  mkdir -p "$extract"
+  printf '[下载] Bun %s · %s\n' "$BUN_VERSION" "$asset"
+  curl -fL "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/$asset.zip" -o "$zip"
+  unzip -q -o "$zip" -d "$extract"
+  downloaded="$(find "$extract" -type f -name bun -perm -u+x | head -n 1)"
+  [ -n "$downloaded" ] || { printf '%s\n' '[ERROR] bun executable not found in downloaded archive.' >&2; return 1; }
+  cp "$downloaded" "$target"
+  chmod +x "$target"
+  [ "$($target --version)" = "$BUN_VERSION" ] || { printf '%s\n' '[ERROR] Bun version verification failed.' >&2; return 1; }
+  printf '[通过] Bun %s · Xiaoyu OpenTUI Runtime\n' "$BUN_VERSION"
 }
 
 ensure_rust() {
@@ -58,27 +95,31 @@ assert_linker() {
 }
 
 prepare_environment() {
-  printf '%s\n' '[1/5] Node.js 22+'
+  printf '%s\n' '[1/6] Node.js 22+'
   require_command node
   major="$(node -p "Number(process.versions.node.split('.')[0])")"
   [ "$major" -ge 22 ] || { printf '[ERROR] Node.js 22+ required; current: %s\n' "$(node --version)" >&2; exit 1; }
   printf '[通过] %s\n' "$(node --version)"
 
-  printf '%s\n' '[2/5] pnpm 11.17.0'
+  printf '%s\n' '[2/6] pnpm 11.17.0'
   ensure_pnpm
   printf '[通过] pnpm %s\n' "$(pnpm --version)"
 
-  printf '%s\n' '[3/5] Rust / Cargo'
+  printf '%s\n' '[3/6] Bun 1.3.14 / OpenTUI Runtime'
+  ensure_bun
+
+  printf '%s\n' '[4/6] Rust / Cargo'
   ensure_rust
   assert_linker
   printf '[通过] %s\n' "$(rustc --version)"
   printf '[通过] %s\n' "$(cargo --version)"
 
-  printf '%s\n' '[4/5] Workspace JavaScript dependencies'
+  printf '%s\n' '[5/6] Workspace JavaScript dependencies + OpenTUI frontend'
   pnpm install --ignore-scripts
   pnpm rebuild esbuild
+  (cd "$ROOT/apps/cli/opentui-runtime" && "$ROOT/.xma/tools/bun/$BUN_VERSION/bun" install --no-save)
 
-  printf '%s\n' '[5/5] XMA Native Rust crates'
+  printf '%s\n' '[6/6] XMA Native Rust crates'
   cargo fetch
   printf '%s\n' '[完成] XMA source-development environment is ready.'
 }
@@ -89,13 +130,23 @@ assert_core_dependencies() {
   [ -x "$ROOT/node_modules/.bin/tsx" ] || { printf '%s\n' '[ERROR] Workspace dependencies are not ready. Run ./xma-dev and choose [1].' >&2; exit 1; }
 }
 
+assert_cli_dependencies() {
+  assert_core_dependencies
+  bun="$ROOT/.xma/tools/bun/$BUN_VERSION/bun"
+  [ -x "$bun" ] || { printf '%s\n' '[ERROR] Bun/OpenTUI runtime is not ready. Run ./xma-dev and choose [1].' >&2; exit 1; }
+  [ "$($bun --version)" = "$BUN_VERSION" ] || { printf '%s\n' '[ERROR] Bun version mismatch.' >&2; exit 1; }
+  for package in "$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/core/package.json" "$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/solid/package.json"; do
+    [ -f "$package" ] || { printf '[ERROR] Missing OpenTUI package: %s\n' "$package" >&2; exit 1; }
+  done
+}
+
 start_web() {
   assert_core_dependencies
   pnpm run dev:web
 }
 
 start_cli() {
-  assert_core_dependencies
+  assert_cli_dependencies
   require_command cargo
   target="$ROOT/.cache/cargo-target/cli"
   printf '%s\n' '[Native] Building current XMA Native Runtime (offline incremental build)...'
@@ -116,6 +167,9 @@ full_check() {
   assert_core_dependencies
   require_command cargo
   pnpm run check
+  printf '%s\n' '[check] Building and smoke-testing Bun/OpenTUI Xiaoyu CLI...'
+  pnpm run build:cli
+  pnpm run smoke:cli
   cargo fmt --all -- --check
   cargo check --workspace --offline
   cargo test --workspace --offline

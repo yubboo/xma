@@ -29,7 +29,8 @@ const os = productOs()
 const cpu = productArch()
 const artifactStem = `xiaoyu-${os}-${cpu}`
 const stageRoot = path.join(root, '.cache', 'release', 'cli', artifactStem)
-const cliBuild = path.join(root, 'dist', 'cli', 'main.js')
+const cliName = os === 'windows' ? 'xiaoyu.exe' : 'xiaoyu'
+const cliBuild = path.join(root, 'dist', 'cli', cliName)
 const serverBuild = path.join(root, 'dist', 'server', 'main.js')
 const webBuild = path.join(root, 'dist', 'web')
 const nativeName = os === 'windows' ? 'xma-native-runtime.exe' : 'xma-native-runtime'
@@ -43,7 +44,7 @@ for (const required of [cliBuild, serverBuild, webBuild, nativeBuild, process.ex
 await rm(stageRoot, { recursive: true, force: true })
 for (const dir of ['bin', 'runtime', 'app', 'web', 'native', 'skills']) await mkdir(path.join(stageRoot, dir), { recursive: true })
 
-await cp(cliBuild, path.join(stageRoot, 'app', 'cli.js'))
+await cp(cliBuild, path.join(stageRoot, 'app', cliName))
 await cp(serverBuild, path.join(stageRoot, 'app', 'server.js'))
 await cp(webBuild, path.join(stageRoot, 'web'), { recursive: true })
 await cp(process.execPath, path.join(stageRoot, 'runtime', nodeName))
@@ -53,16 +54,17 @@ await writeFile(path.join(stageRoot, 'VERSION'), `${version}\n`, 'utf8')
 await writeFile(path.join(stageRoot, 'bundle.json'), `${JSON.stringify({ schemaVersion: 1, product: 'xiaoyu', version, os, arch: cpu }, null, 2)}\n`, 'utf8')
 
 if (os === 'windows') {
-  const launcher = '@echo off\r\nset "XIAOYU_HOME=%~dp0.."\r\nset "XIAOYU_NATIVE_RUNTIME=%XIAOYU_HOME%\\native\\xma-native-runtime.exe"\r\nset "XIAOYU_SKILLS_HOME=%XIAOYU_HOME%\\skills"\r\n"%XIAOYU_HOME%\\runtime\\node.exe" "%XIAOYU_HOME%\\app\\cli.js" %*\r\n'
+  const launcher = '@echo off\r\nset "XIAOYU_HOME=%~dp0.."\r\nset "XIAOYU_NATIVE_RUNTIME=%XIAOYU_HOME%\\native\\xma-native-runtime.exe"\r\nset "XIAOYU_SKILLS_HOME=%XIAOYU_HOME%\\skills"\r\nset "XIAOYU_NODE_RUNTIME=%XIAOYU_HOME%\\runtime\\node.exe"\r\n"%XIAOYU_HOME%\\app\\xiaoyu.exe" %*\r\n'
   await writeFile(path.join(stageRoot, 'bin', 'xiaoyu.cmd'), launcher, 'utf8')
   await writeFile(path.join(stageRoot, 'bin', 'xma.cmd'), launcher, 'utf8')
 } else {
-  const launcher = '#!/bin/sh\nset -eu\nXIAOYU_HOME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexport XIAOYU_HOME\nexport XIAOYU_NATIVE_RUNTIME="$XIAOYU_HOME/native/xma-native-runtime"\nexport XIAOYU_SKILLS_HOME="$XIAOYU_HOME/skills"\nexec "$XIAOYU_HOME/runtime/node" "$XIAOYU_HOME/app/cli.js" "$@"\n'
+  const launcher = '#!/bin/sh\nset -eu\nXIAOYU_HOME="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"\nexport XIAOYU_HOME\nexport XIAOYU_NATIVE_RUNTIME="$XIAOYU_HOME/native/xma-native-runtime"\nexport XIAOYU_SKILLS_HOME="$XIAOYU_HOME/skills"\nexport XIAOYU_NODE_RUNTIME="$XIAOYU_HOME/runtime/node"\nexec "$XIAOYU_HOME/app/xiaoyu" "$@"\n'
   for (const name of ['xiaoyu', 'xma']) {
     const launcherPath = path.join(stageRoot, 'bin', name)
     await writeFile(launcherPath, launcher, 'utf8')
     await chmod(launcherPath, 0o755)
   }
+  await chmod(path.join(stageRoot, 'app', cliName), 0o755)
   await chmod(path.join(stageRoot, 'runtime', nodeName), 0o755)
   await chmod(path.join(stageRoot, 'native', nativeName), 0o755)
 }

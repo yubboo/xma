@@ -1,8 +1,8 @@
 /**
- * 文件作用：实现 XMA `xiaoyu` 终端工作台的交互界面、主题、命令分发与 Workspace 风险确认。
- * 关联模块：main.ts、Core Agent Runtime、Workspace、Provider、Tool Approval 与 Native 文件 ToolSet。
- * 当前实现：基于 Pi TUI 差分渲染/Overlay 与 XMA Safe Prompt 硬件光标，提供固定 Home/Prompt Dock、首次无 Brain 自动配置、Ctrl+P 长期管理、真实 Provider Catalog/多 Profile/模型切换、终端设置、流式回复与 Tool Approval。
- * 职责边界：TUI 只负责终端视觉和交互；不得复制 Agent Loop、Provider 协议、Workspace Policy 或 Native 安全逻辑。
+ * 文件作用：保留 Xiaoyu Terminal 的 Workspace Trust、共享纯合同/布局函数与迁移期 Pi TUI 历史回归兼容实现。
+ * 关联模块：main.ts、apps/cli/opentui-runtime/app.tsx、brain.ts、旧 TUI 回归测试与 Workspace Trust。
+ * 当前实现：Active 工作台已迁移到 Bun/OpenTUI；本文件继续提供 Workspace 风险确认、TerminalBackend/模式/菜单纯合同，并暂存不再由 main.ts 调用的旧 Pi TUI Renderer 以支持迁移期回归。
+ * 职责边界：不得把本文件的 Pi TUI/手写 ANSI 光标与 mouse-reporting 重新接回 Active 工作台；Agent Loop、Provider、Session 与 Native 安全仍由各自 ownership 实现。
  */
 
 import { homedir } from 'node:os'
@@ -28,6 +28,8 @@ const blue = `${ESC}38;2;111;174;255m`
 const yellow = `${ESC}38;2;224;190;72m`
 const red = `${ESC}38;2;238;94;94m`
 const clearScreen = `${ESC}2J${ESC}H`
+const hideHardwareCursor = `${ESC}?25l`
+const showHardwareCursor = `${ESC}?25h`
 const enterAltScreen = `${ESC}?1049h`
 const leaveAltScreen = `${ESC}?1049l`
 export const terminalMouseCaptureSequence = `${ESC}?1000h${ESC}?1002h${ESC}?1003h${ESC}?1006h`
@@ -114,7 +116,7 @@ function terminalSettingsPath(): string {
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(homedir(), '.config'), 'xiaoyu', 'tui.json')
 }
 
-function loadTerminalUiSettings(): TerminalUiSettings {
+export function loadTerminalUiSettings(): TerminalUiSettings {
   try {
     const raw = JSON.parse(readFileSync(terminalSettingsPath(), 'utf8')) as Partial<TerminalUiSettings>
     return {
@@ -127,7 +129,7 @@ function loadTerminalUiSettings(): TerminalUiSettings {
   }
 }
 
-function saveTerminalUiSettings(settings: TerminalUiSettings): void {
+export function saveTerminalUiSettings(settings: TerminalUiSettings): void {
   try {
     const file = terminalSettingsPath()
     mkdirSync(path.dirname(file), { recursive: true })
@@ -816,8 +818,8 @@ function cursorCell(value: string, index: number): number {
 }
 
 /**
- * Windows Terminal 安全 Prompt：CURSOR_MARKER 只负责定位隐藏的硬件光标供 IME 跟随，
- * 可见光标由 XMA 使用橙色下划线软光标绘制；不输出 ESC[7m 反色，也不显示 Windows 文本光标指示器。
+ * Windows Terminal 安全 Prompt：主工作台完全不输出 Pi TUI CURSOR_MARKER，避免 Windows 文本光标指示器
+ * 在终端边缘显示蓝色上下标记。可见输入焦点全部由 XMA 自己绘制软光标/闪烁首字，硬件光标始终隐藏。
  */
 export class SafePromptInput {
   focused = false
@@ -1070,10 +1072,10 @@ export class SafePromptInput {
       const afterWidth = Math.max(0, safeWidth - cellWidth(before) - atCursorWidth)
       const after = sliceCells(line.slice(cursorEnd), 0, afterWidth)
       const softCursor = `${orange}${underline}${atCursor}${reset}`
-      rendered.push(`${before}${this.toolkit.CURSOR_MARKER}${softCursor}${after}`)
+      rendered.push(`${before}${softCursor}${after}`)
     })
 
-    if (rendered.length === 0) rendered.push(this.focused ? `${this.toolkit.CURSOR_MARKER}${orange}${underline} ${reset}` : '')
+    if (rendered.length === 0) rendered.push(this.focused ? `${orange}${underline} ${reset}` : '')
     return rendered
   }
 
@@ -1858,8 +1860,8 @@ class XiaoyuSurface {
 
         if (searchable) {
           const searchValue = query
-            ? `${text}${query}${reset}${this.toolkit.CURSOR_MARKER}${orange}│${reset}`
-            : `${this.toolkit.CURSOR_MARKER}${orange}│${reset}${textFaint} 输入关键词…${reset}`
+            ? `${text}${query}${reset}${blink}${bold}${text}│${reset}`
+            : `${blink}${bold}${text}│${reset}${textFaint} 输入关键词…${reset}`
           lines.push(paintLine(`${textFaint}搜索${reset}  ${searchValue}`), '')
         }
 
@@ -2130,7 +2132,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
   let stopped = false
 
   try {
-    output.write(`${enterAltScreen}${setTitle('Xiaoyu')}${clearScreen}`)
+    output.write(`${enterAltScreen}${hideHardwareCursor}${setTitle('Xiaoyu')}${clearScreen}`)
     tui.addChild(surface)
     tui.setFocus(surface)
     tui.addInputListener((data: string) => {
@@ -2152,7 +2154,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
       return undefined
     })
     tui.start()
-    output.write(terminalMouseCaptureSequence)
+    output.write(`${hideHardwareCursor}${terminalMouseCaptureSequence}`)
     tui.requestRender(true)
     surface.startInitialBrainSetup()
     await new Promise<void>(resolve => surface.setExitResolver(resolve))
@@ -2163,7 +2165,7 @@ export async function runTui(backend: TerminalBackend): Promise<void> {
       try { tui.stop() } catch { /* best effort terminal restore */ }
     }
     await backend.close()
-    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${leaveAltScreen}`)
+    output.write(`${terminalMouseReleaseSequence}${showHardwareCursor}${reset}${clearScreen}${leaveAltScreen}`)
     output.write(`${textFaint}Xiaoyu 已退出。${reset}\n`)
   }
 }

@@ -30,7 +30,7 @@ import {
 import { registerNativeTools } from 'xma-plugin-native-tools'
 import { codeAgent } from 'xma-agent-code'
 import { xiaoyuAgent } from 'xma-agent-xiaoyu'
-import { confirmWorkspaceTrust, runTui, type BrainProbeView, type DoctorItem, type TerminalAgentMode, type TerminalBackend, type TerminalReasoningEffort } from './tui.ts'
+import { confirmWorkspaceTrust, type BrainProbeView, type DoctorItem, type TerminalAgentMode, type TerminalBackend, type TerminalReasoningEffort } from './tui.ts'
 import { TerminalBrainStore, osCredentialKey, profileToProvider, type TerminalBrainProfile } from './brain.ts'
 
 const AGENT_ID = codeAgent.id
@@ -53,6 +53,11 @@ export interface ParsedArgs {
 }
 
 function version(): string {
+  const portableHome = process.env.XIAOYU_HOME?.trim()
+  if (portableHome) {
+    const portableVersion = path.join(path.resolve(portableHome), 'VERSION')
+    if (existsSync(portableVersion)) return readFileSync(portableVersion, 'utf8').trim()
+  }
   const versionFile = path.resolve(moduleDir, '..', 'VERSION')
   if (existsSync(versionFile)) return readFileSync(versionFile, 'utf8').trim()
   const packageFile = path.resolve(moduleDir, '../../..', 'package.json')
@@ -539,6 +544,11 @@ async function createBackend(workspace: string, currentVersion: string): Promise
 }
 
 function bundledEntry(name: 'server.js'): string | undefined {
+  const portableHome = process.env.XIAOYU_HOME?.trim()
+  if (portableHome) {
+    const portable = path.join(path.resolve(portableHome), 'app', name)
+    if (existsSync(portable)) return portable
+  }
   const bundled = path.resolve(moduleDir, name)
   if (existsSync(bundled)) return bundled
   const development = path.resolve(moduleDir, '../../../dist/server/main.js')
@@ -557,8 +567,14 @@ async function runServer(mode: 'server' | 'web'): Promise<number> {
     const devWeb = path.resolve(moduleDir, '../../../dist/web')
     env.XIAOYU_WEB_ROOT = existsSync(bundledWeb) ? bundledWeb : devWeb
   }
+  const runningUnderBun = 'bun' in process.versions
+  const nodeRuntime = process.env.XIAOYU_NODE_RUNTIME?.trim() || (runningUnderBun ? undefined : process.execPath)
+  if (!nodeRuntime) {
+    process.stderr.write('当前 Xiaoyu CLI 没有配置 Node Server Runtime。请使用正式 portable launcher，或在源码开发态通过 xma-dev 启动。\n')
+    return 2
+  }
   return await new Promise<number>((resolve, reject) => {
-    const child = spawn(process.execPath, [entry], { stdio: 'inherit', env, shell: false })
+    const child = spawn(nodeRuntime, [entry], { stdio: 'inherit', env, shell: false })
     child.once('error', reject)
     child.once('exit', code => resolve(code ?? 1))
   })
@@ -590,7 +606,9 @@ async function main(): Promise<number> {
     return USER_CANCEL_EXIT_CODE
   }
   const backend = await createBackend(args.workspace, currentVersion)
-  await runTui(backend)
+  // 中文说明：OpenTUI/Solid 只在真实交互 TUI 路径按需加载，doctor/help/tests 继续保持纯 Node 可执行。
+  const { runOpenTui } = await import('../opentui-runtime/app.tsx')
+  await runOpenTui(backend)
   return 0
 }
 

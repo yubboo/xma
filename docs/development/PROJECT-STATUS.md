@@ -14,7 +14,7 @@
 
 Platform Skeleton v1 已进入源码：`xma-ai / xma-agent-loop / xma-plugin / xma-tools / xma-session / xma-context / xma-native` 成为稳定 workspace package，DeepSeek / Native Tools / DSH compatibility 按插件本体聚合，`core/` 已收缩为 Compatibility Facade。**这只完成 ownership/目录/稳定入口迁移，尚未开始 Pi Agent Loop 的行为级吸收或大规模 Runtime 语义重写。** 正式战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`，快速定位见根 `CODEMAP.md`，实时工程变更见 `docs/development/UPDATE-LOG.md`。
 
-Platform Skeleton v1 当前已完成本地收口验证：平台源码 targeted strict typecheck 通过；57 个可离线执行测试通过；9 项静态 Gate 通过。由于当前沙箱没有完整 pnpm/Electron/pi-tui/Rust 工具链，完整 `pnpm check`、TUI 依赖测试与 Cargo/Windows 实机验证仍以用户 Windows `[7] 全量检查` 为最终权威，不能用本地部分验证替代。
+Platform Skeleton v1 当前已完成本地收口验证：平台源码 targeted strict typecheck 通过；57 个可离线执行测试通过；9 项静态 Gate 通过。当前 Terminal 表现层已进入 OpenTUI 迁移批次；Windows/Unix `[7] 全量检查` 已把 Bun/OpenTUI CLI 的真实编译与 `--version` / `--help` 烟测纳入强制步骤。沙箱仍不能替代用户 Windows Terminal / IME / Native Renderer 实机验证，完整 `pnpm check`、Cargo 与用户机器 `[7] 全量检查` 仍是最终权威。
 
 ## 2. 已实现的骨架证据
 
@@ -61,8 +61,8 @@ Platform Skeleton v1 当前已完成本地收口验证：平台源码 targeted s
 - portable Terminal staging（内置 Node + CLI/Server/Web + Native）与 Windows/Unix bootstrap installer 第一版；
 - `xiaoyu` canonical command、`xma` compatibility alias、Home/root Workspace 风险确认；Brain 已升级为多 Profile 的真实 Provider Catalog：首个品牌入口是 DeepSeek Official，自定义 OpenAI-compatible 继续保留；`brain.json` v3 保存品牌/Profile/Adapter/Base URL/Model/Credential Reference，OS Credentials 为默认 Secret 路径，v1/v2 legacy 配置继续显式迁移；
 - Terminal 已增加 `/model` 与真实模型目录选择；DeepSeek 品牌配置按 API Key → 真实模型 → 推理强度 → Brain Ready 顺序完成，reasoning effort 支持 Default/high/max 并持久化为 Profile option；Prompt Dock 显示 Mode + Provider/Model + Reasoning，Tab/Shift+Tab 在 Build/Plan/Compose(legacy) 间切换，其中 Plan 只暴露只读工具、Compose 不暴露 Workspace 工具；DeepSeek 保留 thinking+tools 的协议续传状态；
-- Terminal TUI 使用固定 `@earendil-works/pi-tui@0.74.0` 的差分渲染/Overlay/IME 光标定位能力，主 Prompt 使用 XMA `SafePromptInput`：不再使用上游 Editor/Input 的 reverse-video 假光标；`CURSOR_MARKER` 只定位隐藏硬件光标供 CJK IME 跟随，可见插入点改为 XMA 软光标，避免 Windows 文本光标指示器的蓝色双标记；输入历史、多行、斜杠补全继续保留。TUI/Workspace Trust 活跃期间启用更完整的 SGR mouse reporting，并在 Pi TUI 启动后再次接管普通左键拖动，退出时恢复，避免宿主原生文本选择白块；Home/Prompt 横向 Dock 使用响应式内容宽度并保持居中，常规终端优先减少两侧空白、给对话正文更完整的行宽；`Ctrl+P` / `Ctrl+K` 命令面板固定为“左侧命令 / 中间菜单 / 右侧说明”，Provider/Model 保持菜单/说明两列；Home 底部提示恢复按状态自动轮换，短暂操作通知到期后继续轮播；
-- Terminal Runtime live projection 已补齐：真实 Provider `text/reasoning delta`、Tool Call、Tool Result 进入同一对话投影；针对 pi-tui 0.74.0 差分聊天区域可能漏刷的问题，TUI 使用节流的强制 repaint 保证增量真实上屏；Agent Context 显式锁定中文自称“小鱼”。
+- Terminal Active Renderer 已迁移为固定 `Bun 1.3.14 + OpenTUI 0.1.101 + Solid 1.9.10`：主 Prompt 使用 OpenTUI 原生 Textarea，命令/Provider Dialog 使用同一 Renderer/focus/key event，Home/Transcript/Prompt/快捷栏使用 Flexbox 响应式布局；旧 Pi TUI 仅暂留 Workspace Trust 与纯回归兼容，不再承担主工作台。
+- Terminal Runtime live projection 继续复用既有 Agent Runtime：真实 Provider text/reasoning delta、Tool Call、Tool Result 进入同一对话投影；OpenTUI 仅负责 live projection 的显示，不复制 Provider/Agent Loop。
 - Terminal 第一批 Rust-backed 文件 ToolSet：`native.fs.read_text/write_text`，写入通过 TUI deny/allow-once/allow-session Approval；process Tool 默认不注册；
 - Architecture / Naming / Comment / Documentation / Version / Windows / Repository Gates；
 - 项目命名/模块粒度规则已锁定：TS/目录 kebab-case、Rust snake_case、语义点号、1～3 核心词、父目录去重；Session/Tool/Electron/Gate 已按规则完成分组重构；

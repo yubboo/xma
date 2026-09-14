@@ -154,3 +154,27 @@
 - 快捷栏栅格：`tab / shift+tab`、`ctrl+p`、`ctrl+k`、`/`、`ctrl+c`、`esc` 作为同一组快捷项按当前内容宽度等分剩余间距；整行宽度严格等于居中内容栅格，因此左/右黑色留白继续保持对称，Esc 与其他快捷项共享同一基线。
 - 回归：新增纯布局测试，锁定 34 行终端下 `hintRow=31 / promptEnd=29`、footer 前独立空行、Esc 可返回条件，以及 92-cell 快捷栏等距分布/右端 `esc 返回` 对齐合同。
 - 交付：未冻结 `0.1.0` 继续覆盖生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`；Windows Terminal 最终视觉与 Esc 键实机行为仍以用户验收为最终证据。
+
+##14 · Terminal 硬件光标彻底隐藏与输入软提示
+
+- 日期：2026-09-14
+- 目的：修复 Windows Terminal 实机中输入占位首字改为白色闪烁后，Pi TUI 的硬件光标定位标记缺失/回退导致 Windows Text Cursor Indicator 在右上角重新出现蓝色双标记的问题。
+- 根因：上一批空输入状态改为直接绘制“输”字闪烁，占位渲染不再消费 `SafePromptInput.render()` 返回的 `CURSOR_MARKER`；Pi TUI/终端仍保留硬件光标坐标语义，Windows 的 Text Cursor Indicator 因而在 fallback 坐标（实机表现为右上角）显示蓝色上下标记。
+- 修复：Xiaoyu 主工作台与命令搜索框不再输出任何 Pi TUI `CURSOR_MARKER`；输入焦点统一由 XMA 自绘软提示表达。空输入使用白色闪烁“输”字，已有输入继续使用下划线软光标，搜索框使用白色闪烁竖线。
+- 终端契约：进入 alternate-screen 前和 `tui.start()` 后都显式发送 `DECTCEM hide`（`ESC[?25l`），退出时在恢复 mouse reporting 后发送 `DECTCEM show`（`ESC[?25h`），确保不把隐藏硬件光标状态泄漏给父终端。
+- 回归：CLI TUI 测试改为断言 Safe Prompt 不输出 `CURSOR_MARKER`、仍保留非反色软光标与 secret mask；`tui.ts` / `tui.test.ts` Node strip-types 语法检查通过。Windows Text Cursor Indicator 的最终视觉仍以 Windows Terminal 实机验收为准。
+- 交付：未冻结 `0.1.0` 继续覆盖同名正式源码包与 SHA-256，不创建临时 hotfix/fixed 包。
+
+##15 · OpenTUI Active Renderer 迁移
+
+- 日期：2026-09-14
+- 目的：结束旧 Pi TUI + 手写 ANSI caret/mouse 补丁在 Windows Terminal 上持续出现的 Text Cursor Indicator 锚点漂移、Tab 模式切换后蓝色双标记复发与布局状态互相干扰问题；不再继续叠加局部光标补丁。
+- Upstream 依据：按 MiMo Code 已验证组合锁定 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.10`，只吸收 `createCliRenderer`、原生 `TextareaRenderable`、Solid key/focus、Dialog/Flex layout 与 Bun build/plugin 用法；不复制 MiMo 的 Agent、Provider、Session、命令体系或品牌视觉。
+- Active Renderer：新增 `apps/cli/opentui-runtime/` 作为独立 Bun/OpenTUI 前端域，主工作台改用原生 `<textarea>` 管理 caret/IME/selection/paste，多行输入、Tab/Shift+Tab 模式切换、Ctrl+P/Ctrl+K、Esc、Provider/Model/Reasoning、Tool Approval、鼠标与 resize 统一进入同一 Renderer 生命周期；`apps/cli/src/tui.ts` 暂只保留 Workspace Trust、纯合同与历史回归兼容，不再承担主工作台。
+- 布局：新增 `apps/cli/src/opentui-layout.ts` 纯函数，Home/Transcript/Prompt/Shortcut/Notice 使用同一居中响应式宽度；112 列终端内容宽度为 102 cell、左右各 5 cell，避免之前正文过窄或一侧留黑明显更多。
+- 依赖边界：OpenTUI 依赖固定放 `apps/cli/opentui-runtime/package.json`，由 Bun 独立安装，不进入根 pnpm Workspace lock；根 Node/pnpm 继续负责 XMA 业务、Server/Web/脚本，portable CLI 则由 Bun + Solid transform plugin 编译为 `xiaoyu[.exe]`，Server 仍使用随包 Node Runtime。
+- 环境/发行：Windows `[1]` 与 Unix prepare 新增固定 Bun/OpenTUI 准备，CI/Release 同样独立 `bun install --cwd apps/cli/opentui-runtime --no-save`；`build:cli` 经 `scripts/cli/bun.ts` 构建，portable staging/installer 改为分发编译后的 `app/xiaoyu.exe` 或 `app/xiaoyu`。
+- 回归合同：Active OpenTUI 源码静态禁止 `CURSOR_MARKER`、手写 DECTCEM、手写 mouse capture/release 与 `new toolkit.TUI`；新增离线测试验证固定版本、原生 Textarea/focus、动态加载边界及响应式左右对称布局，并把 OpenTUI runtime 纳入中文文件头 Gate。
+- 当前验证：本沙箱已完成变更文件 TypeScript/TSX 语法转译、OpenTUI 纯合同测试 4/4、Unix Shell `sh -n` 与 9 项静态 Gate；Source Manifest 已在本批重新生成。另新增 `scripts/cli/smoke.ts`，Windows/Unix `[7]`、CI 与 Release 在依赖已准备环境中都会先编译 `xiaoyu[.exe]`，再执行 `--version` / `--help` 无交互烟测，避免“静态 Gate 通过但 OpenTUI Native CLI 实际不能启动”。当前沙箱没有 Bun/OpenTUI node_modules 且无法访问 npm registry，因此不冒充执行本机 OpenTUI Native build 或完整 `pnpm typecheck`。Windows Terminal 最终仍必须实机验收原生 caret/IME、Tab/Shift+Tab 后焦点不漂移、蓝色 Text Cursor Indicator 不再跑到屏幕其他位置、Ctrl+P/Ctrl+K/Esc、鼠标拖动、resize 与退出状态恢复。
+- 交付：未冻结 `0.1.0` 继续只生成正式 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止临时 OpenTUI/fixed/hotfix 包名。
+

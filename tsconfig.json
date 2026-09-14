@@ -11,10 +11,13 @@
       "node"
     ],
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid"
   },
   "include": [
     "apps/**/*.ts",
+    "apps/**/*.tsx",
     "core/**/*.ts",
     "packages/**/*.ts",
     "agents/**/*.ts",

@@ -10,6 +10,8 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 $ElectronVersion = '41.2.0'
+$BunVersion = '1.3.14'
+$OpenTuiVersion = '0.1.101'
 
 function Confirm-XmaAction([string]$Message) {
   while ($true) {
@@ -31,6 +33,47 @@ function Ensure-XmaWinget {
   if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
     throw '未检测到 winget。请先安装或更新 Microsoft App Installer，再重新运行 XMA。'
   }
+}
+
+
+function Get-XmaBunExecutable {
+  return (Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe")
+}
+
+function Install-XmaBunRuntime {
+  $bunExe = Get-XmaBunExecutable
+  if (Test-Path $bunExe) {
+    $actual = (& $bunExe --version).Trim()
+    if ($actual -eq $BunVersion) {
+      Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+      return $bunExe
+    }
+  }
+
+  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
+  $toolsRoot = Join-Path $Root '.xma\tools\bun'
+  $targetRoot = Join-Path $toolsRoot $BunVersion
+  $cacheRoot = Join-Path $Root '.cache\bun'
+  $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
+  $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
+  New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+  if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+
+  $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
+  Write-Host "[下载] 正在准备固定 Bun $BunVersion（OpenTUI Runtime）..." -ForegroundColor Yellow
+  Write-Host "[来源] $url" -ForegroundColor DarkGray
+  Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+  Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+  $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
+  if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
+  if (Test-Path $targetRoot) { Remove-Item $targetRoot -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+  Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
+  $actual = (& $bunExe --version).Trim()
+  if ($actual -ne $BunVersion) { throw "Bun 版本校验失败：期望 $BunVersion，实际 $actual。" }
+  Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+  return $bunExe
 }
 
 
@@ -86,11 +129,11 @@ Write-Host '====================================================================
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：会安装 Workspace JavaScript 依赖、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
+Write-Host '说明：会安装 Workspace JavaScript 依赖、固定 Bun/OpenTUI Runtime、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
 
-Write-Host '[1/8] Git' -ForegroundColor Cyan
+Write-Host '[1/9] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
 if (Get-Command git.exe -ErrorAction SilentlyContinue) {
   Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green
@@ -106,7 +149,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) {
 }
 
 Write-Host ''
-Write-Host '[2/8] Node.js 22+' -ForegroundColor Cyan
+Write-Host '[2/9] Node.js 22+' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js。' -ForegroundColor Yellow
@@ -133,7 +176,7 @@ if ($major -lt 22) {
 Write-Host "[通过] Node.js $nodeVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[3/8] pnpm 11.17.0' -ForegroundColor Cyan
+Write-Host '[3/9] pnpm 11.17.0' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 pnpm 版本...' -ForegroundColor DarkCyan
 $pnpmVersion = if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) { (& pnpm.cmd --version).Trim() } else { '' }
 if ($pnpmVersion -ne '11.17.0') {
@@ -148,7 +191,12 @@ if ($pnpmVersion -ne '11.17.0') { throw "pnpm 版本校验失败：期望 11.17.
 Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[4/8] Rust / Cargo' -ForegroundColor Cyan
+Write-Host '[4/9] Bun 1.3.14 / OpenTUI Runtime' -ForegroundColor Cyan
+Write-Host '[检查] 正在准备 Xiaoyu OpenTUI 使用的固定 Bun Runtime...' -ForegroundColor DarkCyan
+$bunExe = Install-XmaBunRuntime
+
+Write-Host ''
+Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
 $hasCargo = [bool](Get-Command cargo.exe -ErrorAction SilentlyContinue)
 $hasRustc = [bool](Get-Command rustc.exe -ErrorAction SilentlyContinue)
@@ -174,7 +222,7 @@ Write-Host "[通过] $(& rustc.exe --version)" -ForegroundColor Green
 Write-Host "[通过] $(& cargo.exe --version)" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[5/8] MSVC C++ Build Tools' -ForegroundColor Cyan
+Write-Host '[6/9] MSVC C++ Build Tools' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Windows C++ 编译与链接工具...' -ForegroundColor DarkCyan
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $msvcReady = $false
@@ -198,17 +246,19 @@ if ($msvcReady) {
 }
 
 Write-Host ''
-Write-Host '[6/8] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
+Write-Host '[7/9] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 XMA Workspace JavaScript 依赖...' -ForegroundColor DarkCyan
 $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
 $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
 $tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
 $tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
-$cliTuiPackage = Join-Path $Root 'apps\cli\node_modules\@earendil-works\pi-tui\package.json'
+$openTuiRuntimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
+$cliOpenTuiCore = Join-Path $openTuiRuntimeRoot 'node_modules\@opentui\core\package.json'
+$cliOpenTuiSolid = Join-Path $openTuiRuntimeRoot 'node_modules\@opentui\solid\package.json'
 $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
 $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
 
-$jsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $cliTuiPackage) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
+$jsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $cliOpenTuiCore) -and (Test-Path $cliOpenTuiSolid) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
 if ($jsReady) {
   Write-Host '[同步] Workspace 依赖已存在，正在快速校验 package/lockfile/node_modules 是否仍一致...' -ForegroundColor DarkCyan
 } else {
@@ -222,6 +272,15 @@ Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scri
 Write-Host '[安装] 正在准备 esbuild 当前平台 Native Binary...' -ForegroundColor Yellow
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
 
+Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
+Push-Location $openTuiRuntimeRoot
+try {
+  # 中文说明：OpenTUI 前端依赖由固定 Bun 独立管理，不进入 pnpm workspace lock；--no-save 避免准备环境污染源码锁文件。
+  Invoke-XmaExternal -FilePath $bunExe -ArgumentList @('install','--no-save')
+} finally {
+  Pop-Location
+}
+
 Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
@@ -231,10 +290,12 @@ Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version
 # 使用 tsx 执行一段最小 TypeScript 来验证 esbuild Native Binary 真正可用，避免 pnpm strict linker 下 `pnpm exec esbuild` 误报找不到命令。
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
 
-if (-not (Test-Path $cliTuiPackage)) { throw 'Xiaoyu TUI package 元数据缺失。' }
-$installedTui = (Get-Content $cliTuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
-if ($installedTui -ne '0.74.0') { throw "Xiaoyu TUI package 版本不一致：期望 0.74.0，实际 $installedTui。" }
-Write-Host "[通过] Xiaoyu TUI framework 已准备完成：@earendil-works/pi-tui $installedTui。" -ForegroundColor Green
+foreach ($openTuiPackage in @($cliOpenTuiCore, $cliOpenTuiSolid)) {
+  if (-not (Test-Path $openTuiPackage)) { throw "Xiaoyu OpenTUI package 元数据缺失：$openTuiPackage" }
+  $installed = (Get-Content $openTuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
+  if ($installed -ne $OpenTuiVersion) { throw "Xiaoyu OpenTUI 版本不一致：期望 $OpenTuiVersion，实际 $installed。" }
+}
+Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Bun $BunVersion。" -ForegroundColor Green
 
 if (-not (Test-Path $desktopElectronPackage)) { throw 'Desktop Electron package 元数据缺失。' }
 $installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
@@ -243,14 +304,14 @@ if (-not (Test-Path $desktopTauriCmd)) { throw 'Tauri 2 CLI package 未安装完
 Write-Host "[通过] Workspace JavaScript 依赖已准备完成；Electron package 锁定 $ElectronVersion，未要求下载 Chromium Runtime。" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[7/8] XMA Native Rust crates' -ForegroundColor Cyan
+Write-Host '[8/9] XMA Native Rust crates' -ForegroundColor Cyan
 Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
 Write-Host '[同步] 正在预取 XMA Native Runtime 所需 Rust crates...' -ForegroundColor Yellow
 Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')
 Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[8/8] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
+Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在生成当前源码 checkout 的 xiaoyu/xma 开发命令并写入当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
 

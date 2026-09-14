@@ -81,7 +81,7 @@ try {
   Write-Host '[通过] SHA-256 校验通过。' -ForegroundColor Green
 
   Expand-Archive -LiteralPath $archive -DestinationPath $expanded -Force
-  foreach ($required in @('VERSION', 'bin\xiaoyu.cmd', 'runtime\node.exe', 'app\cli.js', 'native\xma-native-runtime.exe')) {
+  foreach ($required in @('VERSION', 'bin\xiaoyu.cmd', 'runtime\node.exe', 'app\xiaoyu.exe', 'native\xma-native-runtime.exe')) {
     if (-not (Test-Path (Join-Path $expanded $required))) { throw "Xiaoyu 安装包缺少文件：$required" }
   }
 

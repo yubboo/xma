@@ -18,7 +18,8 @@ Set-Location $Root
 $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
-$TuiVersion = '0.74.0'
+$OpenTuiVersion = '0.1.101'
+$BunVersion = '1.3.14'
 
 function Write-Header {
   Clear-Host
@@ -53,13 +54,19 @@ function Assert-CoreDependencies {
 
 function Assert-CliJsDependencies {
   Assert-CoreDependencies
-  $tuiPackage = Join-Path $Root 'apps\cli\node_modules\@earendil-works\pi-tui\package.json'
-  if (-not (Test-Path $tuiPackage)) {
-    throw 'Xiaoyu TUI 依赖尚未准备。源码升级后请先运行 [1] 一键准备开发环境。'
+  $bunExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
+  if (-not (Test-Path $bunExe)) { throw 'Xiaoyu Bun/OpenTUI Runtime 尚未准备。请先运行 [1] 一键准备开发环境。' }
+  $installedBun = (& $bunExe --version).Trim()
+  if ($installedBun -ne $BunVersion) { throw "Bun 版本不一致：期望 $BunVersion，实际 $installedBun。" }
+  foreach ($packageFile in @(
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\core\package.json'),
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\solid\package.json')
+  )) {
+    if (-not (Test-Path $packageFile)) { throw "Xiaoyu OpenTUI 依赖尚未准备：$packageFile" }
+    $installed = (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
+    if ($installed -ne $OpenTuiVersion) { throw "OpenTUI 版本不一致：期望 $OpenTuiVersion，实际 $installed。" }
   }
-  $installedTui = (Get-Content $tuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
-  if ($installedTui -ne $TuiVersion) { throw "Xiaoyu TUI 版本不一致：期望 $TuiVersion，实际 $installedTui。" }
-  Write-Host "[通过] Xiaoyu TUI framework 已就绪（@earendil-works/pi-tui $installedTui）。" -ForegroundColor Green
+  Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $BunVersion + OpenTUI $OpenTuiVersion）。" -ForegroundColor Green
 }
 
 function Assert-DesktopJsDependencies {
@@ -164,6 +171,7 @@ function Ensure-CliNativeRuntime {
 }
 
 function Start-Cli([string]$WorkspacePath = '') {
+  Assert-CliJsDependencies
   $nativeExe = Ensure-CliNativeRuntime
   $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
   $env:XIAOYU_NATIVE_RUNTIME = $nativeExe
@@ -233,6 +241,9 @@ function Invoke-FullCheck {
   if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。' }
   Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
+  Write-Host '[检查] 正在编译并烟测 Bun/OpenTUI Xiaoyu CLI...' -ForegroundColor Cyan
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:cli')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','smoke:cli')
   Write-Host '[检查] 正在运行 Rust fmt / check / test（offline）...' -ForegroundColor Cyan
   Write-Host '[缓存] Cargo 输出位于 .cache\cargo-target\；dist\ 只保留 XMA 产品构建/发布产物。' -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fmt','--all','--','--check')

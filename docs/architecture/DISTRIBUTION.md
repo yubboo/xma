@@ -22,8 +22,8 @@ XMA 不是“只有 Desktop 安装包”的应用。正式产品必须保持**�
 ```text
 xiaoyu-<os>-<arch>/
 ├─ bin/            xiaoyu + xma launcher
-├─ runtime/        XMA 自带 Node Runtime
-├─ app/            bundled CLI / Server JavaScript
+├─ runtime/        XMA 自带 Node Runtime（仅 Server/Web）
+├─ app/            Bun/OpenTUI 编译的 Xiaoyu CLI + bundled Server JavaScript
 ├─ web/            已构建 Web Shell
 ├─ native/         Rust Native Kernel
 ├─ skills/         XMA 产品级 canonical Skills
@@ -31,7 +31,7 @@ xiaoyu-<os>-<arch>/
 └─ bundle.json
 ```
 
-Node 在 0.1.x 第一批作为私有 Runtime 一起分发；未来可以评估 Node SEA，但不得为了“单文件”牺牲可验证升级、Native 边界或调试证据。
+0.1.x portable 仍携带私有 Node Runtime，但只服务 Server/Web；交互式 `xiaoyu` CLI 由固定 Bun 1.3.14 编译为当前平台可执行文件。不得为了“单文件”牺牲可验证升级、Native 边界或调试证据。
 
 ## 3. Windows 安装合同
 
@@ -90,12 +90,13 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 `xiaoyu [workspace]` 是正式 Terminal Workbench。第一批必须具备：
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
-- Terminal 对真实 Provider 的 text/reasoning SSE 必须按 Runtime live event 实时绘制，Tool Call/Result 同步可见；禁止“用户提交后静默等待，最终整段一次性出现”。Pi TUI 0.74.0 的差分漏刷由 Host 使用节流强制 repaint 兜底。
-- Terminal UI 固定 `@earendil-works/pi-tui@0.74.0` 作为差分渲染/Overlay/IME 光标定位基础层；主 Prompt 使用 XMA `SafePromptInput`，通过 `CURSOR_MARKER` 定位**隐藏**的硬件光标供 IME 跟随，可见插入点由 XMA 软光标绘制，不使用上游 Editor/Input 的 reverse-video，也不显示 Windows 文本光标指示器；视觉参考 MiMo Code 的居中 Home/Prompt，但不复制 MiMo 品牌、命令或业务 Runtime；
-- Prompt 的真实输入光标必须位于输入卡片内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
+- Terminal 对真实 Provider 的 text/reasoning SSE 必须按 Runtime live event 实时绘制，Tool Call/Result 同步可见；禁止“用户提交后静默等待，最终整段一次性出现”。
+- Active Terminal UI 固定采用 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.10`，版本基线与 MiMo Code 已验证组合对齐；OpenTUI 只接管 Terminal 表现/输入/焦点/布局，不接管 XMA Agent Runtime、Provider、Session、Workspace Policy、Tool Approval 或 Rust Native Kernel。
+- 主 Prompt 使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、选择、粘贴与多行输入；Active Renderer 禁止再次输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或 Pi TUI reverse-video 光标补丁。Tab 模式切换、Ctrl+P/Ctrl+K、Esc 返回和 Dialog focus 必须统一走 OpenTUI 键盘/焦点体系。
+- Home / Transcript / Prompt / Shortcut / Notice 使用 OpenTUI Flexbox 响应式布局，左右边距必须对称；Prompt 的真实输入光标必须位于输入组件内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
 - Home/Prompt Dock 必须固定锚点；自动补全、命令面板、提示和动态装饰不能推动 Logo/Prompt 主布局。纵向布局必须按终端高度保留明确呼吸区，对话区、输入 Dock、快捷键与提示区之间至少保留稳定空行；Overlay 打开时进入 modal focus，背景 Prompt 只保留紧凑状态 Dock，并隐藏全局快捷键/提示，禁止操作面板与输入区视觉叠压。Prompt Dock 持续显示 Mode + Provider/Model + Reasoning，模式和推理强度使用稳定颜色；Tab/Shift+Tab 循环 Build/Plan/Compose(legacy)，Build 暴露完整 ToolPlan，Plan 只暴露只读工具，Compose 不暴露 Workspace 工具。丰富显示只允许更新装饰层，简洁显示必须关闭装饰刷新；
-- Prompt/Editor 禁止混用 Pi TUI 光标反色与第二套手写 ANSI 背景，防止 Windows Terminal 出现整块反色/白屏；Xiaoyu 交互界面活跃期间必须启用终端 mouse reporting 接管普通左键点击/拖动并忽略这些鼠标事件，退出/取消时可靠恢复，避免 Windows Terminal 把 TUI 文本拖成大片白色选择区；用户仍可用终端保留的 Shift+拖动主动选择文本；
+- Active TUI 不得再混用 Pi TUI 光标反色、手写 ANSI 光标或第二套 mouse-reporting 状态机；鼠标、selection、focus 与 terminal lifecycle 交给 OpenTUI Renderer，避免 Windows Terminal 文本选择白块和 Text Cursor Indicator 锚点漂移。旧 `tui.ts` 在迁移期只保留 Workspace Trust / 纯合同 / 回归兼容，不能重新成为主工作台 Renderer；
 - Home/root 风险确认发生在进入 alternate-screen 工作台之前，默认选择“退出”，支持 ↑↓/Tab 切换与 Enter 确认；普通项目 Workspace 不重复弹风险提示；
 - 工作区信任界面选择“否，退出”属于正常用户取消，CLI 必须以成功退出语义返回，不得让 `xma-dev` / pnpm 包装层打印失败堆栈；
 - `xiaoyu --help / --version / doctor`；

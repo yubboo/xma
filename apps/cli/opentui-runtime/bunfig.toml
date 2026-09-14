@@ -1,0 +1,2 @@
+# OpenTUI Solid JSX 运行时必须在 Bun 启动前预加载；与 MiMo Code 的稳定用法保持一致。
+preload = ["@opentui/solid/preload"]

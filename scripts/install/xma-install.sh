@@ -55,7 +55,7 @@ fi
 echo '[通过] SHA-256 校验通过。'
 
 tar -xzf "$archive" -C "$expanded"
-for required in VERSION bin/xiaoyu runtime/node app/cli.js native/xma-native-runtime; do
+for required in VERSION bin/xiaoyu runtime/node app/xiaoyu native/xma-native-runtime; do
   [ -e "$expanded/$required" ] || { echo "安装包缺少文件：$required" >&2; exit 4; }
 done
 

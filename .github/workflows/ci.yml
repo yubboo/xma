@@ -14,6 +14,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.14'
       - run: npm install -g pnpm@11.17.0
       - name: Install workspace dependencies without Desktop runtime downloads
         shell: bash
@@ -24,9 +27,12 @@ jobs:
             pnpm install --no-frozen-lockfile --ignore-scripts
           fi
       - run: pnpm rebuild esbuild
+      - name: Install pinned Xiaoyu OpenTUI frontend
+        run: bun install --cwd apps/cli/opentui-runtime --no-save
       - run: pnpm check
       - run: pnpm build:web
       - run: pnpm build:cli
+      - run: pnpm smoke:cli
       - run: pnpm build:server
 
   rust-linux:

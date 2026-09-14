@@ -36,7 +36,7 @@
 | Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |
 | Windows 维护者 Source Sync | `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1` |
 | Windows 维护者 GitHub Helper | `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1` |
-| CLI / TUI | `apps/cli/` |
+| CLI / TUI | `apps/cli/src/`（产品入口/合同）+ `apps/cli/opentui-runtime/`（Bun/OpenTUI Active Renderer） |
 | Desktop | `apps/desktop/` |
 | Web | `apps/web/` |
 | Server | `apps/server/` |

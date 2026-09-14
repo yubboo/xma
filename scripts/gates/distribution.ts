@@ -13,11 +13,14 @@ function text(file: string): string {
 }
 
 const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string> }
-const cliPackage = JSON.parse(text('apps/cli/package.json')) as { bin?: Record<string, string>; dependencies?: Record<string, string> }
-if (cliPackage.bin?.xiaoyu !== '../../dist/cli/main.js') throw new Error('XMA canonical CLI command must be `xiaoyu`.')
-if (cliPackage.bin?.xma !== '../../dist/cli/main.js') throw new Error('XMA must keep `xma` as a compatibility alias.')
-if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Xiaoyu TUI must pin the Node-compatible Pi TUI runtime at 0.74.0.')
-if (!(rootPackage.scripts?.['build:cli'] ?? '').includes('--no-external @earendil-works/pi-tui')) throw new Error('Xiaoyu portable CLI must bundle the TUI runtime instead of depending on global node_modules.')
+const cliPackage = JSON.parse(text('apps/cli/package.json')) as { dependencies?: Record<string, string> }
+const openTuiPackage = JSON.parse(text('apps/cli/opentui-runtime/package.json')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+if (openTuiPackage.dependencies?.['@opentui/core'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI core must stay pinned to the MiMo-validated 0.1.101 baseline.')
+if (openTuiPackage.dependencies?.['@opentui/solid'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI Solid binding must stay pinned to 0.1.101.')
+if (openTuiPackage.dependencies?.['solid-js'] !== '1.9.10') throw new Error('Xiaoyu OpenTUI Solid runtime must stay pinned to solid-js 1.9.10.')
+if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Legacy Workspace Trust/test compatibility still pins Pi TUI until the compatibility layer is retired.')
+if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pinned Bun/OpenTUI runner.')
+if (rootPackage.scripts?.['smoke:cli'] !== 'tsx scripts/cli/smoke.ts') throw new Error('Xiaoyu compiled OpenTUI CLI must keep a canonical no-TTY smoke test.')
 if (!(rootPackage.scripts?.test ?? '').includes('apps/cli/tests/*.test.ts')) throw new Error('XMA tests must include apps/cli/tests.')
 if (rootPackage.scripts?.['release:cli-stage'] !== 'tsx scripts/release/cli.ts') throw new Error('XMA portable CLI staging script is missing.')
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm gate:distribution')) throw new Error('pnpm check must include Distribution Gate.')
@@ -44,22 +47,36 @@ for (const marker of [
 }
 
 const tui = text('apps/cli/src/tui.ts')
-for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'initialBrainSetupActive', "anchor: 'center'", '配置 Xiaoyu 模型', '模型 / 提供方', 'loadPiTui', '@earendil-works/pi-tui', 'SafePromptInput', 'toolkit.CURSOR_MARKER', 'new toolkit.TUI(terminal, false)', "matchesKey(data, 'ctrl+c')", "matchesKey(data, 'ctrl+p')", "matchesKey(data, 'ctrl+k')", 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'isTerminalMouseInput', 'searchable: true', 'showListOverlay', 'showInputOverlay', '模型就绪测试', '选择模型', '终端设置', 'Tool Approval', '当前 Session 允许', '/doctor', '/settings', '/exit']) {
-  if (!tui.includes(marker)) throw new Error(`XMA TUI marker missing: ${marker}`)
+for (const marker of ['访问工作区：', '安全确认：', '是的，我信任此目录', '本次授权不会跳过下次启动确认', '高风险工作区', 'confirmWorkspaceTrust', 'SafePromptInput']) {
+  if (!tui.includes(marker)) throw new Error(`XMA Workspace Trust / legacy TUI contract missing: ${marker}`)
+}
+const openTui = text('apps/cli/opentui-runtime/app.tsx')
+const openTuiLayout = text('apps/cli/src/opentui-layout.ts')
+for (const marker of ['openTuiContentWidth', 'openTuiSidePadding']) {
+  if (!openTuiLayout.includes(marker)) throw new Error(`XMA OpenTUI responsive layout marker missing: ${marker}`)
+}
+for (const marker of [
+  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}',
+  "event.name === 'tab'", "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
+  'commandPaletteOptions()', '模型 / 提供方', '模型就绪测试', '选择真实模型', '终端设置', 'Tool Approval',
+  'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: true', 'useMouse: true',
+]) {
+  if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI marker missing: ${marker}`)
+}
+for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
+  if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
+}
+const openTuiBuild = text('apps/cli/opentui-runtime/build.ts')
+for (const marker of ['createSolidTransformPlugin', 'parser.worker.js', 'OTUI_TREE_SITTER_WORKER_PATH', "outfile", "xiaoyu.exe"]) {
+  if (!openTuiBuild.includes(marker)) throw new Error(`XMA OpenTUI Bun build marker missing: ${marker}`)
 }
 const tuiMenu = text('apps/cli/src/tui-menu.ts')
 for (const marker of ['filterTuiMenuItems', 'moveTuiMenuSelection', 'projectTuiMenu', 'labelWidth', 'descriptionWidth', 'shortcutWidth']) {
   if (!tuiMenu.includes(marker)) throw new Error(`XMA TUI menu grid marker missing: ${marker}`)
 }
 
-for (const marker of ['USER_CANCEL_EXIT_CODE = 0', "process.stdout.write('已取消：未授权当前工作区。\\n')"]) {
-  if (!cli.includes(marker)) throw new Error(`XMA terminal clean-cancel contract missing: ${marker}`)
-}
-if (!tui.includes('showIdentity: false') || !tui.includes('layout.showIdentity')) {
-  throw new Error('XMA modal overlays must hide Home identity decorations and keep only the compact status dock.')
-}
-if (tui.includes('new toolkit.Editor') || tui.includes('new toolkit.Input') || tui.includes("\u001b[7m") || tui.includes("\x1b[7m")) {
-  throw new Error('XMA TUI must not use reverse-video Pi Editor/Input cursors on the Windows Terminal main prompt; use hidden CURSOR_MARKER positioning plus the XMA soft cursor instead.')
+for (const marker of ['USER_CANCEL_EXIT_CODE = 0', '已取消：未授权当前工作区。', "await import('../opentui-runtime/app.tsx')"]) {
+  if (!cli.includes(marker)) throw new Error(`XMA terminal clean-cancel/OpenTUI load contract missing: ${marker}`)
 }
 
 const brain = text('apps/cli/src/brain.ts')
@@ -72,7 +89,7 @@ const stage = text('scripts/release/cli.ts')
 for (const marker of [
   "'.cache', 'release', 'cli'",
   "'runtime', nodeName",
-  "'app', 'cli.js'",
+  "'app', cliName",
   "'app', 'server.js'",
   "'native', nativeName",
   "path.join(root, 'skills')",
@@ -144,7 +161,7 @@ for (const marker of ["argument('directory', 'dist/release')", "'release-manifes
 
 
 const workflow = text('.github/workflows/release.yml')
-for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
+for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'oven-sh/setup-bun@v2', 'bun install --cwd apps/cli/opentui-runtime --no-save', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
   if (!workflow.includes(marker)) throw new Error(`XMA cross-platform release workflow marker missing: ${marker}`)
 }
 

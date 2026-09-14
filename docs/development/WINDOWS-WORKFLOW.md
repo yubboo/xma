@@ -131,3 +131,9 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 正式源码包目录（例如 `H:\一键部署\xma-0.1.0`）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 Source Sync 的长期目标目录（默认 `H:\一键部署\xma`）。
 
 如果旧版助手曾在源码包目录误执行 `git init`，只清理源码包目录自己的 `.git/`；长期工作目录 `H:\一键部署\xma\.git/` 必须保留。
+
+## Xiaoyu Terminal · Bun / OpenTUI
+
+`xma-dev.bat → [1]` 除 pnpm Workspace 依赖外，会准备固定 `Bun 1.3.14`，并在 `apps/cli/opentui-runtime/` 独立安装 `@opentui/core@0.1.101`、`@opentui/solid@0.1.101`、`solid-js@1.9.10`。这些依赖不进入 pnpm Workspace lock，避免把整个 XMA Runtime 改成 Bun；`[4]` 只把交互式 Terminal Host 交给 Bun/OpenTUI，Server/Web 仍使用 Node。
+
+OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。

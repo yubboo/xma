@@ -129,7 +129,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Provider 的 SSE text/reasoning delta 必须保持增量语义穿过 `Provider → RuntimeLiveEvent → Host Renderer`；Tool Call/Result 通过同一 Runtime 事件面投影。不得在 TUI 层等完整 Turn 结束后再一次性显示。
 - `reasoning` 只能展示 Provider 实际公开返回的增量/摘要；不得本地伪造“思考过程”。
 - TUI 渲染器如果因为差分缓存导致流式区域漏刷，必须在 Host 层做有节流的强制 repaint 或等价修复，并补回归测试；不能把“内存里已收到 chunk”冒充“用户已经实时看到”。
-- Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。TUI/Workspace Trust 活跃期间必须启用完整 mouse reporting 接管普通左键拖动并忽略鼠标事件，Pi TUI 启动后必须重申接管模式，退出或异常收口时恢复终端状态，避免宿主终端产生大面积文本选择白块；不得借此封死用户通过 Shift+拖动进行主动复制。Windows Terminal 可见插入点禁止依赖可见硬件光标：`CURSOR_MARKER` 仅定位隐藏光标供 IME 跟随，可见光标由 XMA 软光标绘制，避免系统 Text Cursor Indicator 蓝色双标记。Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
+- Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。Active TUI 必须由固定 Bun/OpenTUI Renderer 统一管理 mouse、selection、focus、caret 与 terminal lifecycle；主 Prompt 必须是 OpenTUI 原生 Textarea，Tab/Shift+Tab 模式切换后必须把真实输入焦点留在 Textarea，Esc/Ctrl+P/Ctrl+K/Dialog 也必须走同一 key/focus 系统。Active Renderer 禁止输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或自绘假硬件光标，避免 Windows Terminal Text Cursor Indicator 锚点漂移；旧 Pi TUI 只允许留在 Workspace Trust/纯兼容层。Home/Transcript/Prompt/快捷栏必须共享响应式居中宽度，左右留白对称；Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
 
 
 ## 5. Provider 开发规则

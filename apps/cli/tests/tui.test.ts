@@ -289,7 +289,7 @@ test('TUI Workspace Trust keeps high-risk default deny while still allowing expl
 })
 
 
-test('Safe Prompt positions hidden hardware cursor for IME and renders a non-reverse soft cursor', () => {
+test('Safe Prompt renders a software cursor without emitting a hardware cursor marker', () => {
   const toolkit = {
     CURSOR_MARKER: '<CURSOR>',
     matchesKey(data: string, key: string) {
@@ -302,7 +302,7 @@ test('Safe Prompt positions hidden hardware cursor for IME and renders a non-rev
   input.handleInput('你')
   input.handleInput('好')
   const line = input.render(20).join('\n')
-  assert.match(line, /<CURSOR>/)
+  assert.doesNotMatch(line, /<CURSOR>/)
   assert.match(line, /你好/)
   assert.match(line, /\u001b\[4m/)
   assert.doesNotMatch(line, /\u001b\[7m|\u001b\[27m/)
@@ -319,7 +319,7 @@ test('Safe Prompt secret rendering never exposes the stored credential text', ()
   const line = input.renderSecret(40).join('\n')
   assert.doesNotMatch(line, /sk-secret-value|secret-value/)
   assert.match(line, /•/)
-  assert.match(line, /<CURSOR>/)
+  assert.doesNotMatch(line, /<CURSOR>/)
 })
 
 test('Safe Prompt exposes slash suggestions without changing the fixed parent layout contract', () => {
