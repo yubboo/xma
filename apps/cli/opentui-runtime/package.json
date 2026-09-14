@@ -6,7 +6,7 @@
   "dependencies": {
     "@opentui/core": "0.1.101",
     "@opentui/solid": "0.1.101",
-    "solid-js": "1.9.10"
+    "solid-js": "1.9.11"
   },
   "devDependencies": {
     "@types/bun": "1.3.11"

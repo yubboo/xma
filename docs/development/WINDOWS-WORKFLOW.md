@@ -57,22 +57,22 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
 `[1] 一键准备开发环境` 是首次运行的推荐入口，必须一次完成：
 
 - Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；
-- `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；
-- `pnpm rebuild esbuild`：只准备 TypeScript/Web 工具链必须的 esbuild Native Binary；
-- `cargo fetch`：预取 XMA 根 Rust Workspace（`native/protocol`、`native/runtime`）依赖。
+- 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
+- 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
+- Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本` 指纹缓存；未变化时跳过重复 `cargo fetch`。没有 stamp 但已有 crate 缓存时先执行 `cargo fetch --locked --offline` 验证，只有本地确实缺 crate 才联网 `cargo fetch --locked`。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建。Windows 使用 `.cache/cargo-target/cli/` 作为独立 CLI build target，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行；旧 Xiaoyu 即使仍占用上一份 exe，也不能阻断新源码构建。严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
+- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建。Windows 复用统一 `.cache/cargo-target/` 增量缓存，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行；旧 Xiaoyu 即使仍占用上一份 staging exe，也不能阻断新源码构建。严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
 - `[7] 全量检查`：直接使用已经准备好的依赖，Rust check/test 使用 `--offline`；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
 - `[5]/[6] 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行构建；不得再次执行 `pnpm install`。
 
-`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，再委托 `xma-dev.bat cli` 启动；不会因为 `xma-console.ps1` 自己切回仓库根而丢失用户 Workspace。一个用户只保留一个激活的 `.xma\dev-bin` PATH entry；切换 checkout 后重新运行 `[1]`。
+`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，再委托 `xma-dev.bat cli` 启动；不会因为 `xma-console.ps1` 自己切回仓库根而丢失用户 Workspace。一个用户只保留一个激活的 `.xma\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。切换 checkout 后重新运行 `[1]` 才会更新指向。
 
 `esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
 
@@ -134,6 +134,6 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 除 pnpm Workspace 依赖外，会准备固定 `Bun 1.3.14`，并在 `apps/cli/opentui-runtime/` 独立安装 `@opentui/core@0.1.101`、`@opentui/solid@0.1.101`、`solid-js@1.9.10`。这些依赖不进入 pnpm Workspace lock，避免把整个 XMA Runtime 改成 Bun；`[4]` 只把交互式 Terminal Host 交给 Bun/OpenTUI，Server/Web 仍使用 Node。
+`xma-dev.bat → [1]` 除 pnpm Workspace 依赖外，会准备固定 `Bun 1.3.14`，并在 `apps/cli/opentui-runtime/` 独立安装 `@opentui/core@0.1.101`、`@opentui/solid@0.1.101`、`solid-js@1.9.11`、`@types/bun@1.3.11`。这些依赖不进入 pnpm Workspace lock，避免把整个 XMA Runtime 改成 Bun；`[4]` 只把交互式 Terminal Host 交给 Bun/OpenTUI，Server/Web 仍使用 Node。Bun 只在 `.xma/tools/bun/1.3.14/bun.exe` 缺失或版本错误时下载；ZIP/临时解压目录完成校验后立即删除。OpenTUI 依赖放在 `apps/cli/opentui-runtime/node_modules`，四个固定版本完全匹配时后续 `[1]` 直接复用并跳过 `bun install`。`[4]`/`[7]` 通过 `scripts/cli/bun.ts` 从该 Runtime 目录启动，并强制 `--no-install`，运行和检查阶段不得偷偷联网补包。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。

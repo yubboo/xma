@@ -5,14 +5,23 @@
  * 职责边界：只检查最低格式，不评价注释质量。
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const roots = ['core/src', 'packages', 'agents', 'plugins', 'apps/cli/src', 'apps/cli/opentui-runtime', 'apps/server/src', 'apps/desktop/src', 'apps/desktop/scripts', 'apps/desktop/src-tauri', 'native/protocol/src', 'native/runtime/src']
+const ignoredDirectories = new Set(['node_modules', '.git', '.cache', 'dist', 'build', 'target', 'coverage'])
 const files: string[] = []
+
+function hasIgnoredSegment(path: string): boolean {
+  return path.split(/[\\/]+/).some(segment => ignoredDirectories.has(segment))
+}
+
 function walk(dir: string): void {
+  if (!existsSync(dir) || hasIgnoredSegment(dir)) return
   for (const name of readdirSync(dir)) {
+    if (ignoredDirectories.has(name)) continue
     const path = join(dir, name)
+    if (hasIgnoredSegment(path)) continue
     if (statSync(path).isDirectory()) walk(path)
     else if (/\.(ts|tsx|rs)$/.test(name)) files.push(path)
   }

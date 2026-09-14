@@ -26,8 +26,17 @@ fs.mkdirSync(outputDir, { recursive: true })
 const parserWorker = fs.realpathSync(Bun.resolveSync('@opentui/core/parser.worker.js', scriptDir))
 const workerRelativePath = path.relative(root, parserWorker).replaceAll('\\', '/')
 const bunfsRoot = process.platform === 'win32' ? 'B:/~BUN/root/' : '/$bunfs/root/'
-const platformName = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'darwin' : 'linux'
-const target = `bun-${platformName}-${process.arch}` as const
+function currentCompileTarget() {
+  if (process.platform === 'win32' && process.arch === 'x64') return 'bun-windows-x64' as const
+  if (process.platform === 'win32' && process.arch === 'arm64') return 'bun-windows-arm64' as const
+  if (process.platform === 'darwin' && process.arch === 'x64') return 'bun-darwin-x64' as const
+  if (process.platform === 'darwin' && process.arch === 'arm64') return 'bun-darwin-arm64' as const
+  if (process.platform === 'linux' && process.arch === 'x64') return 'bun-linux-x64' as const
+  if (process.platform === 'linux' && process.arch === 'arm64') return 'bun-linux-arm64' as const
+  throw new Error(`Unsupported Bun compile target: ${process.platform}/${process.arch}`)
+}
+
+const target = currentCompileTarget()
 
 const result = await Bun.build({
   conditions: ['browser'],

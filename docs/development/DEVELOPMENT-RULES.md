@@ -269,8 +269,9 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
 - Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.xma/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
-- `[1]` 使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime。
-- Web / CLI 已准备后直接运行，不再次安装依赖。
+- `[1]` 首次或依赖声明变化时使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime；已准备且 package/lockfile/平台指纹一致时必须跳过重复 install/esbuild rebuild；首次接管没有 stamp 的旧缓存必须优先做 offline/frozen 校验，验证通过直接复用，不得为了生成 stamp 再联网。OpenTUI 固定版本已匹配时同样跳过重复 `bun install`，Rust Cargo 声明未变化时跳过重复 `cargo fetch`。
+- `[1]` 写入开发态 `.xma/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量。
+- Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式联网补包。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。
 - `electron` 不进入 `allowBuilds`；`pnpm-workspace.yaml -> allowBuilds` 只显式白名单确有构建需求的依赖。
 - 禁止 `dangerouslyAllowAllBuilds` 和固定工作流中的交互 `pnpm approve-builds`。

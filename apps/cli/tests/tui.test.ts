@@ -191,9 +191,13 @@ test('TUI chat dock leaves a breathing row above the footer and keeps Esc as a r
 test('TUI chat shortcut row distributes items evenly and aligns Esc to the same centered content width', () => {
   const line = terminalHintPlainLine(92, true)
   assert.equal(tuiMenuCellWidth(line), 92)
-  assert.match(line, /^tab \/ shift\+tab 切换模式/)
-  assert.match(line, /esc 返回$/)
-  const gaps = [...line.matchAll(/ {2,}/g)].map(match => match[0].length)
+  const trimmed = line.trim()
+  assert.match(trimmed, /^tab \/ shift\+tab 切换模式/)
+  assert.match(trimmed, /esc 返回$/)
+  const leftOuter = line.length - line.trimStart().length
+  const rightOuter = line.length - line.trimEnd().length
+  assert.equal(leftOuter, rightOuter)
+  const gaps = [...trimmed.matchAll(/ {2,}/g)].map(match => match[0].length)
   assert.ok(gaps.length >= 4)
   assert.equal(Math.max(...gaps) - Math.min(...gaps), 0)
 })

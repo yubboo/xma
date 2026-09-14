@@ -11,6 +11,7 @@ import path from 'node:path'
 
 const BUN_VERSION = '1.3.14'
 const root = process.cwd()
+const runtimeRoot = path.join(root, 'apps', 'cli', 'opentui-runtime')
 const command = process.argv[2]
 const forwarded = process.argv.slice(3).filter(value => value !== '--')
 
@@ -28,13 +29,17 @@ function resolveBun(): string {
 }
 
 const bun = resolveBun()
+const devArguments = forwarded.length > 0 ? forwarded : [root]
 const args = command === 'dev'
-  ? ['--cwd', 'apps/cli/opentui-runtime', 'run', '../src/main.ts', ...forwarded]
+  ? ['run', '--no-install', '../src/main.ts', ...devArguments]
   : command === 'build'
-    ? ['run', 'apps/cli/opentui-runtime/build.ts', ...forwarded]
+    ? ['run', '--no-install', './build.ts', ...forwarded]
     : undefined
 
 if (!args) throw new Error('Usage: tsx scripts/cli/bun.ts <dev|build> [args...]')
-const result = spawnSync(bun, args, { cwd: root, stdio: 'inherit', shell: false, env: process.env })
+// 中文说明：Bun 的 --cwd 不是这里的进程工作目录替代品；直接把 cwd 固定到独立 Runtime，
+// 既能让 bunfig.toml/preload 正常生效，也避免 `bun run` 把入口误判为 package script。
+// --no-install 锁死运行/构建阶段不得偷偷联网补依赖；缺依赖必须回到 xma-dev → [1] 显式准备。
+const result = spawnSync(bun, args, { cwd: runtimeRoot, stdio: 'inherit', shell: false, env: process.env })
 if (result.error) throw result.error
 process.exitCode = result.status ?? 1

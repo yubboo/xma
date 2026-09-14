@@ -17,7 +17,7 @@ const cliPackage = JSON.parse(text('apps/cli/package.json')) as { dependencies?:
 const openTuiPackage = JSON.parse(text('apps/cli/opentui-runtime/package.json')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
 if (openTuiPackage.dependencies?.['@opentui/core'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI core must stay pinned to the MiMo-validated 0.1.101 baseline.')
 if (openTuiPackage.dependencies?.['@opentui/solid'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI Solid binding must stay pinned to 0.1.101.')
-if (openTuiPackage.dependencies?.['solid-js'] !== '1.9.10') throw new Error('Xiaoyu OpenTUI Solid runtime must stay pinned to solid-js 1.9.10.')
+if (openTuiPackage.dependencies?.['solid-js'] !== '1.9.11') throw new Error('Xiaoyu OpenTUI Solid runtime must stay pinned to solid-js 1.9.11.')
 if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Legacy Workspace Trust/test compatibility still pins Pi TUI until the compatibility layer is retired.')
 if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pinned Bun/OpenTUI runner.')
 if (rootPackage.scripts?.['smoke:cli'] !== 'tsx scripts/cli/smoke.ts') throw new Error('Xiaoyu compiled OpenTUI CLI must keep a canonical no-TTY smoke test.')
@@ -66,6 +66,16 @@ for (const marker of [
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
 }
+const bunRunner = text('scripts/cli/bun.ts')
+for (const marker of [
+  "const runtimeRoot = path.join(root, 'apps', 'cli', 'opentui-runtime')",
+  "['run', '--no-install', '../src/main.ts'",
+  'cwd: runtimeRoot',
+]) {
+  if (!bunRunner.includes(marker)) throw new Error(`XMA Bun/OpenTUI runner contract missing: ${marker}`)
+}
+if (bunRunner.includes("['--cwd'")) throw new Error('XMA Bun/OpenTUI runner must use process cwd instead of the broken bun --cwd argument ordering.')
+
 const openTuiBuild = text('apps/cli/opentui-runtime/build.ts')
 for (const marker of ['createSolidTransformPlugin', 'parser.worker.js', 'OTUI_TREE_SITTER_WORKER_PATH', "outfile", "xiaoyu.exe"]) {
   if (!openTuiBuild.includes(marker)) throw new Error(`XMA OpenTUI Bun build marker missing: ${marker}`)

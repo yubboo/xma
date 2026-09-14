@@ -19,6 +19,8 @@ $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
 $OpenTuiVersion = '0.1.101'
+$SolidJsVersion = '1.9.11'
+$BunTypesVersion = '1.3.11'
 $BunVersion = '1.3.14'
 
 function Write-Header {
@@ -58,13 +60,17 @@ function Assert-CliJsDependencies {
   if (-not (Test-Path $bunExe)) { throw 'Xiaoyu Bun/OpenTUI Runtime 尚未准备。请先运行 [1] 一键准备开发环境。' }
   $installedBun = (& $bunExe --version).Trim()
   if ($installedBun -ne $BunVersion) { throw "Bun 版本不一致：期望 $BunVersion，实际 $installedBun。" }
-  foreach ($packageFile in @(
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\core\package.json'),
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\solid\package.json')
-  )) {
+  $packages = @{
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\core\package.json') = $OpenTuiVersion
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\solid\package.json') = $OpenTuiVersion
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\solid-js\package.json') = $SolidJsVersion
+    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@types\bun\package.json') = $BunTypesVersion
+  }
+  foreach ($packageFile in $packages.Keys) {
     if (-not (Test-Path $packageFile)) { throw "Xiaoyu OpenTUI 依赖尚未准备：$packageFile" }
     $installed = (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
-    if ($installed -ne $OpenTuiVersion) { throw "OpenTUI 版本不一致：期望 $OpenTuiVersion，实际 $installed。" }
+    $expected = $packages[$packageFile]
+    if ($installed -ne $expected) { throw "Xiaoyu OpenTUI 依赖版本不一致：$packageFile · 期望 $expected，实际 $installed。" }
   }
   Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $BunVersion + OpenTUI $OpenTuiVersion）。" -ForegroundColor Green
 }
@@ -143,13 +149,13 @@ function Ensure-CliNativeRuntime {
     throw 'Xiaoyu Terminal 需要 XMA Native Runtime。未检测到 Cargo，请先运行 [1] 一键准备开发环境。'
   }
 
-  # 中文说明：Windows 不允许覆盖仍被旧进程占用的 exe。CLI 构建使用独立 Cargo target，运行时再复制到唯一 staging 路径，
+  # 中文说明：Windows 不允许覆盖仍被旧进程占用的 exe。CLI 构建复用项目统一 .cache\cargo-target 增量缓存，运行时再复制到唯一 staging 路径，
   # 这样并行/旧版 Xiaoyu 只锁住自己的 run copy，不会阻断当前源码的离线增量构建。
-  $cliTargetDir = Join-Path $Root '.cache\cargo-target\cli'
+  $cliTargetDir = Join-Path $Root '.cache\cargo-target'
   $previousCargoTargetDir = $env:CARGO_TARGET_DIR
   $env:CARGO_TARGET_DIR = $cliTargetDir
   try {
-    Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（独立 Cargo target，离线增量构建，不下载依赖）...' -ForegroundColor DarkCyan
+    Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（复用 Cargo 增量缓存，离线构建，不下载依赖）...' -ForegroundColor DarkCyan
     Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--package','xma-native-runtime','--offline') | Out-Host
   } finally {
     if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
@@ -171,7 +177,6 @@ function Ensure-CliNativeRuntime {
 }
 
 function Start-Cli([string]$WorkspacePath = '') {
-  Assert-CliJsDependencies
   $nativeExe = Ensure-CliNativeRuntime
   $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
   $env:XIAOYU_NATIVE_RUNTIME = $nativeExe

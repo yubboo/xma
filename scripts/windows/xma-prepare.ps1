@@ -12,6 +12,72 @@ Set-Location $Root
 $ElectronVersion = '41.2.0'
 $BunVersion = '1.3.14'
 $OpenTuiVersion = '0.1.101'
+$SolidJsVersion = '1.9.11'
+$BunTypesVersion = '1.3.11'
+$PrepareStateRoot = Join-Path $Root '.xma\state\prepare'
+
+function Get-XmaFingerprint([string[]]$Paths, [string]$Salt = '') {
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add("salt=$Salt")
+  foreach ($file in @($Paths | Sort-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+      [void]$lines.Add("missing=$file")
+      continue
+    }
+    $relative = [IO.Path]::GetFullPath($file).Substring($Root.Length).TrimStart([char[]]@('\','/'))
+    $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+    [void]$lines.Add("$relative=$hash")
+  }
+  $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
+}
+
+function Get-XmaWorkspaceDependencyFingerprint {
+  $files = @((Join-Path $Root 'package.json'), (Join-Path $Root 'pnpm-lock.yaml'), (Join-Path $Root 'pnpm-workspace.yaml'))
+  foreach ($group in @('apps','agents','packages','plugins')) {
+    $groupRoot = Join-Path $Root $group
+    if (-not (Test-Path -LiteralPath $groupRoot -PathType Container)) { continue }
+    foreach ($directory in (Get-ChildItem -LiteralPath $groupRoot -Directory -ErrorAction SilentlyContinue)) {
+      $packageFile = Join-Path $directory.FullName 'package.json'
+      if (Test-Path -LiteralPath $packageFile -PathType Leaf) { $files += $packageFile }
+    }
+  }
+  $corePackage = Join-Path $Root 'core\package.json'
+  if (Test-Path -LiteralPath $corePackage -PathType Leaf) { $files += $corePackage }
+  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+  return Get-XmaFingerprint -Paths $files -Salt "pnpm=11.17.0;os=windows;arch=$arch"
+}
+
+function Get-XmaCargoDependencyFingerprint {
+  $files = @((Join-Path $Root 'Cargo.toml'), (Join-Path $Root 'Cargo.lock'))
+  $nativeRoot = Join-Path $Root 'native'
+  if (Test-Path -LiteralPath $nativeRoot -PathType Container) {
+    $files += @(Get-ChildItem -LiteralPath $nativeRoot -Filter 'Cargo.toml' -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+  }
+  return Get-XmaFingerprint -Paths $files -Salt "cargo=$(& cargo.exe --version)"
+}
+
+function Test-XmaPrepareStamp([string]$Name, [string]$Fingerprint) {
+  $file = Join-Path $PrepareStateRoot "$Name.sha256"
+  if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $false }
+  return ((Get-Content -LiteralPath $file -Raw -Encoding UTF8).Trim() -eq $Fingerprint)
+}
+
+function Set-XmaPrepareStamp([string]$Name, [string]$Fingerprint) {
+  New-Item -ItemType Directory -Force -Path $PrepareStateRoot | Out-Null
+  [IO.File]::WriteAllText((Join-Path $PrepareStateRoot "$Name.sha256"), "$Fingerprint`r`n", ([Text.UTF8Encoding]::new($false)))
+}
+
+function Set-XmaTextFileIfChanged([string]$Path, [string]$Content) {
+  $normalized = ($Content -replace "`r?`n", "`r`n")
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    $current = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if ($current -eq $normalized) { return $false }
+  }
+  [IO.File]::WriteAllText($Path, $normalized, ([Text.UTF8Encoding]::new($false)))
+  return $true
+}
 
 function Confirm-XmaAction([string]$Message) {
   while ($true) {
@@ -45,7 +111,10 @@ function Install-XmaBunRuntime {
   if (Test-Path $bunExe) {
     $actual = (& $bunExe --version).Trim()
     if ($actual -eq $BunVersion) {
+      # 中文说明：旧版本准备器可能残留下载 ZIP / extract 副本；固定 bun.exe 已就绪时顺手清理一次性安装介质。
+      Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
       Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+      Write-Host "[位置] $bunExe" -ForegroundColor DarkGray
       return $bunExe
     }
   }
@@ -63,19 +132,44 @@ function Install-XmaBunRuntime {
   $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
   Write-Host "[下载] 正在准备固定 Bun $BunVersion（OpenTUI Runtime）..." -ForegroundColor Yellow
   Write-Host "[来源] $url" -ForegroundColor DarkGray
-  Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-  Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-  $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
-  if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
-  if (Test-Path $targetRoot) { Remove-Item $targetRoot -Recurse -Force }
-  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
-  Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
-  $actual = (& $bunExe --version).Trim()
-  if ($actual -ne $BunVersion) { throw "Bun 版本校验失败：期望 $BunVersion，实际 $actual。" }
-  Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
-  return $bunExe
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+    Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+    $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
+    if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
+    if (Test-Path $targetRoot) { Remove-Item $targetRoot -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+    Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
+    $actual = (& $bunExe --version).Trim()
+    if ($actual -ne $BunVersion) { throw "Bun 版本校验失败：期望 $BunVersion，实际 $actual。" }
+    Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+    Write-Host "[位置] $bunExe" -ForegroundColor DarkGray
+    return $bunExe
+  } finally {
+    # 中文说明：Bun ZIP/解压目录只是一次性安装介质。固定 bun.exe 已复制到 .xma	ools 后立即清理，避免项目里长期多占一份压缩包和解压副本。
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
+
+function Test-XmaOpenTuiDependencies([string]$RuntimeRoot) {
+  $expected = @{
+    '@opentui/core' = $OpenTuiVersion
+    '@opentui/solid' = $OpenTuiVersion
+    'solid-js' = $SolidJsVersion
+    '@types/bun' = $BunTypesVersion
+  }
+  foreach ($name in $expected.Keys) {
+    $packageFile = Join-Path $RuntimeRoot ("node_modules\{0}\package.json" -f $name)
+    if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) { return $false }
+    try {
+      $version = (Get-Content -LiteralPath $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
+      if ($version -ne $expected[$name]) { return $false }
+    } catch { return $false }
+  }
+  return $true
+}
 
 function Get-XmaPathEntries([string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
@@ -99,13 +193,15 @@ for %%I in ("%~dp0..\..") do set "XMA_DEV_ROOT=%%~fI"
 call "%XMA_DEV_ROOT%\xma-dev.bat" cli "%CD%"
 exit /b %ERRORLEVEL%
 '@
+  $shimChanged = $false
   foreach ($name in @('xiaoyu.cmd','xma.cmd')) {
-    [IO.File]::WriteAllText((Join-Path $devBin $name), ($launcher -replace "`r?`n", "`r`n"), ([Text.UTF8Encoding]::new($false)))
+    if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin $name) -Content $launcher) { $shimChanged = $true }
   }
-  [IO.File]::WriteAllText((Join-Path $devBin 'source-root.txt'), "$Root`r`n", ([Text.UTF8Encoding]::new($false)))
+  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'source-root.txt') -Content "$Root`r`n") { $shimChanged = $true }
 
   $normalizedDevBin = Get-XmaNormalizedPath $devBin
-  $userEntries = @(Get-XmaPathEntries ([Environment]::GetEnvironmentVariable('Path','User')))
+  $currentUserPath = [Environment]::GetEnvironmentVariable('Path','User')
+  $userEntries = @(Get-XmaPathEntries $currentUserPath)
   $nextUserEntries = @($devBin)
   foreach ($entry in $userEntries) {
     $normalized = Get-XmaNormalizedPath $entry
@@ -114,13 +210,19 @@ exit /b %ERRORLEVEL%
     if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
     $nextUserEntries += $entry
   }
-  [Environment]::SetEnvironmentVariable('Path', ($nextUserEntries -join ';'), 'User')
+  $nextUserPath = ($nextUserEntries -join ';')
+  $pathChanged = $currentUserPath -ne $nextUserPath
+  if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }
 
   $processEntries = @(Get-XmaPathEntries $env:Path)
   if (-not ($processEntries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedDevBin })) {
     $env:Path = "$devBin;$env:Path"
   }
-  Write-Host "[通过] 开发态命令已注册到当前用户 PATH：xiaoyu / xma" -ForegroundColor Green
+  if ($pathChanged -or $shimChanged) {
+    Write-Host "[更新] 开发态 xiaoyu / xma shim 或 User PATH 已同步。" -ForegroundColor Green
+  } else {
+    Write-Host "[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。" -ForegroundColor DarkCyan
+  }
   Write-Host "[位置] $devBin" -ForegroundColor DarkGray
   Write-Host '[说明] 这是当前源码 checkout 的开发 shim；移动仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
 }
@@ -258,27 +360,48 @@ $cliOpenTuiSolid = Join-Path $openTuiRuntimeRoot 'node_modules\@opentui\solid\pa
 $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
 $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
 
-$jsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $cliOpenTuiCore) -and (Test-Path $cliOpenTuiSolid) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
-if ($jsReady) {
-  Write-Host '[同步] Workspace 依赖已存在，正在快速校验 package/lockfile/node_modules 是否仍一致...' -ForegroundColor DarkCyan
-} else {
-  Write-Host '[安装] 正在安装全部 Workspace JavaScript 依赖元数据...' -ForegroundColor Yellow
+$workspaceJsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
+$workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
+$workspaceStampReady = Test-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
+if ($workspaceJsReady -and -not $workspaceStampReady) {
+  # 中文说明：升级到新的准备器时本地还没有指纹 stamp，但 node_modules 可能已经完全可用。
+  # 先用 frozen+offline 做一次无下载验证，并执行最小 tsx/esbuild 探针；通过后直接认领当前缓存，避免为了生成 stamp 再联网/重建。
+  Write-Host '[校验] 检测到现有 Workspace 依赖，正在离线确认 lockfile/node_modules 可直接复用...' -ForegroundColor DarkCyan
+  & pnpm.cmd install --ignore-scripts --offline --frozen-lockfile *> $null
+  $offlineInstallOk = $LASTEXITCODE -eq 0
+  if ($offlineInstallOk) {
+    & pnpm.cmd exec tsx -e 'const value: number = 1; if (value !== 1) process.exit(1)' *> $null
+    $offlineInstallOk = $LASTEXITCODE -eq 0
+  }
+  if ($offlineInstallOk) {
+    Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
+    $workspaceStampReady = $true
+    Write-Host '[缓存] 现有 Workspace 依赖离线校验通过，直接复用；不下载、不 rebuild。' -ForegroundColor DarkCyan
+  }
 }
-Write-Host '[安全] 本步骤使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
-Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override；Electron Chromium Runtime 仍不会在这里下载。' -ForegroundColor DarkYellow
-# 中文说明：即使 node_modules 已存在也执行一次幂等 install，确保源码升级后的 package.json / pnpm-workspace.yaml / lockfile 不会与旧依赖树漂移。
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
+if ($workspaceJsReady -and $workspaceStampReady) {
+  Write-Host '[缓存] Workspace package/lockfile/node_modules 指纹未变化，跳过重复 pnpm install 与 esbuild rebuild。' -ForegroundColor DarkCyan
+} else {
+  Write-Host '[安装] Workspace 依赖状态发生变化或本地缓存不完整，正在同步 JavaScript 依赖元数据...' -ForegroundColor Yellow
+  Write-Host '[安全] 本步骤使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
+  Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override；Electron Chromium Runtime 仍不会在这里下载。' -ForegroundColor DarkYellow
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
+  Write-Host '[安装] 正在准备 esbuild 当前平台 Native Binary...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
+  Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
+}
 
-Write-Host '[安装] 正在准备 esbuild 当前平台 Native Binary...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
-
-Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
-Push-Location $openTuiRuntimeRoot
-try {
-  # 中文说明：OpenTUI 前端依赖由固定 Bun 独立管理，不进入 pnpm workspace lock；--no-save 避免准备环境污染源码锁文件。
-  Invoke-XmaExternal -FilePath $bunExe -ArgumentList @('install','--no-save')
-} finally {
-  Pop-Location
+if (Test-XmaOpenTuiDependencies $openTuiRuntimeRoot) {
+  Write-Host '[缓存] Xiaoyu Bun/OpenTUI 前端依赖版本已匹配，跳过重复 bun install。' -ForegroundColor DarkCyan
+} else {
+  Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
+  Push-Location $openTuiRuntimeRoot
+  try {
+    # 中文说明：OpenTUI 前端依赖由固定 Bun 独立管理，不进入 pnpm workspace lock；--no-save 避免准备环境污染源码锁文件。
+    Invoke-XmaExternal -FilePath $bunExe -ArgumentList @('install','--no-save')
+  } finally {
+    Pop-Location
+  }
 }
 
 Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
@@ -290,12 +413,10 @@ Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version
 # 使用 tsx 执行一段最小 TypeScript 来验证 esbuild Native Binary 真正可用，避免 pnpm strict linker 下 `pnpm exec esbuild` 误报找不到命令。
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
 
-foreach ($openTuiPackage in @($cliOpenTuiCore, $cliOpenTuiSolid)) {
-  if (-not (Test-Path $openTuiPackage)) { throw "Xiaoyu OpenTUI package 元数据缺失：$openTuiPackage" }
-  $installed = (Get-Content $openTuiPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
-  if ($installed -ne $OpenTuiVersion) { throw "Xiaoyu OpenTUI 版本不一致：期望 $OpenTuiVersion，实际 $installed。" }
+if (-not (Test-XmaOpenTuiDependencies $openTuiRuntimeRoot)) {
+  throw 'Xiaoyu OpenTUI 依赖准备后版本仍不完整，请重新运行 [1] 或检查网络/缓存。'
 }
-Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Bun $BunVersion。" -ForegroundColor Green
+Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Solid $SolidJsVersion + Bun $BunVersion。" -ForegroundColor Green
 
 if (-not (Test-Path $desktopElectronPackage)) { throw 'Desktop Electron package 元数据缺失。' }
 $installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
@@ -306,13 +427,26 @@ Write-Host "[通过] Workspace JavaScript 依赖已准备完成；Electron packa
 Write-Host ''
 Write-Host '[8/9] XMA Native Rust crates' -ForegroundColor Cyan
 Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
-Write-Host '[同步] 正在预取 XMA Native Runtime 所需 Rust crates...' -ForegroundColor Yellow
-Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch')
+$cargoFingerprint = Get-XmaCargoDependencyFingerprint
+if (Test-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint) {
+  Write-Host '[缓存] Cargo.toml/Cargo.lock 指纹未变化，跳过重复 cargo fetch。' -ForegroundColor DarkCyan
+} else {
+  Write-Host '[校验] 正在离线检查现有 Cargo crate 缓存...' -ForegroundColor DarkCyan
+  & cargo.exe fetch --locked --offline *> $null
+  if ($LASTEXITCODE -eq 0) {
+    Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+    Write-Host '[缓存] 现有 Rust crates 已完整，直接复用；不联网 fetch。' -ForegroundColor DarkCyan
+  } else {
+    Write-Host '[同步] 本地缺少当前 Cargo.lock 所需 crates，开始预取...' -ForegroundColor Yellow
+    Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch','--locked')
+    Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  }
+}
 Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
-Write-Host '[PATH] 正在生成当前源码 checkout 的 xiaoyu/xma 开发命令并写入当前用户 PATH...' -ForegroundColor DarkCyan
+Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
 
 Write-Host ''

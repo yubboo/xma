@@ -169,12 +169,56 @@
 
 - 日期：2026-09-14
 - 目的：结束旧 Pi TUI + 手写 ANSI caret/mouse 补丁在 Windows Terminal 上持续出现的 Text Cursor Indicator 锚点漂移、Tab 模式切换后蓝色双标记复发与布局状态互相干扰问题；不再继续叠加局部光标补丁。
-- Upstream 依据：按 MiMo Code 已验证组合锁定 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.10`，只吸收 `createCliRenderer`、原生 `TextareaRenderable`、Solid key/focus、Dialog/Flex layout 与 Bun build/plugin 用法；不复制 MiMo 的 Agent、Provider、Session、命令体系或品牌视觉。
+- Upstream 依据：按 MiMo Code 已验证组合锁定 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.11`，只吸收 `createCliRenderer`、原生 `TextareaRenderable`、Solid key/focus、Dialog/Flex layout 与 Bun build/plugin 用法；不复制 MiMo 的 Agent、Provider、Session、命令体系或品牌视觉。
 - Active Renderer：新增 `apps/cli/opentui-runtime/` 作为独立 Bun/OpenTUI 前端域，主工作台改用原生 `<textarea>` 管理 caret/IME/selection/paste，多行输入、Tab/Shift+Tab 模式切换、Ctrl+P/Ctrl+K、Esc、Provider/Model/Reasoning、Tool Approval、鼠标与 resize 统一进入同一 Renderer 生命周期；`apps/cli/src/tui.ts` 暂只保留 Workspace Trust、纯合同与历史回归兼容，不再承担主工作台。
-- 布局：新增 `apps/cli/src/opentui-layout.ts` 纯函数，Home/Transcript/Prompt/Shortcut/Notice 使用同一居中响应式宽度；112 列终端内容宽度为 102 cell、左右各 5 cell，避免之前正文过窄或一侧留黑明显更多。
+- 布局：新增 `apps/cli/src/opentui-layout.ts` 纯函数，Home/Transcript/Prompt/Shortcut/Notice 使用同一居中响应式宽度；OpenTUI 迁移只更换 Renderer，不改变既有 Xiaoyu 视觉规格；112 列终端继续使用 92 cell 内容宽度、左右各 10 cell 对称留白。
 - 依赖边界：OpenTUI 依赖固定放 `apps/cli/opentui-runtime/package.json`，由 Bun 独立安装，不进入根 pnpm Workspace lock；根 Node/pnpm 继续负责 XMA 业务、Server/Web/脚本，portable CLI 则由 Bun + Solid transform plugin 编译为 `xiaoyu[.exe]`，Server 仍使用随包 Node Runtime。
 - 环境/发行：Windows `[1]` 与 Unix prepare 新增固定 Bun/OpenTUI 准备，CI/Release 同样独立 `bun install --cwd apps/cli/opentui-runtime --no-save`；`build:cli` 经 `scripts/cli/bun.ts` 构建，portable staging/installer 改为分发编译后的 `app/xiaoyu.exe` 或 `app/xiaoyu`。
 - 回归合同：Active OpenTUI 源码静态禁止 `CURSOR_MARKER`、手写 DECTCEM、手写 mouse capture/release 与 `new toolkit.TUI`；新增离线测试验证固定版本、原生 Textarea/focus、动态加载边界及响应式左右对称布局，并把 OpenTUI runtime 纳入中文文件头 Gate。
 - 当前验证：本沙箱已完成变更文件 TypeScript/TSX 语法转译、OpenTUI 纯合同测试 4/4、Unix Shell `sh -n` 与 9 项静态 Gate；Source Manifest 已在本批重新生成。另新增 `scripts/cli/smoke.ts`，Windows/Unix `[7]`、CI 与 Release 在依赖已准备环境中都会先编译 `xiaoyu[.exe]`，再执行 `--version` / `--help` 无交互烟测，避免“静态 Gate 通过但 OpenTUI Native CLI 实际不能启动”。当前沙箱没有 Bun/OpenTUI node_modules 且无法访问 npm registry，因此不冒充执行本机 OpenTUI Native build 或完整 `pnpm typecheck`。Windows Terminal 最终仍必须实机验收原生 caret/IME、Tab/Shift+Tab 后焦点不漂移、蓝色 Text Cursor Indicator 不再跑到屏幕其他位置、Ctrl+P/Ctrl+K/Esc、鼠标拖动、resize 与退出状态恢复。
 - 交付：未冻结 `0.1.0` 继续只生成正式 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止临时 OpenTUI/fixed/hotfix 包名。
 
+
+
+##16 · OpenTUI 视觉兼容、Bun 缓存收口与 Windows Typecheck 修复
+
+- 日期：2026-09-14
+- 目的：修复首轮 OpenTUI 实机迁移暴露的三个问题：`[4]` 视觉与已经验收的 Xiaoyu Terminal 差异过大、`[7]` 在 `build.ts` 的动态 compile target 上触发 TypeScript `TS2322`、`[1]` 会重复执行独立 OpenTUI install 且一次性 Bun ZIP/解压副本长期占用项目空间。
+- 视觉兼容：OpenTUI 只替换 Renderer/Input/Focus，不重新设计 Xiaoyu。Home 内容宽度恢复迁移前规则（常规终端左右各约 10 cell、112 列为 92 cell）；Prompt 恢复三行连续模式色竖轨“输入 / 空行 / Build|Plan|Compose 状态”，命令/输入/Tool Approval modal 移除额外边框卡片外观，继续沿用既有黑底、留白、Logo、提示与三列命令结构。
+- Bun Runtime：固定 Bun 1.3.14 仍只在本机尚未准备时下载一次，安装后的唯一项目内 Runtime 为 `.xma/tools/bun/1.3.14/bun.exe`；下载 ZIP 与临时解压目录在校验成功后立即删除，不再长期留在 `.cache/bun`。
+- OpenTUI 依赖：独立依赖继续位于 `apps/cli/opentui-runtime/node_modules`，不进入根 `node_modules`；`[1]` 会检查 `@opentui/core/@opentui/solid 0.1.101 + solid-js 1.9.11`，完全匹配时跳过重复 `bun install`。同时把 Solid peer 从错误的 1.9.10 修正为 OpenTUI 0.1.101 实际要求的 1.9.11，消除 `incorrect peer dependency` 警告。
+- 构建修复：`apps/cli/opentui-runtime/build.ts` 不再用 `process.arch` 拼出过宽字符串联合；改为显式枚举 Windows/Linux/macOS 的 x64/arm64 Bun compile targets，从类型层排除 `bun-darwin-arm` 等非法目标，修复 Windows `[7]` 的 TS2322。
+- 验证：OpenTUI 纯合同测试与布局测试继续作为离线回归；Windows `[7]` 在用户环境中应继续完成完整 `pnpm check → build:cli → smoke:cli`，最终 Native Renderer/IME/caret 以 Windows Terminal 实机为准。
+
+
+##17 · 开发环境幂等准备、OpenTUI 启动修复与全量检查回归
+
+- 日期：2026-09-14
+- 目的：修复 Windows 实机暴露的三类问题：`[1]` 在依赖已准备后仍重复执行 pnpm/esbuild/Cargo/PATH 写入；`[7]` 因居中快捷栏测试仍按“无外边距”旧假设失败；`[4]` 的 Bun 参数顺序把 `../src/main.ts` 误判为 package script，导致只打印 `bun run` 帮助并报 `No scripts found in package.json`。
+- `[1]` 幂等化：新增 `.xma/state/prepare` 本地指纹，仅当 Workspace package.json / `pnpm-lock.yaml` / `pnpm-workspace.yaml` / 平台发生变化时重跑 `pnpm install --ignore-scripts + pnpm rebuild esbuild`；首次没有 stamp 但已有 node_modules 时先用 offline/frozen + tsx 探针认领旧缓存。Cargo 同样先 `fetch --locked --offline` 验证本地 crate 缓存，只有缺失时才联网 `fetch --locked`。固定 Bun 仍只缺失/版本错误时下载；OpenTUI 四个固定包（core/solid/solid-js/@types/bun）版本完全匹配时跳过 `bun install`。
+- PATH 幂等化：`.xma/dev-bin/xiaoyu.cmd`、`xma.cmd`、`source-root.txt` 只在内容变化时重写；User PATH 只有目标值真正变化时才调用 `SetEnvironmentVariable`，已匹配时输出缓存命中。
+- `[4]` 启动：`scripts/cli/bun.ts` 改为把进程 `cwd` 固定到 `apps/cli/opentui-runtime`，再执行 `bun run --no-install ../src/main.ts`；不再使用错误的 `--cwd ... run` 排序。这样 `bunfig.toml` / OpenTUI preload 在真实 Runtime 目录生效，同时锁死运行/构建阶段不自动下载依赖。Windows CLI Native build 复用统一 `.cache/cargo-target` 增量缓存，只把最终 exe 复制到唯一 run staging，避免重复编译同一 crates。
+- `[7]` 回归：快捷栏实现本身保持“左右对称外边距 + 内部等距”的既定视觉；修正测试为先 `trim()` 验证首尾内容，再独立断言左右 outer padding 相等，避免把正确居中产生的 1-cell 外边距误判为失败。新增 Bun runner 静态回归，锁定 runtime cwd、`--no-install` 与禁止旧 `['--cwd', ...]` 参数顺序。
+- Gate：Windows Gate 同步锁定准备指纹、Cargo `--locked`、PATH no-op 与共享 Cargo target；Distribution Gate 锁定 Bun runner 的 cwd/no-install 合同。当前沙箱 OpenTUI runtime 纯测试 7/7 PASS，Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。完整 `pnpm check → build:cli → smoke:cli` 仍由用户 Windows 已准备环境作为最终 Native/OpenTUI 证据。
+- 交付：未冻结 `0.1.0` 继续覆盖生成同名 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`；Source Manifest 随本批重新生成。
+
+##18 · OpenTUI 实机回归：Logo 行距、鼠标返回语义与 Gate 依赖边界
+
+- 日期：2026-09-14
+- 目的：修复 Windows 实机继续暴露的三个回归：OpenTUI Logo 每个像素行之间被父级 `gap=1` 插入空行导致字形被纵向拉散；Ctrl+P 命令面板把普通左键点击背景误当成取消/返回；Comments Gate 在 `[1]` 安装独立 OpenTUI 依赖后递归扫描第三方 `node_modules`，从而错误要求依赖源码带 XMA 中文文件头。
+- Logo：父级不再对 Logo 的五个 glyph row 统一施加 gap；星点与 Logo、Logo 与 tagline 的呼吸间距改为显式局部 padding，五行 `XIAO / YU` 像素字恢复连续渲染，保持迁移前 Xiaoyu 视觉比例。
+- 鼠标语义：ListDialog 全屏 backdrop 的普通鼠标 down/up 只 stop propagation，不再执行 `finish(undefined)`；返回/取消仍只由 Esc（或明确的业务取消动作）触发。菜单项自身的点击仍执行该项，不把点击空白区域解释成“返回上一步”。
+- Gate：Comments Gate 增加统一 third-party/build/cache 目录排除，至少跳过 `node_modules/.git/.cache/dist/build/target/coverage`；Gate 只检查 XMA 第一方源码，不扫描 OpenTUI/Babel/Jimp 等已安装依赖。
+- Workspace：Bun 仍以 `apps/cli/opentui-runtime` 为 runtime cwd 解析 OpenTUI，但 `[4]` 没有显式 Workspace 参数时会把仓库调用目录作为默认 Workspace 参数传给 `main.ts`，避免 footer/Agent Workspace 错显示为 `apps/cli/opentui-runtime`。
+- 回归：新增 Logo 连续行、Command Palette backdrop 不返回、Comments Gate 忽略 node_modules 与 Bun 默认 Workspace 静态合同；未改变 OpenTUI 固定版本与 Native/Agent/Provider 安全边界。
+
+
+##19 · OpenTUI 首页视觉对齐与 Comments Gate 路径级忽略
+
+- 日期：2026-09-14
+- 目的：继续收口 Windows 实机反馈：`[7]` 仍会把 OpenTUI 独立依赖里的第三方源码误判为需要中文文件头；OpenTUI 首页需要更贴近参考图的居中视觉，并加入像素星空/流星氛围，而不破坏 Xiaoyu 自身品牌与既有交互合同。
+- Gate：`scripts/gates/comments.ts` 在目录名忽略之外，新增按完整路径 segment 的统一忽略判断；即便第三方依赖通过嵌套路径、符号链接或其他路径组合出现，只要命中 `node_modules/.git/.cache/dist/build/target/coverage` 任一 segment，就不会再被中文文件头 Gate 扫描。
+- OpenTUI 首页：`apps/cli/opentui-runtime/app.tsx` 新增 `BackgroundSky`，在 vivid 模式下渲染像素星点与间歇性流星；Home 页面改为更强的居中 Hero 布局，Logo、Prompt Dock、快捷键与提示集中在中部区域。输入区保持 Xiaoyu 既有三段式模式竖轨，但 Home 态为参考图增加深色卡片式 Dock，形成更稳定的视觉聚焦。
+- 交互边界：命令面板与输入焦点语义不变，Esc 仍是返回/取消主通道；背景动画只承担视觉装饰，不接管 Provider/Session/Native 逻辑，也不引入新的点击返回语义。
+- 回归：OpenTUI 静态合同测试补充像素星空/流星与居中 Dock 检查；Comments Gate 测试补充 `hasIgnoredSegment` 路径级忽略合同。最终 `[7]` 完整通过与首页视觉效果仍需用户 Windows 已准备环境实机确认。
+- 交付：未冻结 `0.1.0` 继续覆盖生成正式 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`，不创建临时 hotfix/fixed 包名。

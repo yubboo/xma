@@ -8,7 +8,6 @@
 import {
   createCliRenderer,
   decodePasteBytes,
-  RGBA,
   type KeyEvent,
   type PasteEvent,
   type TextareaRenderable,
@@ -38,7 +37,7 @@ import { openTuiContentWidth } from '../src/opentui-layout.ts'
 
 const COLOR = {
   background: '#0b0c0c',
-  panel: '#111313',
+  panel: '#151515',
   panelSelected: '#261911',
   orange: '#ff7e3f',
   text: '#e2e2e2',
@@ -51,20 +50,85 @@ const COLOR = {
 } as const
 
 const LOGO_XIAO = [
-  '█   █  █████   ███    ███ ',
-  ' █ █     █    █   █  █   █',
-  '  █      █    █████  █   █',
-  ' █ █     █    █   █  █   █',
-  '█   █  █████  █   █   ███ ',
+  '██   ██  █████   ███    ███ ',
+  ' ██ ██     ██   ██ ██  ██ ██',
+  '  ███      ██   █████  ██ ██',
+  ' ██ ██     ██   ██ ██  ██ ██',
+  '██   ██  █████  ██ ██   ███ ',
 ] as const
 
 const LOGO_YU = [
-  '█   █  █   █',
-  ' █ █   █   █',
-  '  █    █   █',
-  '  █    █   █',
-  '  █     ███ ',
+  '██   ██  ██  ██',
+  ' ██ ██   ██  ██',
+  '  ███    ██  ██',
+  '  ███    ██  ██',
+  '  ███     ████ ',
 ] as const
+
+const SKY_STARS = [
+  { x: 0.08, y: 0.12, glyph: '·', color: COLOR.faint },
+  { x: 0.22, y: 0.08, glyph: '✦', color: COLOR.soft },
+  { x: 0.38, y: 0.11, glyph: '✧', color: COLOR.yellow },
+  { x: 0.62, y: 0.08, glyph: '✧', color: COLOR.faint },
+  { x: 0.81, y: 0.12, glyph: '✦', color: COLOR.soft },
+  { x: 0.93, y: 0.18, glyph: '·', color: COLOR.faint },
+  { x: 0.14, y: 0.76, glyph: '✧', color: COLOR.faint },
+  { x: 0.33, y: 0.85, glyph: '✦', color: COLOR.soft },
+  { x: 0.57, y: 0.73, glyph: '·', color: COLOR.faint },
+  { x: 0.76, y: 0.88, glyph: '✧', color: COLOR.yellow },
+] as const
+
+const METEOR_TRACKS = [
+  { x: 0.80, y: 0.08, dx: 0.16, dy: 0.20, period: 22, span: 7, offset: 0, color: COLOR.yellow },
+  { x: 0.55, y: 0.17, dx: 0.18, dy: 0.18, period: 28, span: 6, offset: 9, color: COLOR.soft },
+  { x: 0.12, y: 0.58, dx: 0.22, dy: 0.16, period: 32, span: 6, offset: 18, color: COLOR.orange },
+] as const
+
+interface SkyGlyph {
+  left: number
+  top: number
+  text: string
+  color: string
+}
+
+function toCell(size: number, ratio: number, inset = 1): number {
+  return Math.max(0, Math.min(Math.max(0, size - 1), Math.round((size - inset * 2) * ratio) + inset))
+}
+
+function meteorGlyphs(width: number, height: number, phase: number): SkyGlyph[] {
+  const glyphs: SkyGlyph[] = []
+  for (const track of METEOR_TRACKS) {
+    const step = (phase + track.offset) % track.period
+    if (step >= track.span) continue
+    const progress = track.span <= 1 ? 1 : step / (track.span - 1)
+    const headLeft = toCell(width, track.x + track.dx * progress, 2)
+    const headTop = toCell(height, track.y + track.dy * progress, 1)
+    glyphs.push(
+      { left: Math.max(0, headLeft - 4), top: Math.max(0, headTop - 2), text: '·', color: COLOR.faint },
+      { left: Math.max(0, headLeft - 2), top: Math.max(0, headTop - 1), text: '•', color: COLOR.soft },
+      { left: headLeft, top: headTop, text: '✦', color: track.color },
+    )
+  }
+  return glyphs
+}
+
+function BackgroundSky(props: { width: number; height: number; phase: number; vivid: boolean }) {
+  const meteors = createMemo(() => meteorGlyphs(props.width, props.height, props.phase))
+  return (
+    <Show when={props.vivid}>
+      <For each={SKY_STARS}>{star => (
+        <box position="absolute" left={toCell(props.width, star.x)} top={toCell(props.height, star.y)}>
+          <text fg={star.color}>{star.glyph}</text>
+        </box>
+      )}</For>
+      <For each={meteors()}>{meteor => (
+        <box position="absolute" left={meteor.left} top={meteor.top}>
+          <text fg={meteor.color}>{meteor.text}</text>
+        </box>
+      )}</For>
+    </Show>
+  )
+}
 
 const MODE_META: Record<TerminalAgentMode, { label: string; color: string; description: string }> = {
   build: { label: 'Build', color: COLOR.orange, description: '完整工具模式' },
@@ -123,38 +187,34 @@ function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color:
 }
 
 function Logo(props: { compact: boolean; vivid: boolean; phase: number }) {
-  const stars = createMemo(() => {
-    if (!props.vivid) return ''
-    const frames = [
-      '✧           ·                    ✦                          ✧               ·',
-      '·                  ✧                   ·                         ✦          ✧',
-      '        ✦                    ·                          ✧              ·     ',
-    ]
-    return frames[props.phase % frames.length]!
-  })
+  const eyebrow = createMemo(() => props.phase % 2 === 0 ? 'XIAOYU' : '小鱼终端')
   return (
-    <box flexDirection="column" alignItems="center" gap={1}>
-      <Show when={props.vivid}>
-        <text fg={COLOR.faint}>{stars()}</text>
-      </Show>
+    <box flexDirection="column" alignItems="center">
       <Show
         when={!props.compact}
         fallback={
-          <box flexDirection="column" alignItems="center">
-            <text fg={COLOR.orange}><strong>✦  XIAOYU</strong></text>
-            <text fg={COLOR.soft}>Xiaoyu Management Agent</text>
+          <box flexDirection="column" alignItems="center" paddingBottom={1}>
+            <text fg={COLOR.faint}>{eyebrow()}</text>
+            <text fg={COLOR.orange}><strong>✦ XIAOYU</strong></text>
+            <text fg={COLOR.soft}>Model is replaceable. Agent is ours.</text>
           </box>
         }
       >
-        <text fg={COLOR.faint}>XIAOYU</text>
-        <For each={LOGO_XIAO}>{(left, index) => (
-          <box flexDirection="row">
-            <text fg={COLOR.orange}>{left}</text>
-            <text>   </text>
-            <text fg={COLOR.soft}>{LOGO_YU[index()]}</text>
+        <box flexDirection="column" alignItems="center" paddingBottom={1}>
+          <text fg={COLOR.faint}>{eyebrow()}</text>
+          <box flexDirection="column">
+            <For each={LOGO_XIAO}>{(left, index) => (
+              <box flexDirection="row">
+                <text fg={COLOR.orange}>{left}</text>
+                <text>  </text>
+                <text fg={COLOR.soft}>{LOGO_YU[index()]}</text>
+              </box>
+            )}</For>
           </box>
-        )}</For>
-        <text fg={COLOR.faint}>Model is replaceable. Agent is ours.</text>
+          <box paddingTop={1}>
+            <text fg={COLOR.faint}>Model is replaceable. Agent is ours.</text>
+          </box>
+        </box>
       </Show>
     </box>
   )
@@ -234,16 +294,15 @@ function ListDialog(props: {
       top={0}
       alignItems="center"
       paddingTop={Math.max(2, Math.floor(dimensions().height * 0.16))}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
-      onMouseUp={() => finish(undefined)}
+      backgroundColor={COLOR.background}
+      onMouseDown={event => event.stopPropagation()}
+      onMouseUp={event => event.stopPropagation()}
     >
       <box
         width={Math.min(86, dimensions().width - 4)}
         maxHeight={Math.max(12, dimensions().height - 8)}
         flexDirection="column"
-        backgroundColor={COLOR.panel}
-        border
-        borderColor={COLOR.faint}
+        backgroundColor={COLOR.background}
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
@@ -374,14 +433,12 @@ function InputDialog(props: {
       top={0}
       alignItems="center"
       paddingTop={Math.max(3, Math.floor(dimensions().height * 0.24))}
-      backgroundColor={RGBA.fromInts(0, 0, 0, 150)}
+      backgroundColor={COLOR.background}
     >
       <box
         width={Math.min(74, dimensions().width - 4)}
         flexDirection="column"
-        backgroundColor={COLOR.panel}
-        border
-        borderColor={COLOR.faint}
+        backgroundColor={COLOR.background}
         paddingTop={1}
         paddingBottom={1}
         paddingLeft={2}
@@ -447,8 +504,8 @@ function ApprovalDialog(props: { request: ToolApprovalRequest; onDone: (value: T
     }
   })
   return (
-    <box position="absolute" zIndex={3200} width={dimensions().width} height={dimensions().height} left={0} top={0} alignItems="center" paddingTop={Math.max(3, Math.floor(dimensions().height * 0.25))} backgroundColor={RGBA.fromInts(0, 0, 0, 170)}>
-      <box width={Math.min(72, dimensions().width - 4)} flexDirection="column" backgroundColor={COLOR.panel} border borderColor={COLOR.yellow} padding={2} gap={1}>
+    <box position="absolute" zIndex={3200} width={dimensions().width} height={dimensions().height} left={0} top={0} alignItems="center" paddingTop={Math.max(3, Math.floor(dimensions().height * 0.25))} backgroundColor={COLOR.background}>
+      <box width={Math.min(72, dimensions().width - 4)} flexDirection="column" backgroundColor={COLOR.background} padding={2} gap={1}>
         <text fg={COLOR.yellow}><strong>◆ Tool Approval</strong></text>
         <text fg={COLOR.text}>{props.request.toolName} · {props.request.effect}</text>
         <For each={props.request.summary.slice(0, 3)}>{line => <text fg={COLOR.soft}>{line}</text>}</For>
@@ -857,7 +914,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   onMount(() => {
     process.title = 'Xiaoyu'
     const animation = setInterval(() => setPhase(value => value + 1), 420)
-    const tips = setInterval(() => setTipIndex(value => value + 1), 4800)
+    const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
     const clockTimer = setInterval(() => setClock(Date.now()), 800)
     onCleanup(() => {
       clearInterval(animation)
@@ -882,16 +939,22 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   })
 
   const currentDialog = createMemo(() => dialog())
+  const homeDockWidth = createMemo(() => Math.min(contentWidth(), 78))
+  const dockWidth = createMemo(() => transcript().length > 0 ? contentWidth() : homeDockWidth())
+  const centerMode = createMemo(() => showLogo() && transcript().length === 0)
 
   return (
     <box width={dimensions().width} height={dimensions().height} flexDirection="column" backgroundColor={COLOR.background}>
-      <box flexGrow={1} flexDirection="column" alignItems="center" paddingTop={1}>
+      <BackgroundSky width={dimensions().width} height={dimensions().height} phase={phase()} vivid={settings().visual === 'vivid'} />
+      <box flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
         <Show when={showLogo()}>
-          <Logo compact={compactLogo()} vivid={settings().visual === 'vivid'} phase={phase()} />
+          <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
+            <Logo compact={compactLogo()} vivid={settings().visual === 'vivid'} phase={phase()} />
+          </box>
         </Show>
 
-        <box width={contentWidth()} flexGrow={1} flexDirection="column" justifyContent="flex-end" paddingTop={1} paddingBottom={1}>
-          <Show when={transcript().length > 0}>
+        <Show when={transcript().length > 0}>
+          <box width={contentWidth()} flexGrow={1} flexDirection="column" justifyContent="flex-end" paddingTop={1} paddingBottom={1}>
             <box flexDirection="column" gap={1}>
               <For each={transcript().slice(-18)}>{item => {
                 const meta = roleMeta(item.role)
@@ -903,56 +966,71 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
                 )
               }}</For>
             </box>
-          </Show>
-        </box>
+          </box>
+        </Show>
 
-        <box width={contentWidth()} flexDirection="column" gap={1} paddingBottom={1}>
-          <box flexDirection="row" alignItems="flex-start" onMouseDown={() => prompt?.focus()}>
-            <text fg={MODE_META[mode()].color}>▌</text>
-            <box flexGrow={1} paddingLeft={1}>
-              <textarea
-                ref={(value: TextareaRenderable) => { prompt = value }}
-                focused
-                minHeight={1}
-                maxHeight={5}
-                wrapMode="word"
-                placeholder="输入消息…（输入 / 唤起命令）"
-                placeholderColor={COLOR.faint}
-                textColor={COLOR.text}
-                focusedTextColor={COLOR.text}
-                cursorColor={COLOR.text}
-                onSubmit={() => { void submit(prompt?.plainText ?? '') }}
-                onKeyDown={(event: KeyEvent) => {
-                  if (event.name !== 'tab') return
-                  event.preventDefault(); event.stopPropagation()
-                  const next = cycleTerminalAgentMode(mode(), event.shift ? -1 : 1)
-                  setMode(next)
-                  tell(`模式已切换 · ${MODE_META[next].label} · ${MODE_META[next].description}`, 2600)
-                  refocusPrompt()
-                }}
-                keyBindings={[
-                  { name: 'return', action: 'submit' },
-                  { name: 'return', shift: true, action: 'newline' },
-                  { name: 'return', ctrl: true, action: 'newline' },
-                ]}
-              />
+        <box width={dockWidth()} flexDirection="column" paddingBottom={1} onMouseDown={() => prompt?.focus()}>
+          <box
+            flexDirection="column"
+            backgroundColor={showLogo() ? COLOR.panel : COLOR.background}
+            paddingTop={1}
+            paddingBottom={1}
+            paddingLeft={showLogo() ? 1 : 0}
+            paddingRight={showLogo() ? 1 : 0}
+          >
+            <box flexDirection="row" alignItems="flex-start">
+              <text fg={MODE_META[mode()].color}>▌</text>
+              <box flexGrow={1} paddingLeft={1}>
+                <textarea
+                  ref={(value: TextareaRenderable) => { prompt = value }}
+                  focused
+                  minHeight={1}
+                  maxHeight={5}
+                  wrapMode="word"
+                  placeholder="输入消息…（输入 / 唤起命令）"
+                  placeholderColor={COLOR.faint}
+                  textColor={COLOR.text}
+                  focusedTextColor={COLOR.text}
+                  cursorColor={COLOR.text}
+                  onSubmit={() => { void submit(prompt?.plainText ?? '') }}
+                  onKeyDown={(event: KeyEvent) => {
+                    if (event.name !== 'tab') return
+                    event.preventDefault(); event.stopPropagation()
+                    const next = cycleTerminalAgentMode(mode(), event.shift ? -1 : 1)
+                    setMode(next)
+                    tell(`模式已切换 · ${MODE_META[next].label} · ${MODE_META[next].description}`, 2600)
+                    refocusPrompt()
+                  }}
+                  keyBindings={[
+                    { name: 'return', action: 'submit' },
+                    { name: 'return', shift: true, action: 'newline' },
+                    { name: 'return', ctrl: true, action: 'newline' },
+                  ]}
+                />
+              </box>
+            </box>
+            <box flexDirection="row" height={1}>
+              <text fg={MODE_META[mode()].color}>▌</text>
+            </box>
+            <box flexDirection="row">
+              <text fg={MODE_META[mode()].color}>▌</text>
+              <box flexDirection="row" paddingLeft={1}>
+                <text fg={MODE_META[mode()].color}><strong>{MODE_META[mode()].label}</strong></text>
+                <text fg={COLOR.soft}> · </text>
+                <text fg={providerReady() ? COLOR.green : COLOR.yellow}>{providerReady() ? '●' : '○'}</text>
+                <text fg={COLOR.text}> {providerLabel()}</text>
+                <text fg={COLOR.soft}> · </text>
+                <text fg={reasoningColor(reasoningEffort())}><strong>{reasoningEffort()}</strong></text>
+              </box>
             </box>
           </box>
-          <box flexDirection="row" paddingLeft={2}>
-            <text fg={MODE_META[mode()].color}><strong>{MODE_META[mode()].label}</strong></text>
-            <text fg={COLOR.soft}> · </text>
-            <text fg={providerReady() ? COLOR.green : COLOR.yellow}>{providerReady() ? '●' : '○'}</text>
-            <text fg={COLOR.text}> {providerLabel()}</text>
-            <text fg={COLOR.soft}> · </text>
-            <text fg={reasoningColor(reasoningEffort())}><strong>{reasoningEffort()}</strong></text>
-          </box>
         </box>
 
-        <box width={contentWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
+        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
           <For each={hintItems()}>{item => <text fg={COLOR.soft}>{item}</text>}</For>
         </box>
         <Show when={settings().tips}>
-          <box width={contentWidth()} flexDirection="row" gap={2} paddingBottom={1}>
+          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1}>
             <text fg={COLOR.orange}>●  提示</text>
             <text fg={COLOR.soft}>{tip()}</text>
           </box>
