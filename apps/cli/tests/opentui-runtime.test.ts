@@ -83,8 +83,8 @@ test('OpenTUI logo keeps five glyph rows contiguous instead of inserting a blank
   const logoStart = source.indexOf('function Logo(')
   const listStart = source.indexOf('function ListDialog(')
   const logoSource = source.slice(logoStart, listStart)
-  assert.match(logoSource, /<box flexDirection="column" alignItems="center">/)
-  assert.match(logoSource, /<box flexDirection="column">\s*<For each=\{LOGO_XIAO\}>/)
+  assert.match(logoSource, /<box flexDirection="column" alignItems="center" backgroundColor=\{COLOR\.background\}>/)
+  assert.match(logoSource, /<box flexDirection="column" backgroundColor=\{COLOR\.background\}>\s*<For each=\{LOGO_XIAO\}>/)
   assert.doesNotMatch(logoSource, /alignItems="center" gap=\{1\}/)
 })
 
@@ -102,17 +102,27 @@ test('OpenTUI vivid home uses a pixel sky with intermittent meteors and a center
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /const SKY_STARS = \[/)
   assert.match(source, /const METEOR_TRACKS = \[/)
-  assert.match(source, /function BackgroundSky\(props: \{ width: number; height: number; phase: number; vivid: boolean \}\)/)
+  assert.match(source, /function BackgroundSky\(props: \{ width: number; height: number; frame: number; vivid: boolean \}\)/)
   assert.match(source, /backgroundColor=\{showLogo\(\) \? COLOR\.panel : COLOR\.background\}/)
   assert.match(source, /justifyContent=\{centerMode\(\) \? 'center' : 'flex-end'\}/)
 })
 
-test('Chinese comment gate ignores installed third-party node_modules even through nested path segments', () => {
+test('Chinese comment gate never recursively enters the OpenTUI dependency island', () => {
   const source = readFileSync('scripts/gates/comments.ts', 'utf8')
   assert.match(source, /ignoredDirectories/)
   assert.match(source, /'node_modules'/)
   assert.match(source, /function hasIgnoredSegment/)
-  assert.match(source, /path\.split/)
-  assert.match(source, /ignoredDirectories\.has\(segment\)/)
-  assert.match(source, /if \(hasIgnoredSegment\(path\)\) continue/)
+  assert.match(source, /const explicitFiles = \['apps\/cli\/opentui-runtime\/app\.tsx', 'apps\/cli\/opentui-runtime\/build\.ts'\]/)
+  const rootsLine = source.split('\n').find(line => line.startsWith('const roots = ')) ?? ''
+  assert.doesNotMatch(rootsLine, /apps\/cli\/opentui-runtime/)
+})
+
+test('OpenTUI live response uses a buffered typewriter and visible thinking state', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const streamPump = setInterval\(pumpRunEvents, 30\)/)
+  assert.match(source, /event => enqueueRunEvent\(event\)/)
+  assert.match(source, /await waitForEventDrain\(\)/)
+  assert.match(source, /role: 'reasoning', text: '', placeholder: true/)
+  assert.match(source, /正在思考…/)
+  assert.match(source, /正在生成回复…/)
 })

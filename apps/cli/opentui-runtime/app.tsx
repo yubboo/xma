@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 Xiaoyu Terminal 的 OpenTUI 主工作台，统一真实输入焦点、响应式布局、命令面板与模型配置交互。
  * 关联模块：main.ts、tui.ts 纯合同/Workspace Trust、brain.ts、xma-agent-loop Runtime 与 Provider/Tool 后端。
- * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供 Build/Plan/Compose、流式对话、命令搜索、Provider/Model/Reasoning 配置、动态提示与 Tool Approval。
+ * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供平滑星空/流星、思考状态、缓冲打字机流式对话、Build/Plan/Compose、命令搜索、Provider/Model/Reasoning 与 Tool Approval。
  * 职责边界：本文件只负责 Terminal Host 视觉与交互；不得复制 Agent Loop、Provider 协议、Session durable truth 或 Native 安全策略。
  */
 
@@ -29,6 +29,7 @@ import {
   type TerminalAgentMode,
   type TerminalBackend,
   type TerminalReasoningEffort,
+  type TerminalRunEvent,
   type TerminalTranscriptItem,
   type TerminalUiSettings,
 } from '../src/tui.ts'
@@ -66,22 +67,31 @@ const LOGO_YU = [
 ] as const
 
 const SKY_STARS = [
-  { x: 0.08, y: 0.12, glyph: '·', color: COLOR.faint },
-  { x: 0.22, y: 0.08, glyph: '✦', color: COLOR.soft },
-  { x: 0.38, y: 0.11, glyph: '✧', color: COLOR.yellow },
-  { x: 0.62, y: 0.08, glyph: '✧', color: COLOR.faint },
-  { x: 0.81, y: 0.12, glyph: '✦', color: COLOR.soft },
-  { x: 0.93, y: 0.18, glyph: '·', color: COLOR.faint },
-  { x: 0.14, y: 0.76, glyph: '✧', color: COLOR.faint },
-  { x: 0.33, y: 0.85, glyph: '✦', color: COLOR.soft },
-  { x: 0.57, y: 0.73, glyph: '·', color: COLOR.faint },
-  { x: 0.76, y: 0.88, glyph: '✧', color: COLOR.yellow },
+  { x: 0.07, y: 0.13, offset: 0, period: 16 },
+  { x: 0.19, y: 0.09, offset: 5, period: 19 },
+  { x: 0.36, y: 0.08, offset: 9, period: 23 },
+  { x: 0.63, y: 0.09, offset: 2, period: 17 },
+  { x: 0.81, y: 0.12, offset: 12, period: 21 },
+  { x: 0.94, y: 0.18, offset: 7, period: 25 },
+  { x: 0.06, y: 0.79, offset: 3, period: 18 },
+  { x: 0.17, y: 0.88, offset: 14, period: 24 },
+  { x: 0.78, y: 0.87, offset: 8, period: 20 },
+  { x: 0.91, y: 0.76, offset: 1, period: 22 },
+] as const
+
+const STAR_FRAMES = [
+  { glyph: '·', color: COLOR.faint },
+  { glyph: '✧', color: COLOR.faint },
+  { glyph: '✧', color: COLOR.soft },
+  { glyph: '✦', color: COLOR.text },
+  { glyph: '✧', color: COLOR.yellow },
+  { glyph: '✧', color: COLOR.soft },
+  { glyph: '·', color: COLOR.faint },
 ] as const
 
 const METEOR_TRACKS = [
-  { x: 0.80, y: 0.08, dx: 0.16, dy: 0.20, period: 22, span: 7, offset: 0, color: COLOR.yellow },
-  { x: 0.55, y: 0.17, dx: 0.18, dy: 0.18, period: 28, span: 6, offset: 9, color: COLOR.soft },
-  { x: 0.12, y: 0.58, dx: 0.22, dy: 0.16, period: 32, span: 6, offset: 18, color: COLOR.orange },
+  { x: 0.95, y: 0.08, dx: -0.58, dy: 0.58, period: 96, span: 28, offset: 0, color: COLOR.yellow },
+  { x: 0.88, y: 0.05, dx: -0.50, dy: 0.52, period: 137, span: 25, offset: 61, color: COLOR.soft },
 ] as const
 
 interface SkyGlyph {
@@ -95,37 +105,55 @@ function toCell(size: number, ratio: number, inset = 1): number {
   return Math.max(0, Math.min(Math.max(0, size - 1), Math.round((size - inset * 2) * ratio) + inset))
 }
 
-function meteorGlyphs(width: number, height: number, phase: number): SkyGlyph[] {
+function starGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
+  return SKY_STARS.map(star => {
+    const progress = ((frame + star.offset) % star.period) / star.period
+    const index = Math.min(STAR_FRAMES.length - 1, Math.floor(progress * STAR_FRAMES.length))
+    const visual = STAR_FRAMES[index]!
+    return {
+      left: toCell(width, star.x),
+      top: toCell(height, star.y),
+      text: visual.glyph,
+      color: visual.color,
+    }
+  })
+}
+
+function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
   const glyphs: SkyGlyph[] = []
   for (const track of METEOR_TRACKS) {
-    const step = (phase + track.offset) % track.period
+    const step = (frame + track.offset) % track.period
     if (step >= track.span) continue
     const progress = track.span <= 1 ? 1 : step / (track.span - 1)
     const headLeft = toCell(width, track.x + track.dx * progress, 2)
     const headTop = toCell(height, track.y + track.dy * progress, 1)
     glyphs.push(
-      { left: Math.max(0, headLeft - 4), top: Math.max(0, headTop - 2), text: '·', color: COLOR.faint },
-      { left: Math.max(0, headLeft - 2), top: Math.max(0, headTop - 1), text: '•', color: COLOR.soft },
+      { left: Math.min(width - 1, headLeft + 6), top: Math.max(0, headTop - 3), text: '·', color: COLOR.faint },
+      { left: Math.min(width - 1, headLeft + 4), top: Math.max(0, headTop - 2), text: '•', color: COLOR.faint },
+      { left: Math.min(width - 1, headLeft + 2), top: Math.max(0, headTop - 1), text: '✧', color: COLOR.soft },
       { left: headLeft, top: headTop, text: '✦', color: track.color },
     )
   }
   return glyphs
 }
 
-function BackgroundSky(props: { width: number; height: number; phase: number; vivid: boolean }) {
-  const meteors = createMemo(() => meteorGlyphs(props.width, props.height, props.phase))
+function BackgroundSky(props: { width: number; height: number; frame: number; vivid: boolean }) {
+  const stars = createMemo(() => starGlyphs(props.width, props.height, props.frame))
+  const meteors = createMemo(() => meteorGlyphs(props.width, props.height, props.frame))
   return (
     <Show when={props.vivid}>
-      <For each={SKY_STARS}>{star => (
-        <box position="absolute" left={toCell(props.width, star.x)} top={toCell(props.height, star.y)}>
-          <text fg={star.color}>{star.glyph}</text>
-        </box>
-      )}</For>
-      <For each={meteors()}>{meteor => (
-        <box position="absolute" left={meteor.left} top={meteor.top}>
-          <text fg={meteor.color}>{meteor.text}</text>
-        </box>
-      )}</For>
+      <box position="absolute" zIndex={0} width={props.width} height={props.height} left={0} top={0}>
+        <For each={stars()}>{star => (
+          <box position="absolute" left={star.left} top={star.top}>
+            <text fg={star.color}>{star.text}</text>
+          </box>
+        )}</For>
+        <For each={meteors()}>{meteor => (
+          <box position="absolute" left={meteor.left} top={meteor.top}>
+            <text fg={meteor.color}>{meteor.text}</text>
+          </box>
+        )}</For>
+      </box>
     </Show>
   )
 }
@@ -140,6 +168,8 @@ interface NoticeState {
   text: string
   until: number
 }
+
+type ActivityState = 'idle' | 'thinking' | 'streaming' | 'tool'
 
 type DialogState =
   | {
@@ -186,32 +216,31 @@ function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color:
   return { label: 'System', color: COLOR.soft }
 }
 
-function Logo(props: { compact: boolean; vivid: boolean; phase: number }) {
-  const eyebrow = createMemo(() => props.phase % 2 === 0 ? 'XIAOYU' : '小鱼终端')
+function Logo(props: { compact: boolean }) {
   return (
-    <box flexDirection="column" alignItems="center">
+    <box flexDirection="column" alignItems="center" backgroundColor={COLOR.background}>
       <Show
         when={!props.compact}
         fallback={
-          <box flexDirection="column" alignItems="center" paddingBottom={1}>
-            <text fg={COLOR.faint}>{eyebrow()}</text>
+          <box flexDirection="column" alignItems="center" paddingBottom={1} backgroundColor={COLOR.background}>
+            <text fg={COLOR.faint}>XIAOYU</text>
             <text fg={COLOR.orange}><strong>✦ XIAOYU</strong></text>
             <text fg={COLOR.soft}>Model is replaceable. Agent is ours.</text>
           </box>
         }
       >
-        <box flexDirection="column" alignItems="center" paddingBottom={1}>
-          <text fg={COLOR.faint}>{eyebrow()}</text>
-          <box flexDirection="column">
+        <box flexDirection="column" alignItems="center" paddingBottom={1} backgroundColor={COLOR.background}>
+          <text fg={COLOR.faint}>XIAOYU</text>
+          <box flexDirection="column" backgroundColor={COLOR.background}>
             <For each={LOGO_XIAO}>{(left, index) => (
-              <box flexDirection="row">
+              <box flexDirection="row" backgroundColor={COLOR.background}>
                 <text fg={COLOR.orange}>{left}</text>
                 <text>  </text>
                 <text fg={COLOR.soft}>{LOGO_YU[index()]}</text>
               </box>
             )}</For>
           </box>
-          <box paddingTop={1}>
+          <box paddingTop={1} backgroundColor={COLOR.background}>
             <text fg={COLOR.faint}>Model is replaceable. Agent is ours.</text>
           </box>
         </box>
@@ -528,6 +557,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [mode, setMode] = createSignal<TerminalAgentMode>('build')
   const [transcript, setTranscript] = createSignal<TerminalTranscriptItem[]>([])
   const [busy, setBusy] = createSignal(false)
+  const [activity, setActivity] = createSignal<ActivityState>('idle')
   const [notice, setNotice] = createSignal<NoticeState | undefined>()
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
   const [phase, setPhase] = createSignal(0)
@@ -535,6 +565,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
   let controller: AbortController | undefined
+  let bufferedEvents: TerminalRunEvent[] = []
+  let bufferedCharacters = 0
+  let drainResolvers: Array<() => void> = []
 
   const contentWidth = createMemo(() => openTuiContentWidth(dimensions().width))
   const compactLogo = createMemo(() => settings().logo === 'compact' || dimensions().width < 82 || transcript().length > 0)
@@ -543,11 +576,22 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
+  const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][phase() % 4]!)
   const tip = createMemo(() => {
     clock()
+    if (busy()) {
+      const state = activity()
+      const label = state === 'thinking'
+        ? '正在思考…'
+        : state === 'streaming'
+          ? '正在生成回复…'
+          : state === 'tool'
+            ? '正在执行工具…'
+            : '正在工作…'
+      return `${spinnerGlyph()} Xiaoyu ${label} · Ctrl+C 中止`
+    }
     const active = notice()
     if (active && active.until > Date.now()) return active.text
-    if (busy()) return 'Xiaoyu 正在工作 · Ctrl+C 中止'
     return terminalHomeTip(tipIndex(), providerConfigured(), providerReady())
   })
 
@@ -560,6 +604,55 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     renderer.requestRender()
   }
   const refocusPrompt = () => queueMicrotask(() => prompt?.focus())
+  const settleEventDrain = () => {
+    if (bufferedEvents.length > 0) return
+    const resolvers = drainResolvers
+    drainResolvers = []
+    for (const resolve of resolvers) resolve()
+  }
+  const enqueueRunEvent = (event: TerminalRunEvent) => {
+    bufferedEvents.push({ ...event })
+    if (event.type === 'text-delta' || event.type === 'reasoning-delta') bufferedCharacters += Array.from(event.text).length
+    if (event.type === 'reasoning-delta') setActivity('thinking')
+    else if (event.type === 'text-delta') setActivity('streaming')
+    else setActivity('tool')
+  }
+  const pumpRunEvents = () => {
+    const event = bufferedEvents[0]
+    if (!event) {
+      settleEventDrain()
+      return
+    }
+    let projected: TerminalRunEvent = event
+    if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
+      const characters = Array.from(event.text)
+      const batchSize = bufferedCharacters > 360 ? 18 : bufferedCharacters > 180 ? 10 : bufferedCharacters > 80 ? 6 : 3
+      const count = Math.min(batchSize, characters.length)
+      const chunk = characters.slice(0, count).join('')
+      const remaining = characters.slice(count).join('')
+      bufferedCharacters = Math.max(0, bufferedCharacters - count)
+      projected = { ...event, text: chunk }
+      if (remaining) bufferedEvents[0] = { ...event, text: remaining }
+      else bufferedEvents.shift()
+    } else {
+      bufferedEvents.shift()
+    }
+    setTranscript(current => {
+      const next = current.map(item => ({ ...item }))
+      applyTerminalRunEvent(next, projected)
+      return next
+    })
+    renderer.requestRender()
+    settleEventDrain()
+  }
+  const waitForEventDrain = () => bufferedEvents.length === 0
+    ? Promise.resolve()
+    : new Promise<void>(resolve => { drainResolvers.push(resolve) })
+  const clearEventBuffer = () => {
+    bufferedEvents = []
+    bufferedCharacters = 0
+    settleEventDrain()
+  }
 
   const closeDialog = () => {
     setDialog(undefined)
@@ -838,7 +931,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       return
     }
 
-    const placeholder: TerminalTranscriptItem = { role: 'assistant', text: '', placeholder: true }
+    const placeholder: TerminalTranscriptItem = { role: 'reasoning', text: '', placeholder: true }
+    clearEventBuffer()
+    setActivity('thinking')
     setTranscript(current => [...current, { role: 'user', text: line }, placeholder])
     setBusy(true)
     controller = new AbortController()
@@ -847,20 +942,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       await props.backend.sendMessage(
         line,
         mode(),
-        event => setTranscript(current => {
-          const next = current.map(item => ({ ...item }))
-          applyTerminalRunEvent(next, event)
-          return next
-        }),
+        event => enqueueRunEvent(event),
         controller.signal,
         (request, signal) => askApproval(request, signal),
       )
-      setTranscript(current => current.map(item => item === placeholder || (item.placeholder && item.text.length === 0)
-        ? { ...item, text: '(没有文本输出)', placeholder: false }
+      await waitForEventDrain()
+      setTranscript(current => current.map(item => item.placeholder
+        ? { role: 'assistant' as const, text: '(没有文本输出)', placeholder: false }
         : item))
       tell('完成', 2600)
     } catch (error) {
       const aborted = controller.signal.aborted
+      clearEventBuffer()
       const message = `${aborted ? '已中止当前响应' : '请求失败'} · ${error instanceof Error ? error.message : String(error)}`
       setTranscript(current => {
         const next = current.filter(item => !item.placeholder)
@@ -869,6 +962,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       })
       tell(aborted ? '已中止当前响应' : '请求失败')
     } finally {
+      setActivity('idle')
       setBusy(false)
       controller = undefined
       refocusPrompt()
@@ -913,13 +1007,16 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
-    const animation = setInterval(() => setPhase(value => value + 1), 420)
+    const animation = setInterval(() => setPhase(value => value + 1), 60)
+    const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
-    const clockTimer = setInterval(() => setClock(Date.now()), 800)
+    const clockTimer = setInterval(() => setClock(Date.now()), 250)
     onCleanup(() => {
       clearInterval(animation)
+      clearInterval(streamPump)
       clearInterval(tips)
       clearInterval(clockTimer)
+      clearEventBuffer()
       controller?.abort()
     })
     refocusPrompt()
@@ -945,23 +1042,23 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   return (
     <box width={dimensions().width} height={dimensions().height} flexDirection="column" backgroundColor={COLOR.background}>
-      <BackgroundSky width={dimensions().width} height={dimensions().height} phase={phase()} vivid={settings().visual === 'vivid'} />
-      <box flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
+      <BackgroundSky width={dimensions().width} height={dimensions().height} frame={phase()} vivid={settings().visual === 'vivid'} />
+      <box position="relative" zIndex={10} flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
         <Show when={showLogo()}>
-          <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
-            <Logo compact={compactLogo()} vivid={settings().visual === 'vivid'} phase={phase()} />
+          <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2} backgroundColor={COLOR.background}>
+            <Logo compact={compactLogo()} />
           </box>
         </Show>
 
         <Show when={transcript().length > 0}>
-          <box width={contentWidth()} flexGrow={1} flexDirection="column" justifyContent="flex-end" paddingTop={1} paddingBottom={1}>
+          <box width={contentWidth()} flexGrow={1} flexDirection="column" justifyContent="flex-end" paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
             <box flexDirection="column" gap={1}>
               <For each={transcript().slice(-18)}>{item => {
                 const meta = roleMeta(item.role)
                 return (
                   <box flexDirection="row" gap={2}>
                     <box width={8}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
-                    <box flexGrow={1}><text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.text || (item.placeholder ? '…' : '')}</text></box>
+                    <box flexGrow={1}><text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text}</text></box>
                   </box>
                 )
               }}</For>
@@ -1026,18 +1123,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           </box>
         </box>
 
-        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
+        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
           <For each={hintItems()}>{item => <text fg={COLOR.soft}>{item}</text>}</For>
         </box>
         <Show when={settings().tips}>
-          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1}>
+          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1} backgroundColor={COLOR.background}>
             <text fg={COLOR.orange}>●  提示</text>
             <text fg={COLOR.soft}>{tip()}</text>
           </box>
         </Show>
       </box>
 
-      <box flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>
+      <box position="relative" zIndex={10} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1} backgroundColor={COLOR.background}>
         <text fg={COLOR.faint}>{props.backend.workspace}</text>
         <text fg={COLOR.faint}>{props.backend.version}</text>
       </box>

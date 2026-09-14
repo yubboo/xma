@@ -185,7 +185,7 @@ function toolAction(name: string): string {
  */
 export function applyTerminalRunEvent(transcript: TerminalTranscriptItem[], event: TerminalRunEvent): void {
   const placeholder = transcript[transcript.length - 1]
-  if (placeholder?.placeholder === true && placeholder.role === 'assistant' && placeholder.text.length === 0) transcript.pop()
+  if (placeholder?.placeholder === true) transcript.pop()
 
   if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
     const role = event.type === 'text-delta' ? 'assistant' : 'reasoning'

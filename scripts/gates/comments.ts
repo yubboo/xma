@@ -1,14 +1,15 @@
 /**
  * 文件作用：检查核心 TypeScript/Rust 源码是否存在中文文件头说明。
  * 关联模块：docs/development/CODE-COMMENT-STANDARD.md。
- * 当前实现：扫描核心源码并检查中文字符与“文件作用/关联模块”标记。
+ * 当前实现：扫描第一方源码并检查中文字符与“文件作用/关联模块”标记；OpenTUI 依赖岛只检查显式入口文件，绝不递归第三方 node_modules。
  * 职责边界：只检查最低格式，不评价注释质量。
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-const roots = ['core/src', 'packages', 'agents', 'plugins', 'apps/cli/src', 'apps/cli/opentui-runtime', 'apps/server/src', 'apps/desktop/src', 'apps/desktop/scripts', 'apps/desktop/src-tauri', 'native/protocol/src', 'native/runtime/src']
+const roots = ['core/src', 'packages', 'agents', 'plugins', 'apps/cli/src', 'apps/server/src', 'apps/desktop/src', 'apps/desktop/scripts', 'apps/desktop/src-tauri', 'native/protocol/src', 'native/runtime/src']
+const explicitFiles = ['apps/cli/opentui-runtime/app.tsx', 'apps/cli/opentui-runtime/build.ts']
 const ignoredDirectories = new Set(['node_modules', '.git', '.cache', 'dist', 'build', 'target', 'coverage'])
 const files: string[] = []
 
@@ -27,6 +28,7 @@ function walk(dir: string): void {
   }
 }
 for (const root of roots) walk(root)
+for (const file of explicitFiles) if (existsSync(file)) files.push(file)
 
 const failures: string[] = []
 for (const file of files) {

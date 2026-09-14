@@ -222,3 +222,16 @@
 - 交互边界：命令面板与输入焦点语义不变，Esc 仍是返回/取消主通道；背景动画只承担视觉装饰，不接管 Provider/Session/Native 逻辑，也不引入新的点击返回语义。
 - 回归：OpenTUI 静态合同测试补充像素星空/流星与居中 Dock 检查；Comments Gate 测试补充 `hasIgnoredSegment` 路径级忽略合同。最终 `[7]` 完整通过与首页视觉效果仍需用户 Windows 已准备环境实机确认。
 - 交付：未冻结 `0.1.0` 继续覆盖生成正式 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`，不创建临时 hotfix/fixed 包名。
+
+##20 · Windows 实机收口：Gate 依赖岛、平滑星空流星与实时打字机
+
+- 日期：2026-09-14
+- 依据：直接检查 GitHub `yubboo/xma` 最新提交 `d9d6f973045505643c8b444f7a634940a37ed160`，并以用户 Windows Terminal 实机截图与 `[7]` 输出为最终问题证据，不再基于旧本地快照猜测。
+- `[7]` 根因收口：`apps/cli/opentui-runtime` 是独立 Bun 依赖岛，Comments Gate 不应递归该目录再尝试排除 `node_modules`；改为从通用 roots 中移除整个依赖岛，仅显式检查 `app.tsx` 与 `build.ts` 两个第一方入口。即使 Windows/Bun 使用 junction、nested node_modules 或第三方包携带 `.ts/.d.ts`，Gate 也不可能再进入依赖树。
+- 动画性能：vivid 背景由 420ms 粗粒度帧改为 60ms 视觉帧；星点按独立 period/offset 循环亮度与 glyph，恢复连续闪烁；流星周期拉长为间歇出现、单次约 25~28 帧，方向统一为右上 → 左下，并把尾迹放在头部右上方。
+- 层级：背景星空固定 `zIndex=0`，主 TUI / footer 固定更高层；Logo、Transcript、快捷栏、提示与 Dock 都使用不透明工作台背景遮罩，流星可以“从后面经过”，但不会再穿过 `XIAOYU`、输入卡或对话文本。
+- 实时回复：OpenTUI 在提交后立即显示 `Think · 正在思考…`；Provider 的 `reasoning-delta/text-delta/tool` 事件进入 30ms 缓冲泵，按 backlog 自适应 3/6/10/18 个字符逐批投影，既保留真实 streaming 顺序，又在 Provider 偶尔一次返回大块文本时仍呈现稳定打字机吐字。底部提示同步区分“正在思考 / 正在生成回复 / 正在执行工具”，Ctrl+C 继续中止。
+- 运行边界：Agent Runtime、Provider SSE、Tool Approval、Session durable truth 均未改语义；本批只修 Gate ownership 与 OpenTUI 投影/动画层。OpenAI-compatible Adapter 与 AgentRuntime 已确认原本就逐 chunk 发 `model/reasoning-delta` / `model/text-delta`，静默感来自 UI 缺少平滑投影与明确等待状态，而不是把模型调用改成非流式。
+- 回归：OpenTUI 离线静态合同扩展到 12 项，覆盖依赖岛显式文件、右上→左下流星、居中 Dock、空白点击不返回、思考状态与打字机缓冲；Comments Gate 另用伪造 `apps/cli/opentui-runtime/node_modules/fake-dep/index.ts` 验证后仍 PASS（84 个第一方源码）。变更 TS/TSX 使用 TypeScript 5.8 transpile parser 语法检查 PASS。
+- 实机边界：完整 `pnpm check → build:cli → smoke:cli` 与 OpenTUI Native 动画帧率仍必须由用户 Windows 已准备环境执行；本沙箱没有项目 node_modules/Bun Native Runtime，因此不冒充本地跑过完整 `[7]`。
+- 交付：未冻结 `0.1.0` 继续覆盖正式 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix 临时命名。
