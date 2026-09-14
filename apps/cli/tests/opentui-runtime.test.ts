@@ -28,6 +28,15 @@ test('OpenTUI runtime stays pinned to the MiMo-validated dependency baseline', (
   assert.equal(pkg.dependencies?.['solid-js'], '1.9.11')
 })
 
+test('Workspace Trust hides the hardware cursor during raw selection and restores it before OpenTUI starts', () => {
+  const source = readFileSync('apps/cli/src/tui.ts', 'utf8')
+  const start = source.indexOf('export async function confirmWorkspaceTrust(')
+  const end = source.indexOf('export function approvalDecision(', start)
+  const trustSource = source.slice(start, end)
+  assert.match(trustSource, /terminalMouseCaptureSequence\}\$\{hideHardwareCursor/)
+  assert.match(trustSource, /terminalMouseReleaseSequence\}\$\{reset\}\$\{clearScreen\}\$\{showHardwareCursor/)
+})
+
 test('Active OpenTUI source uses native textarea focus and never reintroduces legacy manual cursor control', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /createCliRenderer/)

@@ -71,7 +71,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 - `[4] Xiaoyu CLI`：不再次安装依赖；先从当前 checkout 的 `xma-path/state/bun-environment.json` 与 `rust-environment.json` 恢复 `[1]/[8]/[9]` 确认的位置，并真实验证 Bun/OpenTUI、`rustc/cargo`。项目默认位置按相对语义解析，所以 checkout/U 盘盘符移动后自动指向新的 `<checkout>\xma-path`；外部 D:/E: 依赖保持其真实绝对位置。Rust 随后执行 `cargo fetch --locked --offline` preflight，只有通过才执行 `cargo build --package xma-native-runtime --offline`；缺 crate 时明确提示 `[9]` 或 `[1]`，不得静默联网。Windows 复用 `.cache/cargo-target/` 增量缓存，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行。
 - `[7] 全量检查`：先恢复 `[1]` 记录的 Rust Home，并在 TypeScript/CLI 测试之前做 Cargo offline preflight + rustfmt preflight；缺失立即提示回 `[1]`。随后 Rust check/test 使用 `--offline`；
 - `[8] 单独安装 · Bun / OpenTUI`：只处理 Bun + OpenTUI，使用与 `[1]` 相同的依赖根选择和真实校验；
-- `[9] 单独安装 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates，使用与 `[1]` 相同的依赖根选择和真实校验；
+- `[9] 单独安装 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates，使用与 `[1]` 相同的依赖根选择和真实校验；如果项目默认 `xma-path/rust` 被删除，下一次 `[1]` 的 `[5/9]` 会重新询问 Y/N；若之前选择的外部 `D:/E:/<盘符>:/xma-path/rust` 或兼容旧 `D:/XMA/Rust` 实体仍存在，则真实探针通过后直接重新接管并重建 `xma-path/state`，不重复安装；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
@@ -140,6 +140,6 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 会把 Bun/OpenTUI 当作一个可独立准备的组件：先真实恢复 Bun 1.3.14 和固定 OpenTUI 依赖；缺失时询问 Y/N，N 只跳过，稍后可用主菜单 `[8] 单独安装 · Bun / OpenTUI`。默认依赖根是 `<checkout>\xma-path`，因此实体文件位于 `xma-path\bun\1.3.14\bun.exe` 与 `xma-path\opentui\node_modules`；选择 D 盘或自定义真实盘符时对应落在 `<依赖根>\bun` / `<依赖根>\opentui`。源码目录 `apps/cli/opentui-runtime/node_modules` 只建立到该实体依赖目录的本地链接，用于 Bun 模块解析，不再保存第二份真实依赖。四个固定版本完全匹配时后续准备直接复用；旧源码目录的实体 OpenTUI node_modules 会一次迁移到新的依赖根。`[4]`/`[7]`/`build:cli` 从 `xma-path/state` 恢复 Bun Home、重建必要链接并真实校验版本；运行/检查强制 `--no-install`，不得偷偷联网补包。
+`xma-dev.bat → [1]` 会把 Bun/OpenTUI 当作一个可独立准备的**整组件**：先真实恢复 Bun 1.3.14，再验证固定 OpenTUI 依赖是否完整；Bun 或 OpenTUI 任一部分缺失都会在 `[4/9]` 询问 Y/N，N 只跳过，稍后可用主菜单 `[8] 单独安装 · Bun / OpenTUI`。默认依赖根是 `<checkout>\xma-path`，因此实体文件位于 `xma-path\bun\1.3.14\bun.exe` 与 `xma-path\opentui\node_modules`；选择 D 盘或自定义真实盘符时对应落在 `<依赖根>\bun` / `<依赖根>\opentui`。源码目录 `apps/cli/opentui-runtime/node_modules` 只建立到该实体依赖目录的本地链接，用于 Bun 模块解析，不再保存第二份真实依赖。四个固定版本完全匹配时后续准备直接复用；旧源码目录的实体 OpenTUI node_modules 会一次迁移到新的依赖根。删除整个项目默认 `xma-path` 后，下一次 `[1]` 会重新询问 Bun/OpenTUI；只删除 `xma-path\opentui` 也会触发整组件修复询问。`[4]`/`[7]`/`build:cli` 从 `xma-path/state` 恢复 Bun Home、重建必要链接并真实校验版本；运行/检查强制 `--no-install`，不得偷偷联网补包。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。

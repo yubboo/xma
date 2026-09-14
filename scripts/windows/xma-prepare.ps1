@@ -428,9 +428,14 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
       if ($rustProbe.ExitCode -eq 0 -and $cargoProbe.ExitCode -eq 0) {
         $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
         $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User') }
+        $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $Root
+        $hadProjectState = Test-Path -LiteralPath $stateFile -PathType Leaf
         Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $cargoHome -RustupHome $rustupHome
         $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
         $rustReady = $null -ne $runtime
+        if ($rustReady -and -not $hadProjectState) {
+          Write-Host "[恢复] 项目 xma-path 状态不存在，但检测到可真实运行的外部 Rust/Cargo；已重新接管，不重复安装：$cargoHome" -ForegroundColor DarkCyan
+        }
       }
     }
   }
@@ -619,13 +624,60 @@ function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
   Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
 }
 
+function Ensure-XmaBunOpenTuiRuntime([switch]$PromptIfMissing) {
+  # 中文说明：Bun + OpenTUI 是一个运行组件。`[1]` 必须按“整组件真值”判断，
+  # 不能只看到 bun.exe 就认为准备完成，否则用户删除 xma-path\opentui 后不会再次获得 Y/N 修复机会。
+  $before = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  $bunExe = Install-XmaBunRuntime -PromptIfMissing:$PromptIfMissing
+  if (-not $bunExe) { return $null }
+
+  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
+  $bunHome = Split-Path -Parent $bunVersionDir
+  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
+  $openTuiReady = Test-XmaOpenTuiDependencies $openTuiHome
+
+  if (-not $openTuiReady -and $PromptIfMissing -and $before) {
+    Write-Host "[缺少] Bun $BunVersion 已存在，但 OpenTUI Runtime 依赖不完整：$openTuiHome" -ForegroundColor Yellow
+    if (-not (Confirm-XmaAction '是否修复/重新安装 OpenTUI Runtime？选择 N 会跳过，可稍后在主菜单 [8] 单独安装。')) {
+      Write-Host '[跳过] OpenTUI Runtime 未修复；Bun 本体保留，但 [4]/[7] 仍会提示先运行 [8]。' -ForegroundColor Yellow
+      return $null
+    }
+  }
+
+  if (-not $openTuiReady) {
+    # Bun 本轮刚由用户同意安装时，沿用同一次“Bun / OpenTUI Runtime”授权，不重复弹第二个 Y/N。
+    # 旧版实体依赖如果完整，Ensure 会优先本地迁移；只有确实缺失时才联网安装。
+    Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe
+  } elseif (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
+    throw "OpenTUI 依赖存在，但无法连接到源码 Runtime：$openTuiHome"
+  }
+
+  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
+    throw "Bun/OpenTUI 组件准备结束但真实依赖仍不完整：$openTuiHome"
+  }
+  Write-Host "[通过] Bun/OpenTUI 整组件已就绪：Bun $BunVersion + OpenTUI $OpenTuiVersion" -ForegroundColor Green
+  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
+  return $bunExe
+}
+
+function Remove-XmaPackageMetadataFromGitWorktree {
+  # `.xma-package` 只属于正式源码包。只要当前目录已经是 Git checkout，它就不再是长期工作目录的一部分。
+  $gitDir = Join-Path $Root '.git'
+  $packageMetadata = Join-Path $Root '.xma-package'
+  if ((Test-Path -LiteralPath $gitDir) -and (Test-Path -LiteralPath $packageMetadata -PathType Container)) {
+    Remove-Item -LiteralPath $packageMetadata -Recurse -Force -ErrorAction Stop
+    Write-Host "[清理] 已移除 Git 工作目录中的源码包元数据：$packageMetadata" -ForegroundColor DarkYellow
+  }
+}
+
 function Prepare-XmaBunOnly {
   Write-Host '====================================================================' -ForegroundColor DarkCyan
   Write-Host '  XMA · 单独安装 Bun / OpenTUI Runtime' -ForegroundColor Cyan
   Write-Host '====================================================================' -ForegroundColor DarkCyan
-  $bunExe = Install-XmaBunRuntime
-  Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe
+  $bunExe = Ensure-XmaBunOpenTuiRuntime
+  if (-not $bunExe) { throw 'Bun / OpenTUI Runtime 单独准备未完成。' }
   Remove-XmaLegacyLocalDirectory
+  Remove-XmaPackageMetadataFromGitWorktree
   Write-Host '[完成] Bun / OpenTUI Runtime 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
@@ -639,6 +691,7 @@ function Prepare-XmaRustOnly {
   Write-Host '[Crates] 正在准备 XMA Native Rust crates...' -ForegroundColor Cyan
   Ensure-XmaCargoCrates -RustRuntime $rustRuntime
   Remove-XmaLegacyLocalDirectory
+  Remove-XmaPackageMetadataFromGitWorktree
   Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
@@ -706,8 +759,8 @@ Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[4/9] Bun 1.3.14 / OpenTUI Runtime' -ForegroundColor Cyan
-Write-Host '[检查] 正在真实恢复已安装 Bun；不存在时才询问是否安装。' -ForegroundColor DarkCyan
-$bunExe = Install-XmaBunRuntime -PromptIfMissing
+Write-Host '[检查] 正在真实恢复 Bun + OpenTUI 整组件；任一部分缺失时才询问是否安装/修复。' -ForegroundColor DarkCyan
+$bunExe = Ensure-XmaBunOpenTuiRuntime -PromptIfMissing
 
 Write-Host ''
 Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
@@ -745,8 +798,20 @@ else {
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
   Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 }
-if ($bunExe) { Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe }
-else { Write-Host '[跳过] Bun 未安装，因此暂不准备 OpenTUI 独立依赖；主菜单 [8] 会一次补齐 Bun + OpenTUI。' -ForegroundColor Yellow }
+if ($bunExe) {
+  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
+  $bunHome = Split-Path -Parent $bunVersionDir
+  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
+  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
+    throw "[4/9] 已确认 Bun/OpenTUI，但 [7/9] 复检发现 OpenTUI 依赖丢失：$openTuiHome。请重新运行 [1] 或主菜单 [8]。"
+  }
+  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
+    throw "OpenTUI 依赖存在，但源码 Runtime 链接已失效：$openTuiHome。请重新运行 [1] 或主菜单 [8]。"
+  }
+  Write-Host '[缓存] Bun/OpenTUI 已由 [4/9] 完整准备，本步骤只做复检，不重复安装。' -ForegroundColor DarkCyan
+} else {
+  Write-Host '[跳过] Bun/OpenTUI 本轮未准备；主菜单 [8] 可单独补齐。' -ForegroundColor Yellow
+}
 Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
@@ -769,12 +834,13 @@ Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
 Remove-XmaLegacyLocalDirectory
+Remove-XmaPackageMetadataFromGitWorktree
 
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
 Write-Host "[依赖根] 默认位置：$(Get-XmaLocalPathRoot -ProjectRoot $Root)" -ForegroundColor Cyan
-if ($bunExe) { Write-Host '[Bun] 已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan } else { Write-Host '[Bun] 本轮跳过；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
+if ($bunExe) { Write-Host '[Bun/OpenTUI] 整组件已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan } else { Write-Host '[Bun/OpenTUI] 本轮跳过或未完整；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
 if ($rustRuntime) { Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan } else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
 Write-Host '[开发命令] 新开终端后，可在任意 Workspace 输入 xiaoyu / xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan

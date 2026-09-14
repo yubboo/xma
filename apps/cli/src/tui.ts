@@ -739,7 +739,9 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
     input.setEncoding('utf8')
     input.setRawMode(true)
     input.resume()
-    output.write(terminalMouseCaptureSequence)
+    // Workspace Trust 仍是 OpenTUI 启动前的安全确认。Windows Text Cursor Indicator 会追踪硬件光标，
+    // 因此 raw 选择界面期间显式隐藏硬件光标，避免出现蓝色上下标记；退出 Trust 后立即恢复。
+    output.write(`${terminalMouseCaptureSequence}${hideHardwareCursor}`)
     draw()
     return await new Promise<boolean>(resolve => {
       const finish = (value: boolean): void => {
@@ -774,7 +776,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
   } finally {
     input.setRawMode(previousRaw)
     if (!previousRaw) input.pause()
-    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}`)
+    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${showHardwareCursor}`)
   }
 }
 

@@ -447,3 +447,15 @@
 - 回归：Windows Gate 新增静态检查，禁止任何受管 PowerShell 脚本重新出现双反斜杠 `System.Char` 数组；继续保留 UTF-8 BOM + CRLF 合同。
 - 交付：版本仍为 `0.1.0`，继续覆盖正式 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`。
 
+
+
+##38 · Bun/OpenTUI 整组件自愈与 Workspace Trust 光标收口
+
+- 日期：2026-09-15
+- 目的：根据 Windows 实机回归继续收口 `xma-path` 依赖真值：修复“Bun 本体仍在但 `xma-path/opentui` 被删后 `[1]` 不再询问修复”的不对称行为，同时处理 `[4]` 启动进入 Workspace Trust 前 Windows Text Cursor Indicator 仍显示蓝色上下标记的问题，并清理 Git 工作目录遗留的 `.xma-package`。
+- Bun/OpenTUI 整组件：`[4/9]` 不再只以 `bun.exe` 是否存在作为完成条件。Bun 1.3.14 与固定 OpenTUI 依赖共同构成一个组件；任一部分缺失都视为未完整。若 Bun 已存在但 OpenTUI 被清理，`[1]` 会明确询问 Y/N 是否修复；选择 N 保留 Bun 但 `[4]/[7]` 继续 fail loud 并引导 `[8]`。若整个 `xma-path` 被删除，Bun 缺失时原有一次 Y/N 同意同时覆盖 Bun + OpenTUI，不重复弹第二次确认。
+- 准备职责：OpenTUI 的安装/迁移从 `[7/9] Workspace JS` 收回 `[4/9] Bun/OpenTUI`。`[7/9]` 只复检组件真值并重建必要 junction，禁止在用户已经跳过 Bun/OpenTUI 后偷偷联网补装。
+- Rust 恢复：删除 `xma-path/state` 但外部 `D:/XMA/Rust` 或其他自定义 Rust 实体仍存在时，`[5/9]` 会明确打印“发现可真实运行的外部 Rust/Cargo，已重新接管”，重建项目状态而不重复安装；只有实际 `rustc/cargo` 也不存在时才重新询问 Y/N。
+- Workspace Trust 光标：OpenTUI 启动前的 raw Workspace Trust 选择界面现在在捕获鼠标期间显式隐藏硬件光标，并在退出 Trust 时恢复；避免 Windows Text Cursor Indicator 把硬件光标显示成蓝色上下标记。Active OpenTUI 仍保留原生 Textarea cursor 逻辑，不重新引入手写编辑器。
+- 根目录清理：`.xma-package` 只属于正式源码包。除 Source Sync 继续在目标仓库清理外，`[1]`、`[8]`、`[9]` 在检测到当前目录已经是 Git checkout 时也会删除遗留 `.xma-package`；`.cache/dist/node_modules/xma-path` 仍分别承担缓存、正式构建产物、Workspace JS 依赖和本地依赖根职责，不做错误清理。
+- 回归：Windows Gate 锁定 Bun/OpenTUI 整组件准备、`[7/9]` 只复检、Git checkout `.xma-package` 清理与外部 Rust 恢复提示；TUI 测试锁定 Workspace Trust raw 生命周期隐藏/恢复硬件光标。版本继续保持 `0.1.0`。
