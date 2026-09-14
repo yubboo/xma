@@ -10,6 +10,7 @@ import {
   decodePasteBytes,
   type KeyEvent,
   type PasteEvent,
+  type ScrollBoxRenderable,
   type TextareaRenderable,
 } from '@opentui/core'
 import { render, useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
@@ -19,6 +20,7 @@ import type { TerminalBrainProfileView } from '../src/brain.ts'
 import {
   applyTerminalRunEvent,
   commandPaletteOptions,
+  DEFAULT_TERMINAL_UI_SETTINGS,
   cycleTerminalAgentMode,
   loadTerminalUiSettings,
   needsInitialBrainSetup,
@@ -67,31 +69,60 @@ const LOGO_YU = [
 ] as const
 
 const SKY_STARS = [
-  { x: 0.07, y: 0.13, offset: 0, period: 16 },
-  { x: 0.19, y: 0.09, offset: 5, period: 19 },
-  { x: 0.36, y: 0.08, offset: 9, period: 23 },
-  { x: 0.63, y: 0.09, offset: 2, period: 17 },
-  { x: 0.81, y: 0.12, offset: 12, period: 21 },
-  { x: 0.94, y: 0.18, offset: 7, period: 25 },
-  { x: 0.06, y: 0.79, offset: 3, period: 18 },
-  { x: 0.17, y: 0.88, offset: 14, period: 24 },
-  { x: 0.78, y: 0.87, offset: 8, period: 20 },
-  { x: 0.91, y: 0.76, offset: 1, period: 22 },
+  { x: 0.07, y: 0.13, offset: 0, period: 18 },
+  { x: 0.19, y: 0.09, offset: 6, period: 23 },
+  { x: 0.36, y: 0.08, offset: 11, period: 27 },
+  { x: 0.63, y: 0.09, offset: 3, period: 21 },
+  { x: 0.81, y: 0.12, offset: 14, period: 25 },
+  { x: 0.94, y: 0.18, offset: 8, period: 31 },
+  { x: 0.06, y: 0.79, offset: 4, period: 22 },
+  { x: 0.17, y: 0.88, offset: 17, period: 29 },
+  { x: 0.78, y: 0.87, offset: 9, period: 24 },
+  { x: 0.91, y: 0.76, offset: 2, period: 28 },
 ] as const
 
 const STAR_FRAMES = [
-  { glyph: '·', color: COLOR.faint },
+  { glyph: '·', color: '#303436' },
   { glyph: '✧', color: COLOR.faint },
   { glyph: '✧', color: COLOR.soft },
   { glyph: '✦', color: COLOR.text },
   { glyph: '✧', color: COLOR.yellow },
   { glyph: '✧', color: COLOR.soft },
-  { glyph: '·', color: COLOR.faint },
+  { glyph: '·', color: '#303436' },
 ] as const
 
+/**
+ * 中文说明：流星轨迹按 MiMo Code 的视觉方向从右上向左下掠过。
+ * period/span 采用错峰周期，让“时不时出现”的感觉稳定又不会同时刷满屏幕。
+ */
 const METEOR_TRACKS = [
-  { x: 0.95, y: 0.08, dx: -0.58, dy: 0.58, period: 96, span: 28, offset: 0, color: COLOR.yellow },
-  { x: 0.88, y: 0.05, dx: -0.50, dy: 0.52, period: 137, span: 25, offset: 61, color: COLOR.soft },
+  { x: 1.02, y: 0.04, dx: -0.74, dy: 0.67, period: 176, span: 38, offset: 0 },
+  { x: 0.98, y: 0.02, dx: -0.66, dy: 0.60, period: 257, span: 40, offset: 103 },
+] as const
+
+const METEOR_TRAIL = [
+  { dx: 0, dy: 0, glyph: '✦', color: '#f4f4f4' },
+  { dx: 1, dy: -1, glyph: '•', color: '#c7ddf4' },
+  { dx: 2, dy: -1, glyph: '·', color: '#9ec4e7' },
+  { dx: 3, dy: -2, glyph: '•', color: '#7caed8' },
+  { dx: 4, dy: -2, glyph: '·', color: '#6798c5' },
+  { dx: 5, dy: -3, glyph: '·', color: '#5f8fb9' },
+  { dx: 6, dy: -3, glyph: '·', color: '#537da3' },
+  { dx: 7, dy: -4, glyph: '·', color: '#476a89' },
+  { dx: 8, dy: -4, glyph: '·', color: '#3b5a75' },
+  { dx: 9, dy: -5, glyph: '·', color: '#344c61' },
+  { dx: 10, dy: -5, glyph: '·', color: '#2d4052' },
+  { dx: 11, dy: -6, glyph: '·', color: '#273746' },
+  { dx: 12, dy: -6, glyph: '·', color: '#222f3a' },
+  { dx: 13, dy: -7, glyph: '·', color: '#1f2932' },
+  { dx: 14, dy: -7, glyph: '·', color: '#1b242b' },
+  { dx: 15, dy: -8, glyph: '·', color: '#182026' },
+  { dx: 16, dy: -8, glyph: '·', color: '#151c21' },
+  { dx: 17, dy: -9, glyph: '·', color: '#13191d' },
+  { dx: 18, dy: -9, glyph: '·', color: '#111619' },
+  { dx: 19, dy: -10, glyph: '·', color: '#0f1316' },
+  { dx: 20, dy: -10, glyph: '·', color: '#0d1012' },
+  { dx: 21, dy: -11, glyph: '·', color: '#0c0e10' },
 ] as const
 
 interface SkyGlyph {
@@ -127,34 +158,84 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
     const progress = track.span <= 1 ? 1 : step / (track.span - 1)
     const headLeft = toCell(width, track.x + track.dx * progress, 2)
     const headTop = toCell(height, track.y + track.dy * progress, 1)
-    glyphs.push(
-      { left: Math.min(width - 1, headLeft + 6), top: Math.max(0, headTop - 3), text: '·', color: COLOR.faint },
-      { left: Math.min(width - 1, headLeft + 4), top: Math.max(0, headTop - 2), text: '•', color: COLOR.faint },
-      { left: Math.min(width - 1, headLeft + 2), top: Math.max(0, headTop - 1), text: '✧', color: COLOR.soft },
-      { left: headLeft, top: headTop, text: '✦', color: track.color },
-    )
+    for (const trail of METEOR_TRAIL) {
+      const left = headLeft + trail.dx
+      const top = headTop + trail.dy
+      if (left < 0 || left >= width || top < 0 || top >= height) continue
+      glyphs.push({ left, top, text: trail.glyph, color: trail.color })
+    }
   }
   return glyphs
 }
 
-function BackgroundSky(props: { width: number; height: number; frame: number; vivid: boolean }) {
-  const stars = createMemo(() => starGlyphs(props.width, props.height, props.frame))
-  const meteors = createMemo(() => meteorGlyphs(props.width, props.height, props.frame))
+function BackgroundSky(props: {
+  width: number
+  height: number
+  starFrame: number
+  meteorFrame: number
+  vivid: boolean
+  stars: boolean
+  meteors: boolean
+}) {
+  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, props.starFrame) : [])
+  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.meteorFrame) : [])
   return (
-    <Show when={props.vivid}>
+    <Show when={props.vivid && (props.stars || props.meteors)}>
       <box position="absolute" zIndex={0} width={props.width} height={props.height} left={0} top={0}>
-        <For each={stars()}>{star => (
+        <For each={starItems()}>{star => (
           <box position="absolute" left={star.left} top={star.top}>
             <text fg={star.color}>{star.text}</text>
           </box>
         )}</For>
-        <For each={meteors()}>{meteor => (
+        <For each={meteorItems()}>{meteor => (
           <box position="absolute" left={meteor.left} top={meteor.top}>
             <text fg={meteor.color}>{meteor.text}</text>
           </box>
         )}</For>
       </box>
     </Show>
+  )
+}
+
+const LOGO_HIGHLIGHT = ['#ffffff', '#fff1e4', '#ffc09a', '#ff925c', '#ff7e3f', '#c98f6c', '#a4a4a4'] as const
+
+function logoGlyphColor(index: number, width: number, frame: number, base: string): string {
+  const cycle = frame % 88
+  if (cycle < 20 || cycle > 72) return base
+  const progress = (cycle - 20) / 52
+  const center = -6 + progress * (width + 12)
+  const distance = Math.abs(index - center)
+  if (distance > 6) return base
+  const paletteIndex = Math.min(LOGO_HIGHLIGHT.length - 1, Math.floor(distance))
+  return LOGO_HIGHLIGHT[paletteIndex] ?? base
+}
+
+interface LogoSegment {
+  text: string
+  color: string
+}
+
+function logoLineSegments(left: string, right: string, frame: number, gradient: boolean): LogoSegment[] {
+  const line = `${left}  ${right}`
+  const leftWidth = left.length + 2
+  const segments: LogoSegment[] = []
+  for (let index = 0; index < line.length; index += 1) {
+    const base = index < leftWidth ? COLOR.orange : COLOR.soft
+    const color = gradient ? logoGlyphColor(index, line.length, frame, base) : base
+    const char = line[index] ?? ' '
+    const previous = segments.at(-1)
+    if (previous?.color === color) previous.text += char
+    else segments.push({ text: char, color })
+  }
+  return segments
+}
+
+function LogoLine(props: { left: string; right: string; frame: number; gradient: boolean }) {
+  const segments = createMemo(() => logoLineSegments(props.left, props.right, props.frame, props.gradient))
+  return (
+    <box flexDirection="row" backgroundColor={COLOR.background}>
+      <For each={segments()}>{segment => <text fg={segment.color}>{segment.text}</text>}</For>
+    </box>
   )
 }
 
@@ -216,7 +297,7 @@ function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color:
   return { label: 'System', color: COLOR.soft }
 }
 
-function Logo(props: { compact: boolean }) {
+function Logo(props: { compact: boolean; frame: number; gradient: boolean }) {
   return (
     <box flexDirection="column" alignItems="center" backgroundColor={COLOR.background}>
       <Show
@@ -224,7 +305,7 @@ function Logo(props: { compact: boolean }) {
         fallback={
           <box flexDirection="column" alignItems="center" paddingBottom={1} backgroundColor={COLOR.background}>
             <text fg={COLOR.faint}>XIAOYU</text>
-            <text fg={COLOR.orange}><strong>✦ XIAOYU</strong></text>
+            <text fg={props.gradient ? logoGlyphColor(4, 10, props.frame, COLOR.orange) : COLOR.orange}><strong>✦ XIAOYU</strong></text>
             <text fg={COLOR.soft}>Model is replaceable. Agent is ours.</text>
           </box>
         }
@@ -233,11 +314,12 @@ function Logo(props: { compact: boolean }) {
           <text fg={COLOR.faint}>XIAOYU</text>
           <box flexDirection="column" backgroundColor={COLOR.background}>
             <For each={LOGO_XIAO}>{(left, index) => (
-              <box flexDirection="row" backgroundColor={COLOR.background}>
-                <text fg={COLOR.orange}>{left}</text>
-                <text>  </text>
-                <text fg={COLOR.soft}>{LOGO_YU[index()]}</text>
-              </box>
+              <LogoLine
+                left={left}
+                right={LOGO_YU[index()] ?? ''}
+                frame={props.frame}
+                gradient={props.gradient}
+              />
             )}</For>
           </box>
           <box paddingTop={1} backgroundColor={COLOR.background}>
@@ -564,6 +646,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
+  let transcriptScroll: ScrollBoxRenderable | undefined
   let controller: AbortController | undefined
   let bufferedEvents: TerminalRunEvent[] = []
   let bufferedCharacters = 0
@@ -576,7 +659,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
-  const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][phase() % 4]!)
+  const starFrame = createMemo(() => Math.floor(phase() / 3))
+  const logoFrame = createMemo(() => Math.floor(phase() / 2))
+  const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][Math.floor(phase() / 3) % 4]!)
   const tip = createMemo(() => {
     clock()
     if (busy()) {
@@ -869,29 +954,155 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     }
   }
 
-  const settingsDialog = async () => {
-    const current = settings()
-    const value = await askList('终端设置', [
-      { value: 'visual', label: '丰富显示', description: `当前：${current.visual === 'vivid' ? '丰富' : '简洁'}` },
-      { value: 'tips', label: '提示信息', description: `当前：${current.tips ? '开启' : '关闭'}` },
-      { value: 'logo', label: 'Logo 模式', description: `当前：${current.logo === 'auto' ? '自动' : '紧凑'}` },
-    ])
-    if (!value) return
-    const next = value === 'visual'
-      ? toggleTerminalVisual(settings())
-      : value === 'tips'
-        ? { ...settings(), tips: !settings().tips }
-        : { ...settings(), logo: settings().logo === 'auto' ? 'compact' as const : 'auto' as const }
+  const commitSettings = (next: TerminalUiSettings, message: string) => {
     setSettings(next)
     saveTerminalUiSettings(next)
-    tell('终端设置已更新')
+    tell(message, 3200)
+    refresh()
+  }
+
+  const appearanceSettingsDialog = async (): Promise<void> => {
+    while (true) {
+      const current = settings()
+      const value = await askList('设置 · 外观', [
+        {
+          value: 'visual',
+          label: '显示模式',
+          description: `当前：${current.visual === 'vivid' ? '丰富模式' : '简洁模式'} · 丰富模式允许动画特效`,
+        },
+        {
+          value: 'logo',
+          label: 'Logo 模式',
+          description: `当前：${current.logo === 'auto' ? '自动' : '紧凑'} · 对话后自动收起大 Logo`,
+        },
+        { value: 'back', label: '返回上一级', description: '返回设置' },
+      ])
+      if (!value || value === 'back') return
+      if (value === 'visual') {
+        const next = toggleTerminalVisual(settings())
+        commitSettings(next, `显示模式 · ${next.visual === 'vivid' ? '丰富模式' : '简洁模式'}`)
+        continue
+      }
+      if (value === 'logo') {
+        const next = { ...settings(), logo: settings().logo === 'auto' ? 'compact' as const : 'auto' as const }
+        commitSettings(next, `Logo 模式 · ${next.logo === 'auto' ? '自动' : '紧凑'}`)
+      }
+    }
+  }
+
+  const effectsSettingsDialog = async (): Promise<void> => {
+    while (true) {
+      const current = settings()
+      const enabledCount = [current.stars, current.meteors, current.logoGradient].filter(Boolean).length
+      const value = await askList('设置 · 特效', [
+        {
+          value: 'stars',
+          label: '星星闪烁',
+          description: `当前：${current.stars ? '开启' : '关闭'} · 背景星点独立呼吸闪烁`,
+        },
+        {
+          value: 'meteors',
+          label: '流星坠落',
+          description: `当前：${current.meteors ? '开启' : '关闭'} · 右上 → 左下的点阵长尾流星`,
+        },
+        {
+          value: 'logo-gradient',
+          label: 'Logo 颜色渐变',
+          description: `当前：${current.logoGradient ? '开启' : '关闭'} · 每隔数秒扫过高亮色带`,
+        },
+        {
+          value: 'all-effects',
+          label: '全部特效',
+          description: `当前：${enabledCount === 3 ? '全部开启' : enabledCount === 0 ? '全部关闭' : '部分开启'} · 一键切换`,
+        },
+        { value: 'back', label: '返回上一级', description: '返回设置' },
+      ])
+      if (!value || value === 'back') return
+      if (value === 'stars') {
+        const next = { ...settings(), stars: !settings().stars }
+        commitSettings(next, `星星闪烁 · ${next.stars ? '开启' : '关闭'}`)
+        continue
+      }
+      if (value === 'meteors') {
+        const next = { ...settings(), meteors: !settings().meteors }
+        commitSettings(next, `流星坠落 · ${next.meteors ? '开启' : '关闭'}`)
+        continue
+      }
+      if (value === 'logo-gradient') {
+        const next = { ...settings(), logoGradient: !settings().logoGradient }
+        commitSettings(next, `Logo 颜色渐变 · ${next.logoGradient ? '开启' : '关闭'}`)
+        continue
+      }
+      if (value === 'all-effects') {
+        const enable = enabledCount !== 3
+        const next = { ...settings(), stars: enable, meteors: enable, logoGradient: enable }
+        commitSettings(next, `全部特效 · ${enable ? '开启' : '关闭'}`)
+      }
+    }
+  }
+
+  const systemSettingsDialog = async (): Promise<void> => {
+    while (true) {
+      const current = settings()
+      const value = await askList('设置 · 系统', [
+        {
+          value: 'tips',
+          label: '提示信息',
+          description: `当前：${current.tips ? '开启' : '关闭'} · 首页底部轮播快捷提示`,
+        },
+        {
+          value: 'reset',
+          label: '恢复默认设置',
+          description: '恢复丰富模式、星星、流星、Logo 渐变与提示',
+        },
+        { value: 'back', label: '返回上一级', description: '返回设置' },
+      ])
+      if (!value || value === 'back') return
+      if (value === 'tips') {
+        const next = { ...settings(), tips: !settings().tips }
+        commitSettings(next, `提示信息 · ${next.tips ? '开启' : '关闭'}`)
+        continue
+      }
+      if (value === 'reset') {
+        commitSettings({ ...DEFAULT_TERMINAL_UI_SETTINGS }, '终端设置 · 已恢复默认值')
+      }
+    }
+  }
+
+  const settingsDialog = async (): Promise<void> => {
+    while (true) {
+      const current = settings()
+      const value = await askList('设置', [
+        {
+          value: 'appearance',
+          label: '外观',
+          description: `${current.visual === 'vivid' ? '丰富' : '简洁'} · Logo ${current.logo === 'auto' ? '自动' : '紧凑'} · 进入子菜单`,
+        },
+        {
+          value: 'effects',
+          label: '特效',
+          description: `星星 ${current.stars ? '开' : '关'} · 流星 ${current.meteors ? '开' : '关'} · Logo 渐变 ${current.logoGradient ? '开' : '关'}`,
+        },
+        {
+          value: 'system',
+          label: '系统',
+          description: `提示 ${current.tips ? '开' : '关'} · 默认设置 · 进入子菜单`,
+        },
+        { value: 'back', label: '返回命令面板', description: '返回 Ctrl+P 命令' },
+      ])
+      if (!value || value === 'back') return
+      if (value === 'appearance') { await appearanceSettingsDialog(); continue }
+      if (value === 'effects') { await effectsSettingsDialog(); continue }
+      if (value === 'system') { await systemSettingsDialog() }
+    }
   }
 
   const runCommand = async (command: string): Promise<boolean> => {
     if (command === 'settings') { await settingsDialog(); return true }
     if (command === 'visual') {
       const next = toggleTerminalVisual(settings())
-      setSettings(next); saveTerminalUiSettings(next); tell(`终端视觉 · ${next.visual === 'vivid' ? '丰富显示' : '简洁显示'}`); return true
+      commitSettings(next, `终端视觉 · ${next.visual === 'vivid' ? '丰富显示' : '简洁显示'}`)
+      return true
     }
     if (command === 'doctor') {
       const items = await props.backend.doctor()
@@ -908,8 +1119,16 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
 
   const commandPalette = async () => {
-    const value = await askList('命令', commandPaletteOptions(), { searchable: true })
-    if (value) await runCommand(value)
+    while (true) {
+      const value = await askList('命令', commandPaletteOptions(), { searchable: true })
+      if (!value) return
+      if (value === 'settings') {
+        await settingsDialog()
+        continue
+      }
+      await runCommand(value)
+      return
+    }
   }
 
   const submit = async (raw: string) => {
@@ -990,6 +1209,20 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     if ((event.ctrl && event.name === 'p') || (event.ctrl && event.name === 'k')) {
       event.preventDefault(); event.stopPropagation(); void commandPalette(); return
     }
+    if (transcript().length > 0 && transcriptScroll) {
+      if (event.name === 'pageup') {
+        event.preventDefault(); event.stopPropagation(); transcriptScroll.scrollBy(-8); return
+      }
+      if (event.name === 'pagedown') {
+        event.preventDefault(); event.stopPropagation(); transcriptScroll.scrollBy(8); return
+      }
+      if (event.name === 'home' && event.ctrl) {
+        event.preventDefault(); event.stopPropagation(); transcriptScroll.scrollTo(0); return
+      }
+      if (event.name === 'end' && event.ctrl) {
+        event.preventDefault(); event.stopPropagation(); transcriptScroll.scrollTo(1_000_000); return
+      }
+    }
     if (event.ctrl && event.name === 'c') {
       event.preventDefault(); event.stopPropagation()
       if (!cancel()) props.onExit()
@@ -1007,7 +1240,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
-    const animation = setInterval(() => setPhase(value => value + 1), 60)
+    const animation = setInterval(() => setPhase(value => value + 1), 50)
     const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
     const clockTimer = setInterval(() => setClock(Date.now()), 250)
@@ -1042,28 +1275,52 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   return (
     <box width={dimensions().width} height={dimensions().height} flexDirection="column" backgroundColor={COLOR.background}>
-      <BackgroundSky width={dimensions().width} height={dimensions().height} frame={phase()} vivid={settings().visual === 'vivid'} />
+      <BackgroundSky
+        width={dimensions().width}
+        height={dimensions().height}
+        starFrame={starFrame()}
+        meteorFrame={phase()}
+        vivid={settings().visual === 'vivid'}
+        stars={settings().stars}
+        meteors={settings().meteors}
+      />
       <box position="relative" zIndex={10} flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
         <Show when={showLogo()}>
           <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2} backgroundColor={COLOR.background}>
-            <Logo compact={compactLogo()} />
+            <Logo
+              compact={compactLogo()}
+              frame={logoFrame()}
+              gradient={settings().visual === 'vivid' && settings().logoGradient}
+            />
           </box>
         </Show>
 
         <Show when={transcript().length > 0}>
-          <box width={contentWidth()} flexGrow={1} flexDirection="column" justifyContent="flex-end" paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
-            <box flexDirection="column" gap={1}>
-              <For each={transcript().slice(-18)}>{item => {
-                const meta = roleMeta(item.role)
-                return (
-                  <box flexDirection="row" gap={2}>
-                    <box width={8}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
-                    <box flexGrow={1}><text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text}</text></box>
-                  </box>
-                )
-              }}</For>
+          <scrollbox
+            ref={(value: ScrollBoxRenderable) => { transcriptScroll = value }}
+            width={dimensions().width}
+            flexGrow={1}
+            scrollX={false}
+            scrollY={true}
+            stickyScroll={true}
+            stickyStart="bottom"
+            viewportCulling={true}
+            scrollbarOptions={{ visible: false }}
+          >
+            <box width={dimensions().width} flexDirection="column" alignItems="center">
+              <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1} backgroundColor={COLOR.background}>
+                <For each={transcript()}>{item => {
+                  const meta = roleMeta(item.role)
+                  return (
+                    <box flexDirection="row" gap={2}>
+                      <box width={8}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
+                      <box flexGrow={1}><text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text}</text></box>
+                    </box>
+                  )
+                }}</For>
+              </box>
             </box>
-          </box>
+          </scrollbox>
         </Show>
 
         <box width={dockWidth()} flexDirection="column" paddingBottom={1} onMouseDown={() => prompt?.focus()}>

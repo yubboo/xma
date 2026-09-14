@@ -20,11 +20,21 @@ const outputDir = path.join(root, 'dist', 'cli')
 const executableName = process.platform === 'win32' ? 'xiaoyu.exe' : 'xiaoyu'
 const outfile = path.join(outputDir, executableName)
 
+// 中文说明：与 MiMo Code 的 OpenTUI 构建方式保持一致，以依赖岛目录作为 Bun.build 的 cwd。
+// parser.worker.js 需要按这个 cwd 的相对路径写入 BunFS，否则单文件程序启动后无法定位 worker。
+process.chdir(scriptDir)
+
 fs.rmSync(outputDir, { recursive: true, force: true })
 fs.mkdirSync(outputDir, { recursive: true })
 
-const parserWorker = fs.realpathSync(Bun.resolveSync('@opentui/core/parser.worker.js', scriptDir))
-const workerRelativePath = path.relative(root, parserWorker).replaceAll('\\', '/')
+const localParserWorker = path.join(scriptDir, 'node_modules', '@opentui', 'core', 'parser.worker.js')
+const rootParserWorker = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
+const parserWorkerCandidate = fs.existsSync(localParserWorker) ? localParserWorker : rootParserWorker
+if (!fs.existsSync(parserWorkerCandidate)) {
+  throw new Error(`OpenTUI parser worker missing: ${parserWorkerCandidate}. Run xma-dev -> [1] to prepare the pinned OpenTUI runtime first.`)
+}
+const parserWorker = fs.realpathSync(parserWorkerCandidate)
+const workerRelativePath = path.relative(scriptDir, parserWorker).replaceAll('\\', '/')
 const bunfsRoot = process.platform === 'win32' ? 'B:/~BUN/root/' : '/$bunfs/root/'
 function currentCompileTarget() {
   if (process.platform === 'win32' && process.arch === 'x64') return 'bun-windows-x64' as const

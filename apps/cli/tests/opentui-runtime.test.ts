@@ -54,6 +54,15 @@ test('OpenTUI build uses an explicit supported Bun compile target map', () => {
   assert.doesNotMatch(source, /`bun-\$\{platformName\}-\$\{process\.arch\}`/)
 })
 
+test('OpenTUI build embeds the parser worker from the prepared dependency island instead of package export resolution', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/build.ts', 'utf8')
+  assert.match(source, /node_modules', '@opentui', 'core', 'parser\.worker\.js'/)
+  assert.match(source, /process\.chdir\(scriptDir\)/)
+  assert.match(source, /path\.relative\(scriptDir, parserWorker\)/)
+  assert.match(source, /entrypoints: \[path\.join\(cliRoot, 'src', 'main\.ts'\), parserWorker\]/)
+  assert.doesNotMatch(source, /Bun\.resolveSync\('@opentui\/core\/parser\.worker\.js'/)
+})
+
 test('OpenTUI visual migration preserves the existing Xiaoyu prompt rail instead of redesigning the workbench', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /placeholder="输入消息…（输入 \/ 唤起命令）"/)
@@ -98,13 +107,45 @@ test('OpenTUI command palette backdrop never treats ordinary mouse clicks as Esc
   assert.doesNotMatch(listSource, /onMouseUp=\{\(\) => finish\(undefined\)\}/)
 })
 
-test('OpenTUI vivid home uses a pixel sky with intermittent meteors and a centered dock card', () => {
+test('OpenTUI vivid home uses configurable twinkling stars, MiMo-style falling meteors and a centered dock card', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /const SKY_STARS = \[/)
   assert.match(source, /const METEOR_TRACKS = \[/)
-  assert.match(source, /function BackgroundSky\(props: \{ width: number; height: number; frame: number; vivid: boolean \}\)/)
+  assert.match(source, /const METEOR_TRAIL = \[/)
+  assert.match(source, /dx: -0\.74, dy: 0\.67/)
+  assert.match(source, /starFrame: number/)
+  assert.match(source, /meteorFrame: number/)
+  assert.match(source, /stars: boolean/)
+  assert.match(source, /meteors: boolean/)
   assert.match(source, /backgroundColor=\{showLogo\(\) \? COLOR\.panel : COLOR\.background\}/)
   assert.match(source, /justifyContent=\{centerMode\(\) \? 'center' : 'flex-end'\}/)
+})
+
+test('OpenTUI settings expose hierarchical appearance, effects and system menus with persistent effect toggles', () => {
+  const runtime = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const contract = readFileSync('apps/cli/src/tui.ts', 'utf8')
+  assert.match(runtime, /设置 · 外观/)
+  assert.match(runtime, /设置 · 特效/)
+  assert.match(runtime, /设置 · 系统/)
+  assert.match(runtime, /星星闪烁/)
+  assert.match(runtime, /流星坠落/)
+  assert.match(runtime, /Logo 颜色渐变/)
+  assert.match(runtime, /while \(true\)[\s\S]*askList\('命令'/)
+  assert.match(contract, /stars: boolean/)
+  assert.match(contract, /meteors: boolean/)
+  assert.match(contract, /logoGradient: boolean/)
+  assert.match(contract, /stars: raw\.stars !== false/)
+  assert.match(contract, /meteors: raw\.meteors !== false/)
+  assert.match(contract, /logoGradient: raw\.logoGradient !== false/)
+})
+
+test('Xiaoyu logo gradient sweeps a highlight band across the original orange and gray logo every few seconds', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const LOGO_HIGHLIGHT = \[/)
+  assert.match(source, /function logoGlyphColor/)
+  assert.match(source, /function LogoLine/)
+  assert.match(source, /logoGradient/)
+  assert.match(source, /const logoFrame = createMemo\(\(\) => Math\.floor\(phase\(\) \/ 2\)\)/)
 })
 
 test('Chinese comment gate never recursively enters the OpenTUI dependency island', () => {
@@ -125,4 +166,17 @@ test('OpenTUI live response uses a buffered typewriter and visible thinking stat
   assert.match(source, /role: 'reasoning', text: '', placeholder: true/)
   assert.match(source, /正在思考…/)
   assert.match(source, /正在生成回复…/)
+})
+
+test('OpenTUI transcript owns scrollback so long replies stay readable and mouse wheel can browse history', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /type ScrollBoxRenderable/)
+  assert.match(source, /<scrollbox/)
+  assert.match(source, /stickyScroll=\{true\}/)
+  assert.match(source, /stickyStart="bottom"/)
+  assert.match(source, /scrollbarOptions=\{\{ visible: false \}\}/)
+  assert.match(source, /<For each=\{transcript\(\)\}>/)
+  assert.doesNotMatch(source, /transcript\(\)\.slice\(-18\)/)
+  assert.match(source, /transcriptScroll\.scrollBy\(-8\)/)
+  assert.match(source, /transcriptScroll\.scrollTo\(1_000_000\)/)
 })

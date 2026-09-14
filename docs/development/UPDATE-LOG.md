@@ -235,3 +235,27 @@
 - 回归：OpenTUI 离线静态合同扩展到 12 项，覆盖依赖岛显式文件、右上→左下流星、居中 Dock、空白点击不返回、思考状态与打字机缓冲；Comments Gate 另用伪造 `apps/cli/opentui-runtime/node_modules/fake-dep/index.ts` 验证后仍 PASS（84 个第一方源码）。变更 TS/TSX 使用 TypeScript 5.8 transpile parser 语法检查 PASS。
 - 实机边界：完整 `pnpm check → build:cli → smoke:cli` 与 OpenTUI Native 动画帧率仍必须由用户 Windows 已准备环境执行；本沙箱没有项目 node_modules/Bun Native Runtime，因此不冒充本地跑过完整 `[7]`。
 - 交付：未冻结 `0.1.0` 继续覆盖正式 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix 临时命名。
+
+##21 · 对话 ScrollBox 历史浏览与 OpenTUI parser worker 构建修复
+
+- 日期：2026-09-14
+- 依据：用户 Windows Terminal 实机截图显示长回复超过可视高度后顶部内容被裁掉，Windows Terminal 原生滚轮在 OpenTUI alternate-screen 中不再承担 scrollback；同时直接读取 GitHub Actions run `34807868323`，确认 `[7]` 的真实失败点已经不在 `pnpm check`，而是 `pnpm build:cli`：`Cannot find module '@opentui/core/parser.worker.js'`。
+- `[7]` 构建根因：`apps/cli/opentui-runtime/build.ts` 使用 `Bun.resolveSync('@opentui/core/parser.worker.js', ...)` 走 package exports 解析，但 OpenTUI 0.1.101 的 parser worker 是构建时需要作为额外 entrypoint 嵌入 BunFS 的真实文件，不应依赖 package subpath export。修复方式与 MiMo Code 0.1.101 基线一致：优先直接定位 `apps/cli/opentui-runtime/node_modules/@opentui/core/parser.worker.js`，再回退根 node_modules，校验存在后 `realpathSync` 并作为 Bun.build entrypoint 注入。
+- 对话历史：Active OpenTUI Transcript 改为原生 `<scrollbox>`，使用 `stickyScroll=true + stickyStart="bottom" + viewportCulling=true`；不再 `slice(-18)` 截断历史。长单条回复和多轮历史都保留在 ScrollBox 中，新内容默认跟随底部，用户滚轮向上后可停留查看旧内容，回到底部后恢复 sticky。
+- 滚轮命中：ScrollBox 横向命中区扩展到整个终端宽度，内部正文仍按 `openTuiContentWidth()` 居中，因此鼠标不必精准停在文字上才能滚动；隐藏 scrollbar 仅保留滚轮体验。另补 PageUp/PageDown 和 Ctrl+Home/Ctrl+End 作为键盘历史浏览兜底，不抢占普通输入字符。
+- 层级：对话正文仍由居中的不透明背景块承载，星空/流星保持背景层，不会穿过正文；Prompt/快捷栏/footer 继续固定在 ScrollBox 之外，不再被长输出挤出可视区域。
+- 回归：OpenTUI 静态合同新增 parser worker 真实路径、禁止 `Bun.resolveSync('@opentui/core/parser.worker.js')`、ScrollBox/sticky/full transcript/PageUp-End 合同。完整 Native build/smoke 仍以用户 Windows `[7]` 与 GitHub CI 为最终证据。
+- 交付：未冻结 `0.1.0` 继续覆盖正式 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`。
+
+##22 · OpenTUI 特效设置分层、MiMo 风格流星与 Xiaoyu Logo 渐变
+
+- 日期：2026-09-14
+- 目的：根据 Windows Terminal 实机截图继续收口视觉与设置体系：流星需要呈现 MiMo Code 同类的长点阵尾迹，从右上向左下掠过；Xiaoyu Logo 保持自身像素字形，但每隔数秒出现横向颜色高亮扫过；Ctrl+P → 设置需要拆成可逐层返回的子菜单，并能独立开关星星、流星和 Logo 渐变。
+- 设置持久化：`TerminalUiSettings` 新增 `stars / meteors / logoGradient` 三个布尔项，旧 `tui.json` 缺少字段时按开启迁移；默认仍为 vivid + tips + auto logo，并默认开启三类视觉特效。设置继续写入既有用户配置文件，不进入 Workspace/Session durable truth。
+- 设置导航：OpenTUI `Ctrl+P → 设置` 改为三级导航根：`外观 / 特效 / 系统`。外观包含显示模式与 Logo 模式；特效包含星星闪烁、流星坠落、Logo 颜色渐变和全部特效总开关；系统包含提示信息与恢复默认。子菜单 Esc 返回设置根，设置根 Esc 返回 Ctrl+P 命令面板，普通鼠标空白点击仍不承担返回语义。
+- 流星视觉：背景轨迹改为长点阵拖尾，头部高亮、尾部蓝灰逐级衰减；轨迹只在错峰周期内短暂出现，运动方向固定右上 → 左下。动画保持背景层 `zIndex=0`，正文/Logo/Dock/快捷栏继续使用前景层与不透明遮罩，特效不会覆盖可读内容。
+- Logo 动画：Xiaoyu 原有橙色 `XIAO` + 灰色 `YU` 像素字不改造品牌结构，只增加一条白→暖橙→灰的高亮带周期性横向扫过。Logo 渐变独立开关，并受 vivid 总显示模式控制；minimal 模式保持静态 Logo。
+- 性能：全局视觉 tick 调整为 50ms；流星使用每 tick 位移，星星降频为 3 tick 一次，Logo 渐变降频为 2 tick 一次，避免所有视觉元素都以同一高频率重算。
+- `[7]` 构建：继续修复 OpenTUI parser worker。`build.ts` 以 `apps/cli/opentui-runtime` 作为 Bun.build cwd，直接读取已准备依赖岛中的 `node_modules/@opentui/core/parser.worker.js`，并按该 cwd 计算 BunFS 相对路径；不再使用失败的 package subpath resolve。该方式与 MiMo Code 0.1.101 构建策略对齐。
+- 回归：OpenTUI 静态合同补充层级设置、三项特效持久化、右上→左下长尾流星、Logo 高亮扫过和 parser worker cwd/relative-path 约束。Native build/smoke 仍由 Windows `[7]` 与 GitHub CI 作为最终平台证据。
+- 交付：`0.1.0` 未冻结，继续只生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`，不创建临时 fixed/hotfix 包名。

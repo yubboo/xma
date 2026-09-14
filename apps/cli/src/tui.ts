@@ -82,7 +82,7 @@ const COMMANDS = [
 ] as const
 
 const PALETTE_ACTIONS: readonly TuiMenuItem[] = [
-  { value: 'settings', label: '终端设置', description: '终端视觉与提示', shortcut: '/settings', keywords: ['terminal', '设置'] },
+  { value: 'settings', label: '设置', description: '外观 / 特效 / 系统', shortcut: '/settings', keywords: ['terminal', 'settings', 'appearance', 'effects', 'system', '设置', '外观', '特效', '系统'] },
   { value: 'visual', label: '切换丰富显示', description: '动态视觉 / 简洁模式', shortcut: '/vivid', keywords: ['visual', 'vivid'] },
   { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor', shortcut: '/doctor', keywords: ['doctor', '检查'] },
   { value: 'workspace', label: '工作区', description: '查看当前目录', shortcut: '/workspace', keywords: ['workspace', '目录'] },
@@ -97,12 +97,18 @@ export interface TerminalUiSettings {
   visual: 'vivid' | 'minimal'
   tips: boolean
   logo: 'auto' | 'compact'
+  stars: boolean
+  meteors: boolean
+  logoGradient: boolean
 }
 
 export const DEFAULT_TERMINAL_UI_SETTINGS: Readonly<TerminalUiSettings> = Object.freeze({
   visual: 'vivid',
   tips: true,
   logo: 'auto',
+  stars: true,
+  meteors: true,
+  logoGradient: true,
 })
 
 function terminalSettingsPath(): string {
@@ -123,6 +129,9 @@ export function loadTerminalUiSettings(): TerminalUiSettings {
       visual: raw.visual === 'minimal' ? 'minimal' : 'vivid',
       tips: raw.tips !== false,
       logo: raw.logo === 'compact' ? 'compact' : 'auto',
+      stars: raw.stars !== false,
+      meteors: raw.meteors !== false,
+      logoGradient: raw.logoGradient !== false,
     }
   } catch {
     return { ...DEFAULT_TERMINAL_UI_SETTINGS }
