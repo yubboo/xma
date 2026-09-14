@@ -29,7 +29,7 @@
 - Terminal 主命令固定为 `xiaoyu`，`xma` 仅兼容；普通用户只安装预构建资产，installer 不得 clone 源码或要求 pnpm/cargo/MSVC。
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
-- 公共源码开发必须支持任意本地目录：Windows 使用 `xma-dev.bat`，Linux/macOS 使用 `./xma-dev`；源码开发入口与安装后的正式 `xma` 产品命令必须严格区分，`H:\一键部署\xma` 仅是维护者 Source Sync 默认值。
+- 公共源码开发和维护者 Source Sync 都必须支持任意本地目录/盘符：Windows 使用 `xma-dev.bat`，Linux/macOS 使用 `./xma-dev`；`XMA-Sync.bat` 默认按源码包位置自动识别同级 Git 工作目录，`XMA_TARGET_ROOT` 只用于显式覆盖；源码开发入口与安装后的正式 `xma` 产品命令必须严格区分。
 - 命名遵循 XMA 统一规则：目录/TS 用小写 kebab-case，Rust 用 snake_case，`.` 只用于 test/config/d 等语义角色；普通名字 1～3 个核心词，父目录去重，同逻辑不碎拆，完成前运行 `pnpm gate:naming`。
 - 目录遵循 Feature Cluster / Predictable Location / Plugin Cohesion：适度分层、按真实功能聚合；能力 ownership 变化同步 `CODEMAP.md`。
 - 跨 `apps/agents/packages/plugins/core` ownership 只走稳定公共 package 入口，禁止 `../../` 及更深路径穿越，也禁止 `xma-*/src/...` 内部导入；workspace 依赖显式写 `workspace:*`。

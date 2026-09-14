@@ -8,7 +8,7 @@
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RepoUrl = 'https://github.com/yubboo/xma.git'
-$ExpectedWorkRoot = if ($env:XMA_TARGET_ROOT) { $env:XMA_TARGET_ROOT } else { 'H:\一键部署\xma' }
+$ExpectedWorkRoot = if ($env:XMA_TARGET_ROOT) { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:XMA_TARGET_ROOT)) } else { '' }
 $PackageManifest = Join-Path $Root '.xma-package\source-manifest.json'
 $SyncState = Join-Path $Root '.xma\source-sync.json'
 Set-Location $Root
@@ -30,7 +30,11 @@ function Assert-GitWorkDirectory {
   if (Test-Path -LiteralPath $PackageManifest -PathType Leaf) {
     Write-Host '[阻止] 当前目录是 XMA 正式源码包/解压目录，不允许在这里初始化或推送 Git。' -ForegroundColor Red
     Write-Host "  当前目录：$Root" -ForegroundColor Yellow
-    Write-Host "  Git 工作目录：$ExpectedWorkRoot" -ForegroundColor Green
+    if ($ExpectedWorkRoot) {
+      Write-Host "  Git 工作目录（XMA_TARGET_ROOT）：$ExpectedWorkRoot" -ForegroundColor Green
+    } else {
+      Write-Host '  Git 工作目录：由 XMA-Sync.bat 根据源码包位置自动识别/创建，不绑定盘符。' -ForegroundColor Green
+    }
     Write-Host '  正确流程：XMA-Sync.bat → 进入 Git 工作目录 → XMA-GitHub.bat → [1] 一键推送。' -ForegroundColor Cyan
     if (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container) {
       Write-Host "[检测] 这个源码包目录已经被误初始化过 .git。可删除：$(Join-Path $Root '.git')" -ForegroundColor Yellow

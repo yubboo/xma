@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
+[void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $ElectronVersion = '41.2.0'
 $BunVersion = '1.3.14'
 $OpenTuiVersion = '0.1.101'
@@ -55,7 +56,11 @@ function Get-XmaCargoDependencyFingerprint {
   if (Test-Path -LiteralPath $nativeRoot -PathType Container) {
     $files += @(Get-ChildItem -LiteralPath $nativeRoot -Filter 'Cargo.toml' -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
   }
-  return Get-XmaFingerprint -Paths $files -Salt "cargo=$(& cargo.exe --version)"
+  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+  $cargoPath = if ($cargoCommand) { $cargoCommand.Source } else { 'cargo.exe' }
+  $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoPath
+  $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { '' }
+  return Get-XmaFingerprint -Paths $files -Salt "cargo=$(& $cargoPath --version);cargoHome=$cargoHome;rustupHome=$rustupHome"
 }
 
 function Test-XmaPrepareStamp([string]$Name, [string]$Fingerprint) {
@@ -527,6 +532,14 @@ $cargoVersion = ($cargoProbe.Output -join ' ').Trim()
 Write-Host "[通过] $rustcVersion" -ForegroundColor Green
 Write-Host "[通过] $cargoVersion" -ForegroundColor Green
 
+# 中文说明：把 `[1]` 最终确认的 Rust/Cargo 位置记录在项目本地状态中。
+# 后续 `[4]/[7]` 会优先恢复这一位置，确保用户选择 D:/E:/自定义目录后不会因为新终端未继承 User 环境而退回其他 Cargo Home。
+$effectiveCargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
+$effectiveRustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User') }
+if (-not [string]::IsNullOrWhiteSpace($effectiveCargoHome)) {
+  Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $effectiveCargoHome -RustupHome $effectiveRustupHome
+}
+
 # 中文说明：`[7] 全量检查` 固定执行 `cargo fmt --check`，minimal stable 默认可能不包含 rustfmt。
 # rustfmt 因此属于 `[1]` 必须准备的开发工具，而不是让 `[7]` 在离线检查阶段临时下载。
 $rustfmtProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('fmt','--version')
@@ -653,19 +666,28 @@ Write-Host ''
 Write-Host '[8/9] XMA Native Rust crates' -ForegroundColor Cyan
 Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
 $cargoFingerprint = Get-XmaCargoDependencyFingerprint
-if (Test-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint) {
-  Write-Host '[缓存] Cargo.toml/Cargo.lock 指纹未变化，跳过重复 cargo fetch。' -ForegroundColor DarkCyan
+$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+if (-not $cargoCommand) { throw '未检测到 Cargo。请重新运行 [1] 的 Rust/Cargo 准备步骤。' }
+$cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
+$cargoStampReady = Test-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+if ($cargoStampReady) {
+  Write-Host '[校验] Cargo 指纹未变化；仍验证实际 crate 缓存，防止 CARGO_HOME 移动/清理后产生假命中。' -ForegroundColor DarkCyan
 } else {
-  Write-Host '[校验] 正在离线检查现有 Cargo crate 缓存...' -ForegroundColor DarkCyan
-  & cargo.exe fetch --locked --offline *> $null
-  if ($LASTEXITCODE -eq 0) {
-    Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
-    Write-Host '[缓存] 现有 Rust crates 已完整，直接复用；不联网 fetch。' -ForegroundColor DarkCyan
-  } else {
-    Write-Host '[同步] 本地缺少当前 Cargo.lock 所需 crates，开始预取...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch','--locked')
-    Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  Write-Host '[校验] Cargo 配置或依赖指纹发生变化，正在离线验证当前 crate 缓存...' -ForegroundColor DarkCyan
+}
+
+if (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $cargoCommand.Source) {
+  Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  Write-Host "[缓存] 当前 Rust crates 已完整并通过 offline 验证：CARGO_HOME=$cargoHome" -ForegroundColor DarkCyan
+} else {
+  Write-Host "[同步] 当前 CARGO_HOME 缺少 Cargo.lock 所需 crates：$cargoHome" -ForegroundColor Yellow
+  Write-Host '[同步] `[1]` 是允许联网准备 Rust crates 的入口，现在开始 cargo fetch --locked...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath $cargoCommand.Source -ArgumentList @('fetch','--locked')
+  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $cargoCommand.Source)) {
+    throw "Rust crates 下载后仍无法离线解析。请检查 CARGO_HOME/网络/代理：$cargoHome"
   }
+  Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  Write-Host '[验证] cargo fetch 完成后 offline 复检通过。' -ForegroundColor DarkCyan
 }
 Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green
 
@@ -678,6 +700,7 @@ Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 开发环境与通用项目依赖已准备完成。' -ForegroundColor Green
 Write-Host '[可直接运行] Web / Xiaoyu CLI / 全量检查不再重复安装依赖。' -ForegroundColor Cyan
+Write-Host '[Rust 复用] Xiaoyu CLI / 全量检查会恢复 `[1]` 确认的 CARGO_HOME/RUSTUP_HOME，并只做 offline 构建/检查。' -ForegroundColor Cyan
 Write-Host '[开发命令] 新开 PowerShell / Windows Terminal 后，可在任意 Workspace 直接输入 xiaoyu 或 xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host "[Desktop] Electron $ElectronVersion Chromium Runtime 仍只在你明确选择 Electron 时下载；Tauri 2 Rust crates 仍只在选择 Tauri 时预取。" -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan

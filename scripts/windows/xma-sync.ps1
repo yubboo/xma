@@ -1,5 +1,5 @@
 ﻿<#
-文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到固定 Git 工作目录 H:\一键部署\xma。
+文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到自动识别或用户指定的 Git 工作目录。
 关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、XMA-GitHub.bat、GitHub yubboo/xma。
 当前实现：优先按包内 Source Manifest 比较文件内容，只复制真实新增/更新源码，自动清理上一版已删除/重命名的受管文件，并输出新增/更新/删除/未变化摘要与完整报告；仅保留 .git、runtime、node_modules、.cache、dist 等本地状态。旧版本包没有 Manifest 时才回退 robocopy 兼容流程。
 职责边界：不得删除目标仓库 .git、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
@@ -7,8 +7,47 @@
 
 $ErrorActionPreference = 'Stop'
 $Source = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$Target = if ($env:XMA_TARGET_ROOT) { $env:XMA_TARGET_ROOT } else { 'H:\一键部署\xma' }
 $RepoUrl = 'https://github.com/yubboo/xma.git'
+
+function Test-XmaWorktreeDirectory([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+  if (Test-Path -LiteralPath (Join-Path $Path '.git') -PathType Container) { return $true }
+  if (Test-Path -LiteralPath (Join-Path $Path '.xma\source-sync.json') -PathType Leaf) { return $true }
+  return $false
+}
+
+function Test-XmaDirectoryNonEmpty([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+  return [bool](Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue | Select-Object -First 1)
+}
+
+function Resolve-XmaSyncTarget([string]$SourceRoot) {
+  if (-not [string]::IsNullOrWhiteSpace($env:XMA_TARGET_ROOT)) {
+    return [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:XMA_TARGET_ROOT.Trim().Trim('"')))
+  }
+
+  # 中文说明：不再绑定 H:/D:/任何固定盘符。正式源码包默认在“源码包同级”寻找长期 xma 工作目录；
+  # 已存在的 XMA clone/worktree 会直接复用，目标名冲突但不是 XMA 时退到 xma-worktree。
+  $parent = Split-Path -Parent $SourceRoot
+  $primary = Join-Path $parent 'xma'
+  if ([IO.Path]::GetFullPath($primary).TrimEnd('\') -ieq [IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')) {
+    $primary = Join-Path $parent 'xma-worktree'
+  }
+
+  if ((Test-Path -LiteralPath $primary -PathType Container) -and (Test-XmaWorktreeDirectory $primary)) { return $primary }
+  if (-not (Test-XmaDirectoryNonEmpty $primary)) { return $primary }
+
+  $fallback = Join-Path $parent 'xma-worktree'
+  if ([IO.Path]::GetFullPath($fallback).TrimEnd('\') -ieq [IO.Path]::GetFullPath($SourceRoot).TrimEnd('\')) {
+    $fallback = Join-Path $parent 'xma-git-worktree'
+  }
+  if ((Test-Path -LiteralPath $fallback -PathType Container) -and (Test-XmaWorktreeDirectory $fallback)) { return $fallback }
+  if (-not (Test-XmaDirectoryNonEmpty $fallback)) { return $fallback }
+
+  throw "源码包同级的 xma / xma-worktree 都已被非 XMA 文件占用。请设置 XMA_TARGET_ROOT 指向你希望使用的 Git 工作目录。"
+}
+
+$Target = Resolve-XmaSyncTarget -SourceRoot $Source
 $ProjectVersion = (Get-Content (Join-Path $Source 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $PackageManifest = Join-Path $Source '.xma-package\source-manifest.json'
 $SyncState = Join-Path $Target '.xma\source-sync.json'
@@ -21,6 +60,7 @@ Write-Host "  XMA $ProjectVersion Source Sync" -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host "源目录：$Source"
 Write-Host "目标目录：$Target"
+if ($env:XMA_TARGET_ROOT) { Write-Host '[目标] 使用 XMA_TARGET_ROOT 显式指定。' -ForegroundColor DarkGray } else { Write-Host '[目标] 自动从源码包位置识别同级 XMA Git 工作目录；不绑定盘符。' -ForegroundColor DarkGray }
 
 if ($Source.TrimEnd('\') -ieq $Target.TrimEnd('\')) { throw '源目录和目标目录不能相同。' }
 New-Item -ItemType Directory -Force -Path $Target | Out-Null

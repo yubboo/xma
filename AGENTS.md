@@ -199,15 +199,15 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 
 公共 Git clone / 源码开发入口必须与机器路径无关：Windows 使用根 `xma-dev.bat`，Linux/macOS 使用根 `xma-dev`；二者只能从自身位置解析仓库根，禁止硬编码 `H:`、用户目录或任意开发者机器绝对路径。源码开发入口必须带 `-dev`，不得占用安装后正式产品命令 `xma`。
 
-`H:\一键部署\xma` 仅是当前维护者 Source Manifest 工作流默认目录；换机可通过 `XMA_TARGET_ROOT` 覆盖。Git clone 用户不需要运行 `XMA-Sync.bat`。
+维护者 Source Manifest 工作流也必须与盘符无关：`XMA-Sync.bat` 默认根据源码包所在位置自动识别/创建同级长期 Git 工作目录；`XMA_TARGET_ROOT` 仅用于显式覆盖。Git clone 用户不需要运行 `XMA-Sync.bat`。
 
 源码包解压示例：
 
-`H:\一键部署\xma-0.1.0`
+`D:\Downloads\xma-0.1.0`（任意盘符/目录均可）
 
 固定流程：
 
-`XMA-Sync.bat` → 同步到 `H:\一键部署\xma` → `XMA-GitHub.bat` → `1. 一键推送`
+`XMA-Sync.bat` → 自动识别/创建同级长期 Git 工作目录 → `XMA-GitHub.bat` → `1. 一键推送`
 
 源码开发/构建：Windows 使用 `xma-dev.bat`；Linux/macOS 使用 `./xma-dev`。正式安装后的产品命令仍是 `xiaoyu` 主命令与 `xma` 兼容别名。
 

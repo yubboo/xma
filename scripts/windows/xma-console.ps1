@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
+[void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
@@ -52,6 +53,31 @@ function Assert-CoreDependencies {
       throw 'XMA 通用项目依赖尚未准备。请先运行 [1] 一键准备开发环境。'
     }
   }
+}
+
+function Resolve-XmaCargoRuntime {
+  [void](Import-XmaRustEnvironment -ProjectRoot $Root)
+  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+  if (-not $cargoCommand) {
+    throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。'
+  }
+  $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
+  $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { '' }
+  return [pscustomobject]@{
+    Cargo = $cargoCommand.Source
+    CargoHome = $cargoHome
+    RustupHome = $rustupHome
+  }
+}
+
+function Assert-XmaCargoOfflineReady {
+  param([Parameter(Mandatory = $true)]$CargoRuntime, [string]$Purpose = '当前操作')
+  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $CargoRuntime.Cargo)) {
+    $location = if ($CargoRuntime.CargoHome) { $CargoRuntime.CargoHome } else { '(未解析)' }
+    throw "$Purpose 需要的 Rust crates 尚未完整准备（CARGO_HOME=$location）。请先运行 [1] 一键准备开发环境；运行/检查阶段不会偷偷联网下载。"
+  }
+  Write-Host "[通过] Rust/Cargo 环境已恢复：CARGO_HOME=$($CargoRuntime.CargoHome)" -ForegroundColor Green
+  if ($CargoRuntime.RustupHome) { Write-Host "[位置] RUSTUP_HOME=$($CargoRuntime.RustupHome)" -ForegroundColor DarkGray }
 }
 
 function Assert-CliJsDependencies {
@@ -112,13 +138,12 @@ function Ensure-ElectronDesktopRuntime {
 
 function Ensure-TauriDesktopRuntime {
   Assert-DesktopJsDependencies
-  if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) {
-    throw 'Tauri 2 备用桌面端需要 Rust/Cargo。请先运行 [1] 一键准备开发环境。'
-  }
+  $cargoRuntime = Resolve-XmaCargoRuntime
 
   Write-Host '[Desktop] 你已明确选择 Tauri 2 备用桌面端，现在开始准备 Tauri Rust crates。' -ForegroundColor Cyan
+  Write-Host "[Rust] 使用 `[1]` 确认的 Cargo Home：$($cargoRuntime.CargoHome)" -ForegroundColor DarkGray
   Write-Host '[同步] 正在按需预取 Tauri 2 Rust crates...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')
+  Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')
   Write-Host '[验证] 正在验证 Tauri 2 CLI...' -ForegroundColor DarkCyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','exec','tauri','--version')
   Write-Host '[说明] Tauri 2 在 Windows 使用系统 WebView2，是 Electron 下载异常时的备用桌面运行时。' -ForegroundColor DarkGray
@@ -145,9 +170,8 @@ function Remove-StaleCliNativeRuns {
 
 function Ensure-CliNativeRuntime {
   Assert-CliJsDependencies
-  if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) {
-    throw 'Xiaoyu Terminal 需要 XMA Native Runtime。未检测到 Cargo，请先运行 [1] 一键准备开发环境。'
-  }
+  $cargoRuntime = Resolve-XmaCargoRuntime
+  Assert-XmaCargoOfflineReady -CargoRuntime $cargoRuntime -Purpose 'Xiaoyu Terminal Native Runtime'
 
   # 中文说明：Windows 不允许覆盖仍被旧进程占用的 exe。CLI 构建复用项目统一 .cache\cargo-target 增量缓存，运行时再复制到唯一 staging 路径，
   # 这样并行/旧版 Xiaoyu 只锁住自己的 run copy，不会阻断当前源码的离线增量构建。
@@ -156,7 +180,7 @@ function Ensure-CliNativeRuntime {
   $env:CARGO_TARGET_DIR = $cliTargetDir
   try {
     Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（复用 Cargo 增量缓存，离线构建，不下载依赖）...' -ForegroundColor DarkCyan
-    Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--package','xma-native-runtime','--offline') | Out-Host
+    Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('build','--package','xma-native-runtime','--offline') | Out-Host
   } finally {
     if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
   }
@@ -243,11 +267,11 @@ function Invoke-FullCheck {
   Assert-CoreDependencies
   Assert-CliJsDependencies
   Assert-DesktopJsDependencies
-  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-  if (-not $cargoCommand) { throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。' }
-  # 中文说明：全量检查必须完全离线；rustfmt 是 `[1]` 的准备职责。先做最小 preflight，
-  # 缺失时立即返回准备入口，避免 TypeScript/CLI 都跑完以后才在最后一步失败。
-  & $cargoCommand.Source fmt --version *> $null
+  $cargoRuntime = Resolve-XmaCargoRuntime
+  # 中文说明：全量检查必须完全离线；先验证 `[1]` 记录的 Cargo Home 与 crate 缓存，
+  # 缺失时立即返回准备入口，避免 TypeScript/CLI 都跑完以后才在最后一步暴露 serde/index 等 Cargo 底层错误。
+  Assert-XmaCargoOfflineReady -CargoRuntime $cargoRuntime -Purpose 'XMA 全量检查'
+  & $cargoRuntime.Cargo fmt --version *> $null
   if ($LASTEXITCODE -ne 0) {
     throw '未检测到 rustfmt/cargo-fmt。请先运行 [1] 一键准备开发环境；[7] 不会联网补装 Rust 组件。'
   }
@@ -259,9 +283,9 @@ function Invoke-FullCheck {
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','smoke:cli')
   Write-Host '[检查] 正在运行 Rust fmt / check / test（offline）...' -ForegroundColor Cyan
   Write-Host '[缓存] Cargo 输出位于 .cache\cargo-target\；dist\ 只保留 XMA 产品构建/发布产物。' -ForegroundColor DarkGray
-  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fmt','--all','--','--check')
-  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('check','--workspace','--offline')
-  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('test','--workspace','--offline')
+  Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('fmt','--all','--','--check')
+  Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('check','--workspace','--offline')
+  Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('test','--workspace','--offline')
   Write-Host '[完成] XMA 全量检查通过。' -ForegroundColor Green
 }
 

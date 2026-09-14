@@ -70,7 +70,7 @@ for (const marker of [
   '[完成] XMA 开发环境与通用项目依赖已准备完成。',
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')",
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
-  "Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch','--locked')",
+  "Invoke-XmaExternal -FilePath $cargoCommand.Source -ArgumentList @('fetch','--locked')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime 不会在这里下载',
   'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
@@ -85,7 +85,8 @@ for (const marker of [
   '[9/9] 开发态 Xiaoyu 命令',
   'Test-XmaPrepareStamp',
   '跳过重复 pnpm install 与 esbuild rebuild',
-  '跳过重复 cargo fetch',
+  'Cargo 指纹未变化；仍验证实际 crate 缓存',
+  'cargo fetch 完成后 offline 复检通过',
   '跳过重复写入',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
@@ -109,6 +110,8 @@ for (const marker of [
   'build:desktop:electron',
   'build:desktop:tauri',
   '不会构建或打包 Xiaoyu Terminal / CLI / Server',
+  'Import-XmaRustEnvironment -ProjectRoot $Root',
+  '使用 `[1]` 确认的 Cargo Home',
 ]) {
   if (!desktopReleaseSource.includes(marker)) throw new Error(`Desktop release isolation contract missing: ${marker}`)
 }
@@ -129,6 +132,9 @@ for (const marker of [
   "$cliArguments += @('--', $resolvedWorkspace)",
   '未检测到 rustfmt/cargo-fmt。请先运行 [1] 一键准备开发环境',
   'Rust rustfmt 已就绪；[7] 将保持 offline',
+  'function Resolve-XmaCargoRuntime',
+  'function Assert-XmaCargoOfflineReady',
+  'Rust/Cargo 环境已恢复：CARGO_HOME=',
 ]) {
   if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
 }
@@ -156,6 +162,9 @@ for (const marker of [
   '& $FilePath @ArgumentList',
   'function Get-XmaProjectVersion',
   'function Test-XmaElectronRuntime',
+  'function Import-XmaRustEnvironment',
+  'function Save-XmaRustEnvironmentState',
+  'function Test-XmaCargoOfflineDependencies',
   "dist/version + path.txt + 可执行文件",
   '-Encoding UTF8',
 ]) {
@@ -231,8 +240,17 @@ for (const marker of [
   '删除上一版已移除/重命名源码',
   '新增目录无需配置',
   'scripts/release 正式源码',
+  'Resolve-XmaSyncTarget',
+  '自动从源码包位置识别同级 XMA Git 工作目录；不绑定盘符',
 ]) {
   if (!syncMigrationSource.includes(marker)) throw new Error(`XMA sync manifest contract regression: missing ${marker}`)
+}
+
+if (/H:\\一键部署\\xma/i.test(syncMigrationSource)) {
+  throw new Error('XMA Sync must not hardcode the maintainer H: worktree path.')
+}
+if (/H:\\一键部署\\xma/i.test(githubSource)) {
+  throw new Error('XMA GitHub helper must not hardcode the maintainer H: worktree path.')
 }
 if (syncMigrationSource.includes("'.git','node_modules','.cache','dist','build','.xma','target','release'")) {
   throw new Error('XMA sync must not globally exclude every directory named release/build/dist; path ownership must be explicit.')
@@ -446,7 +464,8 @@ for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', '
 }
 const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 for (const marker of [
-  'H:\\一键部署\\xma',
+  'Resolve-XmaSyncTarget',
+  '自动从源码包位置识别同级 XMA Git 工作目录；不绑定盘符',
   ".xma-package\\source-manifest.json",
   ".xma\\source-sync.json",
   ".xma\\source-sync-last.txt",

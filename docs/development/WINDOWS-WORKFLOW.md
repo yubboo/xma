@@ -18,19 +18,17 @@ Git clone 工作区**不需要** `XMA-Sync.bat`。如需提交自己的改动，
 
 ## 维护者 Source Manifest 同步工作流
 
-当前维护者源码包示例：`H:\一键部署\xma-0.1.0`
-
-当前维护者默认 Git 工作目录：`H:\一键部署\xma`
+维护者源码包可以解压到任意目录，例如：`D:\Downloads\xma-0.1.0`、`E:\Dev\xma-0.1.0`。
 
 GitHub：`https://github.com/yubboo/xma.git`
 
-`H:\一键部署\xma` 只是维护者默认值，不是产品路径合同。换电脑或目录时先设置：
+`XMA-Sync.bat` **不再绑定任何固定盘符**。未设置 `XMA_TARGET_ROOT` 时，它会根据源码包所在位置自动识别/创建同级长期 Git 工作目录：优先复用同级已有 XMA worktree；默认建议名为 `xma`，若与源码包自身或非 XMA 目录冲突则使用 `xma-worktree`。只有你明确希望固定到某个目录时才设置：
 
 ```powershell
-$env:XMA_TARGET_ROOT = 'D:\Dev\xma'
+$env:XMA_TARGET_ROOT = 'E:\Dev\xma-worktree'
 ```
 
-`XMA-Sync.bat` 与 `XMA-GitHub.bat` 已读取 `XMA_TARGET_ROOT`；公共源码开发入口 `xma-dev.bat` 完全不需要这个变量。
+`XMA-GitHub.bat` 始终以**脚本实际所在仓库根**为准，不再假定 `H:\一键部署\xma`。公共源码开发入口 `xma-dev.bat` 同样从自身位置解析仓库根。
 
 ### 固定同步流程
 
@@ -39,7 +37,7 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
         ↓
 运行 XMA-Sync.bat
         ↓
-同步到 H:\一键部署\xma
+自动识别/创建同级 XMA Git 工作目录（任意盘符）
         ↓
 运行 XMA-GitHub.bat
         ↓
@@ -59,14 +57,14 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
 - Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；Rust 必须执行真实 `rustc --version` / `cargo --version` 探针，不能因为 rustup shim 文件存在就误判为可用。缺少 stable toolchain 时由用户选择安装根目录：系统盘用户默认位置（推荐）、`D:\XMA\Rust`、或自定义目录；XMA 使用 `RUSTUP_HOME/CARGO_HOME` 保存选择并把对应 `cargo\bin` 写入 User PATH，已有可用 Rust 时不重复下载；
 - 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
 - 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
-- Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本` 指纹缓存；未变化时跳过重复 `cargo fetch`。没有 stamp 但已有 crate 缓存时先执行 `cargo fetch --locked --offline` 验证，只有本地确实缺 crate 才联网 `cargo fetch --locked`。
+- Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] Xiaoyu CLI`：不再次安装依赖；启动前固定执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建。Windows 复用统一 `.cache/cargo-target/` 增量缓存，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行；旧 Xiaoyu 即使仍占用上一份 staging exe，也不能阻断新源码构建。严禁因为 Sync 保留 `.cache/` 就直接运行上一版 Native 二进制。
-- `[7] 全量检查`：直接使用已经准备好的依赖，Rust check/test 使用 `--offline`；
+- `[4] Xiaoyu CLI`：不再次安装依赖；启动时先恢复 `[1]` 已确认并写入项目本地 `.xma/state/rust-environment.json` 的 `CARGO_HOME/RUSTUP_HOME`（例如 `D:\XMA\Rust\cargo` / `D:\XMA\Rust\rustup`），再执行 `cargo fetch --locked --offline` preflight。只有 offline preflight 通过才执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建；缺 crate 时明确提示回 `[1]`，不得直接暴露 `serde not found` 后静默联网。Windows 复用统一 `.cache/cargo-target/` 增量缓存，再复制到 `.cache/native-runtime/runs/` 唯一 staging exe 运行。
+- `[7] 全量检查`：先恢复 `[1]` 记录的 Rust Home，并在 TypeScript/CLI 测试之前做 Cargo offline preflight + rustfmt preflight；缺失立即提示回 `[1]`。随后 Rust check/test 使用 `--offline`；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
@@ -129,9 +127,9 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## GitHub 助手目录保护
 
-正式源码包目录（例如 `H:\一键部署\xma-0.1.0`）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 Source Sync 的长期目标目录（默认 `H:\一键部署\xma`）。
+正式源码包目录（例如 `D:\Downloads\xma-0.1.0`，任意盘符）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 `XMA-Sync.bat` 自动识别/创建或 `XMA_TARGET_ROOT` 显式指定的长期 Git 工作目录。
 
-如果旧版助手曾在源码包目录误执行 `git init`，只清理源码包目录自己的 `.git/`；长期工作目录 `H:\一键部署\xma\.git/` 必须保留。
+如果旧版助手曾在源码包目录误执行 `git init`，只清理源码包目录自己的 `.git/`；长期工作目录实际路径下的 `.git/` 必须保留。
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 

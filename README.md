@@ -63,6 +63,8 @@ cd xma
 .\xma-dev.bat
 ```
 
+如果当前目录已经存在非空 `xma` 文件夹，Git 自己会拒绝覆盖并提示 `destination path 'xma' already exists`。这不是 XMA 路径绑定：已有仓库直接进入该目录 `git pull`，不需要的残留目录先删除，或者在 clone 命令最后写任意目标目录名，例如 `git clone https://github.com/yubboo/xma.git D:\Dev\xma-work`。
+
 首次进入菜单选择 `[1] 一键准备开发环境`。准备完成后会为**当前源码 checkout**生成开发态 `xiaoyu / xma` 命令并写入当前用户 `User PATH`；新开 PowerShell / Windows Terminal 后，可以在任意 Workspace 目录直接输入 `xiaoyu` 或 `xma` 启动这份源码。菜单 `[4]` 仍保留用于从开发控制台启动 CLI。
 
 开发态命令使用仓库内被忽略的 `.xma\dev-bin` shim，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后重新运行 `xma-dev.bat → [1]` 即会刷新。
@@ -77,7 +79,7 @@ cd xma
 
 Unix 源码控制台支持 `prepare / web / desktop / cli / check`，也可以直接运行例如 `./xma-dev cli`。普通用户安装不走这套源码开发工具链。
 
-> **Git clone 用户不需要运行 `XMA-Sync.bat`。** `XMA-Sync.bat` / `XMA-GitHub.bat` 是维护者 Source Manifest 工作流；`H:\一键部署\xma` 只是当前维护者默认目标，可通过 `XMA_TARGET_ROOT` 覆盖。
+> **Git clone 用户不需要运行 `XMA-Sync.bat`。** `XMA-Sync.bat` / `XMA-GitHub.bat` 是维护者 Source Manifest 工作流；`XMA-Sync.bat` 默认按源码包所在位置自动识别/创建同级长期 Git 工作目录，不绑定 H:/D:/C:；需要固定位置时再通过 `XMA_TARGET_ROOT` 覆盖。
 
 ## 目录
 
@@ -129,7 +131,7 @@ Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context 
 ```text
 XMA-Sync.bat
    ↓
-H:\一键部署\xma
+自动识别/创建同级 xma Git 工作目录（任意盘符）
    ↓
 XMA-GitHub.bat
    ↓

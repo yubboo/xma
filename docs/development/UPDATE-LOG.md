@@ -383,3 +383,14 @@
 - 回归：OpenTUI 测试锁定项目 `.cache/bun-compile`、禁止 `LOCALAPPDATA/TEMP/TMP` fallback，并锁定动画帧 `prompt?.requestRender()`；Windows Gate 锁定 `[1] rustfmt` 安装职责与 `[7]` 离线预检。
 - 交付：版本保持 `0.1.0`，继续覆盖正式 `xma-0.1.0.zip` 与 SHA-256，不生成 hotfix/fixed 临时命名。
 
+##32 · Rust Home 恢复、Cargo 缓存真值校验与路径去硬编码
+
+- 日期：2026-09-14
+- 目的：修复 Windows 实机上 `[1]` 已明确使用 `D:\XMA\Rust`，但 `[4]` 仍在 `cargo build --offline` 阶段报 `serde` 不存在；同时清除维护者 Source Sync / GitHub Helper 对 `H:\一键部署\xma` 的默认硬编码。
+- 根因：旧 `[8/9]` 只要 `Cargo.toml/Cargo.lock + Cargo 版本` fingerprint stamp 命中就直接跳过 `cargo fetch`，没有再次检查**当前 CARGO_HOME 的真实 registry/index/cache**。用户更换 Rust 安装位置、清理 Cargo 缓存或旧 stamp 来自另一 Cargo Home 时，会出现“[1] 显示 crates 已准备，实际 D 盘 Cargo Home 没有 serde”的假准备状态。
+- Rust Home 真值：`[1]` 成功确认 Rust 后把有效 `CARGO_HOME/RUSTUP_HOME` 写入项目本地 `.xma/state/rust-environment.json`，同时仍保留 User 环境变量。Windows 控制台、Tauri Desktop 与 Desktop 发布入口统一从共享 `xma-common.ps1` 恢复 Rust 环境；读取顺序以 User 环境为权威、项目状态为恢复备份，再到当前 Process 环境。这样旧 Windows Terminal 未继承最新 User 环境时也不会误用另一套 Cargo。
+- crates 准备：`[1]` 的 Cargo fingerprint 加入实际 `CARGO_HOME/RUSTUP_HOME`，但 stamp 只用于提示，不再当作“缓存一定存在”的证据。每次 `[1]` 都执行 `cargo fetch --locked --offline` 真值校验；缺 crate 时只在 `[1]` 联网 `cargo fetch --locked`，随后再次 offline 复检，确保 `[4]/[7]` 真能离线运行。
+- CLI / 全量检查：`[4]` 和 `[7]` 在执行 build/check 前先恢复 `[1]` 的 Rust Home 并做 Cargo offline preflight；缓存不完整时直接提示回 `[1]`，不再把 `serde not found` 这类 Cargo 底层错误当成项目代码失败，也不在运行/检查阶段偷偷联网。
+- 路径合同：`XMA-Sync.bat` 未设置 `XMA_TARGET_ROOT` 时根据**源码包自身位置**自动选择同级 `xma` / `xma-worktree`，复用已有 `.git` 或 `.xma/source-sync.json` worktree；不再默认 H:/D:/C:。`XMA-GitHub.bat` 只认脚本实际所在仓库根。普通 `git clone` 的“目标目录已存在且非空”仍是 Git 自己的覆盖保护，可选择其他目标名或进入已有仓库更新。
+- 回归：Windows Gate 锁定 Rust 环境恢复、Cargo offline 真值校验、Tauri 复用 Cargo Home，以及 Sync/GitHub Helper 禁止重新出现维护者 H: 硬编码。版本保持 `0.1.0`。
+
