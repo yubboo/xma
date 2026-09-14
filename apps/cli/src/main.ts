@@ -23,6 +23,9 @@ import { ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
 import { SkillLoader, SkillRegistry, createAgentSkillContextSource } from 'xma-core-compat'
 import {
   CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
+  DEEPSEEK_CURRENT_MODELS,
+  DEEPSEEK_DEPRECATED_MODEL_IDS,
+  DEEPSEEK_PROVIDER_ID,
   builtinProviderCatalogEntry,
   listBuiltinProviderCatalog,
   providerCatalogDisplayName,
@@ -161,8 +164,8 @@ function nativeExecutable(): string | undefined {
 function brainLabel(profile: TerminalBrainProfile | undefined): string {
   if (!profile) return '模型未配置'
   const providerName = providerCatalogDisplayName(profile.providerId)
-  const profileName = profile.displayName === providerName ? '' : ` · ${profile.displayName}`
-  return `${providerName}${profileName} · ${profile.model}`
+  const label = profile.providerId === CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID ? profile.displayName : providerName
+  return `${label} · ${profile.model}`
 }
 
 function doctorItems(
@@ -352,6 +355,17 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     }
   }
 
+  // 官方 Provider 是单例配置：历史版本可能重复创建 `DeepSeek 2/3` Profile；启动时保留当前活动项并合并旧重复项。
+  for (const preset of listBuiltinProviderCatalog()) {
+    if (preset.id === CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID) continue
+    const consolidated = brainStore.consolidateProvider(preset.id, preset.displayName)
+    if (!osCredentials) continue
+    for (const removed of consolidated.removed) {
+      if (removed.credential?.source !== 'os') continue
+      try { await osCredentials.delete(removed.credential.key, AbortSignal.timeout(5_000)) } catch { /* stale credential cleanup is best effort */ }
+    }
+  }
+
   await refreshBrain()
 
   const doctor = async (): Promise<readonly DoctorItem[]> => {
@@ -397,7 +411,8 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       if (input.apiKey && input.credentialEnv) throw new Error('API Key 只能选择 OS Credentials 或环境变量其中一种来源。')
       const preset = builtinProviderCatalogEntry(input.providerId)
       if (!preset) throw new Error(`提供方目录不存在：${input.providerId}`)
-      const displayName = input.displayName?.trim() || preset.displayName
+      const customProvider = preset.id === CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID
+      const displayName = customProvider ? (input.displayName?.trim() || preset.displayName) : preset.displayName
       const baseUrl = input.baseUrl?.trim() || preset.baseUrl
       const selectedModel = input.model?.trim() || preset.defaultModel
       if (!baseUrl) throw new Error(`${preset.displayName} 需要 Base URL。`)
@@ -409,7 +424,11 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       // 用户可能在启动后才完成 Native rebuild/系统凭据后端恢复；保存前重新读取一次真实状态，禁止使用陈旧 readiness。
       if (input.apiKey) await refreshCredentialState()
 
-      const id = brainStore.allocateId(displayName)
+      const existingOfficialProfile = customProvider
+        ? undefined
+        : brainStore.list(osCredentialReadiness).find(profile => profile.source === 'config' && profile.providerId === preset.id && profile.active)
+          ?? brainStore.list(osCredentialReadiness).find(profile => profile.source === 'config' && profile.providerId === preset.id)
+      const id = existingOfficialProfile?.id ?? brainStore.allocateId(displayName, customProvider ? undefined : preset.id)
       let storedCredentialKey: string | undefined
       const credential = input.apiKey
           ? (() => {
@@ -461,7 +480,13 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const profile = requireActiveProfile()
       if (!await ensureCredentialReady(profile)) throw new Error(credentialMissingMessage(profile))
       const models = await providerRegistry.listModels(profile.id, AbortSignal.timeout(20_000))
-      return models.map(item => item.id)
+      const discovered = models.map(item => item.id.trim()).filter(Boolean)
+      if (profile.providerId !== DEEPSEEK_PROVIDER_ID) return discovered
+
+      // DeepSeek 官方目录优先展示当前公开模型，同时保留未来 /models 动态发现的新 ID；已停用/旧别名不再出现在选择器里。
+      const current = new Set<string>(DEEPSEEK_CURRENT_MODELS)
+      const extras = discovered.filter(model => !current.has(model) && !DEEPSEEK_DEPRECATED_MODEL_IDS.has(model))
+      return [...DEEPSEEK_CURRENT_MODELS, ...extras]
     },
     async selectBrainModel(modelId) {
       const profile = requireActiveProfile()

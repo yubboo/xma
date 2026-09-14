@@ -259,3 +259,42 @@
 - `[7]` 构建：继续修复 OpenTUI parser worker。`build.ts` 以 `apps/cli/opentui-runtime` 作为 Bun.build cwd，直接读取已准备依赖岛中的 `node_modules/@opentui/core/parser.worker.js`，并按该 cwd 计算 BunFS 相对路径；不再使用失败的 package subpath resolve。该方式与 MiMo Code 0.1.101 构建策略对齐。
 - 回归：OpenTUI 静态合同补充层级设置、三项特效持久化、右上→左下长尾流星、Logo 高亮扫过和 parser worker cwd/relative-path 约束。Native build/smoke 仍由 Windows `[7]` 与 GitHub CI 作为最终平台证据。
 - 交付：`0.1.0` 未冻结，继续只生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`，不创建临时 fixed/hotfix 包名。
+
+##22 · Bun Windows compile 临时目录与稳定构建修复
+
+- 日期：2026-09-14
+- 现象：Windows `[7]` 已通过 99 个测试和 9 个 Gate，但 `pnpm run build:cli` 在 Bun 1.3.14 compile 阶段报 `failed to copy bun executable into temporary file: ENOENT / Failed to get temp file path: FileNotFound`。
+- 根因边界：失败发生在 Bun 单文件 compile 自身创建/复制临时 bun.exe 的阶段，不是 TypeScript、OpenTUI parser worker、Agent Runtime 或用户 Provider 配置失败。构建入口此前直接继承用户进程的临时目录环境，无法保证 TEMP/TMP/TMPDIR/BUN_TMPDIR 指向真实可写目录。
+- Runner：`scripts/cli/bun.ts` 在 build 前选择并创建可写临时目录，写入探针验证后，同时固定 `BUN_TMPDIR/TMPDIR/TEMP/TMP`；Windows 优先使用 `%LOCALAPPDATA%\\Temp\\xma-bun-compile\\1.3.14`，不再信任失效的临时目录环境。
+- Build：`apps/cli/opentui-runtime/build.ts` 先把单文件可执行程序编译到上述临时目录，成功后再复制到 `dist/cli/xiaoyu.exe`；避免项目 checkout 位于 CJK/特殊字符路径时让 compile 输出路径直接参与 Bun 的临时可执行文件处理。
+- 稳定性：Bun 1.3.14 Windows compile 暂停 `minify`，优先保证 `[7]` / Release 的可复现构建与烟测；后续升级 Bun 后再单独评估恢复压缩。
+- 回归：OpenTUI 测试新增编译临时目录、四个环境变量、staged outfile 与最终复制合同检查。
+
+##20 · 模型配置弹层居中、Esc 返回与光标焦点修复
+
+- 日期：2026-09-14
+- 目的：修复 OpenTUI 模型配置流程的三个实机问题：非搜索列表残留底层输入光标、弹层偏上不居中、首次配置虽然显示 `esc` 但逻辑上禁止取消；同时收紧 Provider 菜单文案，避免描述过长和语义含混。
+- 焦点：打开 List/Input/Approval modal 前显式 `prompt.blur()` 并隐藏原生 cursor；主 Prompt 不再声明永久 `focused`，而由工作台 `refocusPrompt()` 在 modal 关闭后恢复焦点。非搜索列表与 Secret 输入不会再留下底层白色 caret。
+- 布局：List/Input dialog 改为水平 + 垂直真正居中；列表最大宽度收窄，标签列由 24 收到 20 cells，Provider 两列信息更紧凑。
+- 返回：首次 Provider/Model/Reasoning/API Key 配置不再传 `allowCancel: false`；所有显示 `Esc 返回/取消` 的步骤都复用统一 cancel path，Esc 可真实回到上一级/工作台。
+- 文案：`添加提供方`、`自定义提供方`、Provider Catalog 与连接测试说明改为短句；自定义 Catalog 名称统一为 `自定义接口`，说明为 `OpenAI 兼容 · 自定义 Base URL`；DeepSeek 等官方 Provider 说明统一为 `官方 API · 自动读取模型`。
+- 交付：未冻结 `0.1.0`，继续覆盖生成 `xma-0.1.0.zip` 与 SHA-256 文件。
+
+##20 · 首次 Provider 配置向导连续性与 DeepSeek V4 当前模型目录
+
+- 日期：2026-09-14
+- 目的：修复首次配置 DeepSeek 时 API Key 保存后短暂闪回主工作台、随后才弹出模型选择的问题；同时同步 DeepSeek 官方当前 API 模型名，避免旧别名继续出现在模型选择器中。
+- 首次配置流程：OpenTUI 新增首次配置向导遮罩状态。API Key 输入完成后，工作台保持在配置流程中，依次显示“保存凭据 / 读取最新模型 / 选择模型 / 验证连接”；完成模型选择与连接验证后才进入主工作台。首次配置不再额外强制弹出推理强度选择，推理强度仍可在 Ctrl+P → 模型 / 提供方 中修改。
+- DeepSeek 模型：内建目录固定当前公开基线 `deepseek-v4-pro`、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`；`deepseek-chat`、`deepseek-reasoner`、`deepseek-flash` 作为旧/停用别名不再展示。`/models` 动态发现仍保留，未来出现的新模型 ID 会追加在当前官方基线之后。
+- 选择器说明：为 V4 Pro 0813、V4 Flash 0731 与 V4 Flash Vision 实验版增加简短说明；Vision 实验版可以出现在模型列表中，但当前 Terminal 输入链路仍以文本为主。
+- 回归：Brain Catalog 测试锁定 DeepSeek 当前模型集合和旧别名排除；OpenTUI 回归锁定首次向导连续显示、API Key → 模型 → Probe 顺序，以及首次配置不再强制插入 reasoning 选择页。
+
+##24 · 官方 Provider 单例化与重复 Profile 自动合并
+
+- 日期：2026-09-14
+- 目的：修复重复配置 DeepSeek 后出现 `DeepSeek` / `DeepSeek 2` 两个 Profile，并导致主工作台显示 `DeepSeek · DeepSeek 2 · model` 的身份重复问题。
+- Brain：官方 Provider 改为单例语义；启动时自动合并同一官方 providerId 的历史重复 Profile，优先保留当前活动项并把显示名恢复为官方品牌名。自定义 OpenAI-compatible Provider 继续允许多 Profile。
+- Credentials：被合并移除的历史官方 Profile 若使用 OS Credential，其旧 credential alias 由启动流程 best-effort 清理；活动 Profile 的凭据与模型保持不变。
+- 配置：再次添加 DeepSeek 时更新现有 DeepSeek 配置，不再自动创建 `DeepSeek 2/3`。模型 / 提供方页的官方 Profile 行只显示一次品牌名，说明列只显示当前模型。
+- Workbench：状态栏统一显示 `DeepSeek · <model> · <reasoning>`；不会再拼接 Provider 品牌与 Profile 别名两层身份。
+- 回归：新增 Brain consolidation 测试与 OpenTUI Provider identity 静态合同测试，锁住官方 Provider 单例与主界面单品牌显示。

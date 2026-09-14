@@ -10,7 +10,7 @@ import {
   osCredentialKey,
   profileToProvider,
 } from '../src/brain.ts'
-import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID, DEEPSEEK_PROVIDER_ID, builtinProviderCatalogEntry } from 'xma-plugin-deepseek'
+import { CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID, DEEPSEEK_CURRENT_MODELS, DEEPSEEK_DEPRECATED_MODEL_IDS, DEEPSEEK_PROVIDER_ID, builtinProviderCatalogEntry } from 'xma-plugin-deepseek'
 import { OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
 
 function customProfileFields() {
@@ -227,6 +227,11 @@ test('DeepSeek catalog creates a real official provider profile template without
   const preset = builtinProviderCatalogEntry(DEEPSEEK_PROVIDER_ID)
   assert.ok(preset)
   assert.equal(preset.baseUrl, 'https://api.deepseek.com')
+  assert.equal(preset.defaultModel, 'deepseek-v4-pro')
+  assert.deepEqual([...DEEPSEEK_CURRENT_MODELS], ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])
+  assert.equal(DEEPSEEK_DEPRECATED_MODEL_IDS.has('deepseek-flash'), true)
+  assert.equal(DEEPSEEK_DEPRECATED_MODEL_IDS.has('deepseek-chat'), true)
+  assert.equal(DEEPSEEK_DEPRECATED_MODEL_IDS.has('deepseek-reasoner'), true)
   assert.equal(preset.adapterId, OPENAI_COMPATIBLE_ADAPTER_ID)
   assert.equal(preset.credentialRequired, true)
   assert.equal(preset.options?.reasoning, true)
@@ -235,4 +240,41 @@ test('DeepSeek catalog creates a real official provider profile template without
   assert.equal(preset.options?.reasoningContentToolContinuation, true)
   assert.equal(preset.options?.toolProbeThinkingMode, 'disabled')
   assert.equal(preset.options?.modelCatalogDiscovery, true)
+})
+
+test('official Provider consolidation keeps the active profile and removes DeepSeek 2/3 style duplicates', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'xma-brain-dedupe-'))
+  const file = path.join(root, 'brain.json')
+  try {
+    const store = new TerminalBrainStore(file)
+    store.upsert({
+      id: 'deepseek',
+      providerId: DEEPSEEK_PROVIDER_ID,
+      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
+      displayName: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      credential: { source: 'os', key: 'provider:deepseek:api-key' },
+    })
+    store.upsert({
+      id: 'deepseek-2',
+      providerId: DEEPSEEK_PROVIDER_ID,
+      adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
+      displayName: 'DeepSeek 2',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-flash',
+      credential: { source: 'os', key: 'provider:deepseek-2:api-key' },
+    })
+    assert.equal(store.active()?.id, 'deepseek-2')
+
+    const result = store.consolidateProvider(DEEPSEEK_PROVIDER_ID, 'DeepSeek')
+    assert.equal(result.profile?.id, 'deepseek-2')
+    assert.equal(result.profile?.displayName, 'DeepSeek')
+    assert.deepEqual(result.removed.map(profile => profile.id), ['deepseek'])
+    assert.equal(store.list().filter(profile => profile.providerId === DEEPSEEK_PROVIDER_ID).length, 1)
+    assert.equal(store.active()?.displayName, 'DeepSeek')
+    assert.equal(store.active()?.model, 'deepseek-v4-flash')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

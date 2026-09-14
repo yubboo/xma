@@ -11,6 +11,19 @@ import { OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
 export const DEEPSEEK_PROVIDER_ID = 'deepseek'
 export const CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID = 'custom-openai-compatible'
 
+
+export const DEEPSEEK_CURRENT_MODELS = Object.freeze([
+  'deepseek-v4-pro',
+  'deepseek-v4-flash',
+  'deepseek-v4-flash-vision-exp',
+] as const)
+
+export const DEEPSEEK_DEPRECATED_MODEL_IDS = Object.freeze(new Set<string>([
+  'deepseek-chat',
+  'deepseek-reasoner',
+  'deepseek-flash',
+]))
+
 export interface ProviderCatalogEntry {
   id: string
   displayName: string
@@ -31,7 +44,7 @@ const BUILTIN_PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = Object.freeze(
     description: 'DeepSeek 官方 API · 动态读取真实模型列表',
     adapterId: OPENAI_COMPATIBLE_ADAPTER_ID,
     baseUrl: 'https://api.deepseek.com',
-    defaultModel: 'deepseek-v4-pro',
+    defaultModel: DEEPSEEK_CURRENT_MODELS[0],
     credentialRequired: true,
     options: Object.freeze({
       includeUsage: true,

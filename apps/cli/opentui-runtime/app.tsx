@@ -16,7 +16,6 @@ import {
 import { render, useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
-import type { TerminalBrainProfileView } from '../src/brain.ts'
 import {
   applyTerminalRunEvent,
   commandPaletteOptions,
@@ -276,12 +275,6 @@ type DialogState =
       resolve: (value: ToolApprovalDecision) => void
     }
 
-function providerCredential(profile: TerminalBrainProfileView): string {
-  if (profile.credential?.source === 'os') return profile.credentialReady ? '系统凭据' : '缺少系统凭据'
-  if (profile.credential?.source === 'env') return profile.credentialReady ? `环境变量 ${profile.credential.key}` : `缺少 ${profile.credential.key}`
-  return '无需密钥'
-}
-
 function reasoningColor(effort: TerminalReasoningEffort): string {
   if (effort === 'max') return COLOR.red
   if (effort === 'high') return COLOR.yellow
@@ -391,8 +384,23 @@ function ListDialog(props: {
     key(event)
   })
 
+  const runInitialSetup = async () => {
+    setSetupFlow({ active: true, message: '首次使用 · 配置提供方与模型' })
+    try {
+      await providerManager(true)
+    } finally {
+      setSetupFlow({ active: false, message: '' })
+      refocusPrompt()
+      renderer.requestRender()
+    }
+  }
+
   onMount(() => {
-    if (props.searchable) queueMicrotask(() => searchInput?.focus())
+    if (props.searchable) {
+      queueMicrotask(() => searchInput?.focus())
+      return
+    }
+    renderer.setCursorPosition(0, 0, false)
   })
 
   return (
@@ -404,14 +412,14 @@ function ListDialog(props: {
       left={0}
       top={0}
       alignItems="center"
-      paddingTop={Math.max(2, Math.floor(dimensions().height * 0.16))}
+      justifyContent="center"
       backgroundColor={COLOR.background}
       onMouseDown={event => event.stopPropagation()}
       onMouseUp={event => event.stopPropagation()}
     >
       <box
-        width={Math.min(86, dimensions().width - 4)}
-        maxHeight={Math.max(12, dimensions().height - 8)}
+        width={Math.max(42, Math.min(74, dimensions().width - 8))}
+        maxHeight={Math.max(12, Math.min(22, dimensions().height - 4))}
         flexDirection="column"
         backgroundColor={COLOR.background}
         paddingTop={1}
@@ -465,7 +473,7 @@ function ListDialog(props: {
                   <Show when={hasShortcut()}>
                     <box width={16} paddingLeft={1}><text fg={COLOR.faint}>{item.shortcut ?? ''}</text></box>
                   </Show>
-                  <box width={24} paddingLeft={1}><text fg={active() ? COLOR.orange : COLOR.text}>{item.label}</text></box>
+                  <box width={20} paddingLeft={1}><text fg={active() ? COLOR.orange : COLOR.text}>{item.label}</text></box>
                   <box flexGrow={1} paddingLeft={1}><text fg={COLOR.soft}>{item.description ?? ''}</text></box>
                 </box>
               )
@@ -529,10 +537,26 @@ function InputDialog(props: {
   allowCancel: boolean
   onDone: (value: string | undefined) => void
 }) {
+  const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   let field: TextareaRenderable | undefined
+  const runInitialSetup = async () => {
+    setSetupFlow({ active: true, message: '首次使用 · 配置提供方与模型' })
+    try {
+      await providerManager(true)
+    } finally {
+      setSetupFlow({ active: false, message: '' })
+      refocusPrompt()
+      renderer.requestRender()
+    }
+  }
+
   onMount(() => {
-    if (!props.secret) queueMicrotask(() => field?.focus())
+    if (!props.secret) {
+      queueMicrotask(() => field?.focus())
+      return
+    }
+    renderer.setCursorPosition(0, 0, false)
   })
   return (
     <box
@@ -543,7 +567,7 @@ function InputDialog(props: {
       left={0}
       top={0}
       alignItems="center"
-      paddingTop={Math.max(3, Math.floor(dimensions().height * 0.24))}
+      justifyContent="center"
       backgroundColor={COLOR.background}
     >
       <box
@@ -597,8 +621,10 @@ function InputDialog(props: {
 }
 
 function ApprovalDialog(props: { request: ToolApprovalRequest; onDone: (value: ToolApprovalDecision) => void }) {
+  const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const [selected, setSelected] = createSignal(0)
+  onMount(() => renderer.setCursorPosition(0, 0, false))
   const choices: readonly { label: string; value: ToolApprovalDecision }[] = [
     { label: '拒绝', value: 'deny' },
     { label: '仅允许本次', value: 'allow-once' },
@@ -642,6 +668,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [activity, setActivity] = createSignal<ActivityState>('idle')
   const [notice, setNotice] = createSignal<NoticeState | undefined>()
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
+  const [setupFlow, setSetupFlow] = createSignal({ active: false, message: '' })
   const [phase, setPhase] = createSignal(0)
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
@@ -688,7 +715,12 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     setClock(Date.now())
     renderer.requestRender()
   }
-  const refocusPrompt = () => queueMicrotask(() => prompt?.focus())
+  const refocusPrompt = () => queueMicrotask(() => { if (!setupFlow().active && dialog() === undefined) prompt?.focus() })
+  const setSetupStage = (message: string) => {
+    if (!setupFlow().active) return
+    setSetupFlow({ active: true, message })
+    renderer.requestRender()
+  }
   const settleEventDrain = () => {
     if (bufferedEvents.length > 0) return
     const resolvers = drainResolvers
@@ -744,6 +776,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     refocusPrompt()
   }
   const askList = (title: string, items: readonly TuiMenuItem[], options: { searchable?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>(resolve => {
+    prompt?.blur()
+    renderer.setCursorPosition(0, 0, false)
     setDialog({
       kind: 'list',
       title,
@@ -754,6 +788,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     })
   })
   const askInput = (title: string, description: string, initial = '', options: { secret?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>(resolve => {
+    prompt?.blur()
+    renderer.setCursorPosition(0, 0, false)
     setDialog({
       kind: 'input',
       title,
@@ -766,6 +802,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   })
   const askApproval = (request: ToolApprovalRequest, signal: AbortSignal) => new Promise<ToolApprovalDecision>(resolve => {
     if (signal.aborted) { resolve('deny'); return }
+    prompt?.blur()
+    renderer.setCursorPosition(0, 0, false)
     const onAbort = () => {
       setDialog(current => current?.kind === 'approval' ? undefined : current)
       resolve('deny')
@@ -787,40 +825,57 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     const profiles = props.backend.listBrainProfiles()
     const active = profiles.find(profile => profile.active)
     const items: TuiMenuItem[] = [
-      { value: 'catalog', label: '添加提供方', description: '配置新的模型提供方' },
-      { value: 'add-env', label: '自定义提供方', description: 'OpenAI 兼容接口 · 环境变量' },
+      { value: 'catalog', label: '添加提供方', description: '新增官方提供方' },
+      { value: 'add-env', label: '自定义提供方', description: 'OpenAI 兼容接口' },
     ]
     if (active) {
       items.push(
-        { value: 'probe', label: '模型就绪测试', description: `${active.displayName} · ${active.model}` },
-        { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
-        ...(props.backend.reasoningSupported ? [{ value: 'reasoning', label: '推理强度', description: `当前 ${props.backend.reasoningEffort}` }] : []),
+        { value: 'probe', label: '连接测试', description: `${active.displayName} · ${active.model}` },
+        { value: 'models', label: '选择模型', description: `当前：${active.model}` },
+        ...(props.backend.reasoningSupported ? [{ value: 'reasoning', label: '推理强度', description: `当前：${props.backend.reasoningEffort}` }] : []),
       )
     }
     const providers = new Map(props.backend.listBrainProviderCatalog().map(item => [item.id, item.displayName]))
     for (const profile of profiles) {
+      const providerName = providers.get(profile.providerId) ?? profile.providerId
+      const profileLabel = profile.providerId === 'custom-openai-compatible' ? profile.displayName : providerName
       items.push({
         value: `select:${profile.id}`,
-        label: `${profile.active ? '●' : '○'} ${profile.displayName}`,
-        description: `${providers.get(profile.providerId) ?? profile.providerId} · ${profile.model} · ${providerCredential(profile)}`,
+        label: `${profile.active ? '●' : '○'} ${profileLabel}`,
+        description: profile.model,
       })
     }
     return items
   }
 
-  const selectModel = async (initialSetup = false): Promise<boolean> => {
+  const modelDescription = (providerId: string, model: string): string => {
+    if (providerId !== 'deepseek') return ''
+    if (model === 'deepseek-v4-pro') return 'V4 Pro 0813 · 正式版 · Agent / 复杂任务'
+    if (model === 'deepseek-v4-flash') return 'V4 Flash 0731 · 正式版 · 高吞吐'
+    if (model === 'deepseek-v4-flash-vision-exp') return 'V4 Flash Vision · 实验多模态 · 当前终端以文本为主'
+    return 'DeepSeek API 动态发现模型'
+  }
+
+  const selectModel = async (_initialSetup = false): Promise<boolean> => {
     if (!props.backend.providerConfigured) {
       tell('模型未配置 · 请先配置模型 / 提供方')
       return false
     }
     tell('正在读取提供方的真实模型列表…', 30_000)
+    if (_initialSetup) setSetupStage('API Key 已保存 · 正在读取最新模型…')
     try {
       const models = await props.backend.listBrainModels()
       if (models.length === 0) {
         tell('提供方没有返回模型列表；保留当前模型 ID。')
         return false
       }
-      const value = await askList('选择真实模型', models.slice(0, 100).map(model => ({ value: model, label: model, description: '' })), { searchable: true, allowCancel: !initialSetup })
+      const active = props.backend.listBrainProfiles().find(profile => profile.active)
+      const providerId = active?.providerId ?? ''
+      const value = await askList('选择真实模型', models.slice(0, 100).map(model => ({
+        value: model,
+        label: model,
+        description: modelDescription(providerId, model),
+      })), { searchable: true })
       if (!value) return false
       const profile = await props.backend.selectBrainModel(value)
       tell(`模型已切换 · ${profile.displayName} · ${profile.model}`)
@@ -832,7 +887,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     }
   }
 
-  const selectReasoning = async (initialSetup = false): Promise<boolean> => {
+  const selectReasoning = async (_initialSetup = false): Promise<boolean> => {
     if (!props.backend.reasoningSupported) return true
     const current = props.backend.reasoningEffort
     const value = await askList('选择推理强度', [
@@ -840,7 +895,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       { value: 'low', label: `${current === 'low' ? '● ' : ''}低`, description: '低推理强度' },
       { value: 'high', label: `${current === 'high' ? '● ' : ''}高`, description: '高推理强度' },
       { value: 'max', label: `${current === 'max' ? '● ' : ''}最大`, description: '最大推理强度（提供方支持时）' },
-    ], { allowCancel: !initialSetup })
+    ], { allowCancel: true })
     if (!value) return false
     try {
       const profile = await props.backend.selectBrainReasoning(value as TerminalReasoningEffort)
@@ -870,18 +925,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     const provider = props.backend.listBrainProviderCatalog().find(item => item.id === providerId)
     if (!provider) { tell(`提供方目录不存在：${providerId}`); return false }
     const profiles = props.backend.listBrainProfiles().filter(item => item.providerId === providerId && item.source === 'config')
-    const displayName = profiles.length === 0 ? provider.displayName : `${provider.displayName} ${profiles.length + 1}`
+    const displayName = provider.customEndpoint && profiles.length > 0 ? `${provider.displayName} ${profiles.length + 1}` : provider.displayName
     let baseUrl: string | undefined
     let model: string | undefined
     if (provider.customEndpoint) {
-      baseUrl = await askInput('Base URL', '例如：https://api.example.com/v1', '', { allowCancel: !initialSetup })
+      baseUrl = await askInput('Base URL', '例如：https://api.example.com/v1', '', { allowCancel: true })
       if (baseUrl === undefined) return false
-      model = await askInput('默认模型 ID', '请输入 endpoint 实际支持的 model ID', '', { allowCancel: !initialSetup })
+      model = await askInput('默认模型 ID', '填写接口支持的 Model ID', '', { allowCancel: true })
       if (model === undefined) return false
     }
     const credential = credentialMode === 'os'
-      ? await askInput('API Key', provider.credentialRequired ? '安全写入系统凭据库；输入内容不会回显' : '安全写入系统凭据库；留空表示无需鉴权', '', { secret: true, allowCancel: !initialSetup })
-      : await askInput('API Key 环境变量', '只保存变量名；留空表示无需鉴权', 'XIAOYU_API_KEY', { allowCancel: !initialSetup })
+      ? await askInput('API Key', provider.credentialRequired ? '保存到系统凭据库，不回显' : '保存到系统凭据库；可留空', '', { secret: true, allowCancel: true })
+      : await askInput('API Key 环境变量', '仅保存环境变量名；可留空', 'XIAOYU_API_KEY', { allowCancel: true })
     if (credential === undefined) return false
     if (credentialMode === 'os' && provider.credentialRequired && !credential.trim()) {
       tell(`${provider.displayName} 官方 API 需要 API Key。`)
@@ -898,8 +953,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       })
       tell(`提供方已保存 · ${profile.displayName} · 正在读取真实模型…`, 30_000)
       refresh()
-      await selectModel(initialSetup)
-      await selectReasoning(initialSetup)
+      if (initialSetup) setSetupStage('API Key 已保存 · 下一步选择模型')
+      const modelSelected = await selectModel(initialSetup)
+      if (!modelSelected) return false
+      if (!initialSetup) {
+        const reasoningSelected = await selectReasoning(false)
+        if (!reasoningSelected) return false
+      }
+      if (initialSetup) setSetupStage('模型已选择 · 正在验证连接…')
       return await probe()
     } catch (error) {
       tell(`提供方保存失败 · ${error instanceof Error ? error.message : String(error)}`)
@@ -911,17 +972,17 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     const catalog = props.backend.listBrainProviderCatalog()
     const value = await askList(initialSetup ? '配置 Xiaoyu 模型' : '添加提供方', catalog.map((item: BrainProviderCatalogItem) => ({
       value: item.id,
-      label: item.displayName,
-      description: item.description,
+      label: item.customEndpoint ? '自定义接口' : item.displayName,
+      description: item.customEndpoint ? 'OpenAI 兼容 · 自定义 Base URL' : '官方 API · 自动读取模型',
       keywords: [item.id, item.displayName],
-    })), { searchable: true, allowCancel: !initialSetup })
+    })), { searchable: true })
     if (!value) return false
     return configureProvider(value, 'os', initialSetup)
   }
 
   const providerManager = async (initialSetup = false): Promise<void> => {
     while (true) {
-      const value = await askList(initialSetup ? '配置 Xiaoyu 模型' : '模型 / 提供方', profileItems(), { allowCancel: !initialSetup })
+      const value = await askList(initialSetup ? '配置 Xiaoyu 模型' : '模型 / 提供方', profileItems(), { allowCancel: true })
       if (!value) return
       try {
         if (value === 'catalog') {
@@ -1238,6 +1299,17 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     }
   })
 
+  const runInitialSetup = async () => {
+    setSetupFlow({ active: true, message: '首次使用 · 配置提供方与模型' })
+    try {
+      await providerManager(true)
+    } finally {
+      setSetupFlow({ active: false, message: '' })
+      refocusPrompt()
+      renderer.requestRender()
+    }
+  }
+
   onMount(() => {
     process.title = 'Xiaoyu'
     const animation = setInterval(() => setPhase(value => value + 1), 50)
@@ -1253,7 +1325,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       controller?.abort()
     })
     refocusPrompt()
-    if (needsInitialBrainSetup(providerConfigured())) queueMicrotask(() => { void providerManager(true) })
+    if (needsInitialBrainSetup(providerConfigured())) queueMicrotask(() => { void runInitialSetup() })
   })
 
   const hintItems = createMemo(() => {
@@ -1337,7 +1409,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
               <box flexGrow={1} paddingLeft={1}>
                 <textarea
                   ref={(value: TextareaRenderable) => { prompt = value }}
-                  focused
                   minHeight={1}
                   maxHeight={5}
                   wrapMode="word"
@@ -1395,6 +1466,26 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         <text fg={COLOR.faint}>{props.backend.workspace}</text>
         <text fg={COLOR.faint}>{props.backend.version}</text>
       </box>
+
+      <Show when={setupFlow().active && currentDialog() === undefined}>
+        <box
+          position="absolute"
+          zIndex={2800}
+          width={dimensions().width}
+          height={dimensions().height}
+          left={0}
+          top={0}
+          alignItems="center"
+          justifyContent="center"
+          backgroundColor={COLOR.background}
+        >
+          <box width={Math.min(66, dimensions().width - 6)} flexDirection="column" gap={1} padding={2} backgroundColor={COLOR.background}>
+            <text fg={COLOR.text}><strong>配置 Xiaoyu 模型</strong></text>
+            <text fg={COLOR.soft}>{setupFlow().message}</text>
+            <text fg={COLOR.faint}>完成模型选择与连接验证后进入主工作台</text>
+          </box>
+        </box>
+      </Show>
 
       <Show when={currentDialog()} keyed>{state => {
         if (state.kind === 'list') {

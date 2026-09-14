@@ -318,6 +318,29 @@ export class TerminalBrainStore {
     return { ...profile }
   }
 
+  consolidateProvider(providerId: string, displayName: string): { profile?: TerminalBrainProfile; removed: TerminalBrainProfile[] } {
+    const normalizedProviderId = providerId.trim()
+    const normalizedDisplayName = displayName.trim()
+    if (!normalizedProviderId) throw new Error('Provider ID 不能为空。')
+    if (!normalizedDisplayName) throw new Error('Provider 显示名称不能为空。')
+
+    const matches = this.#config.profiles.filter(profile => profile.providerId === normalizedProviderId)
+    if (matches.length === 0) return { removed: [] }
+
+    const keep = matches.find(profile => profile.id === this.#config.activeProfileId) ?? matches[0]!
+    const normalized = validateProfile({ ...keep, displayName: normalizedDisplayName })
+    const removed = matches.filter(profile => profile.id !== keep.id).map(profile => ({ ...profile }))
+    const changed = removed.length > 0 || keep.displayName !== normalizedDisplayName
+    if (changed) {
+      this.#config.profiles = this.#config.profiles
+        .filter(profile => profile.providerId !== normalizedProviderId || profile.id === keep.id)
+        .map(profile => profile.id === keep.id ? normalized : profile)
+      if (matches.some(profile => profile.id === this.#config.activeProfileId)) this.#config.activeProfileId = keep.id
+      saveBrainConfig(this.#config, this.file)
+    }
+    return { profile: { ...normalized }, removed }
+  }
+
   select(profileId: string): TerminalBrainProfile {
     if (profileId === ENVIRONMENT_PROFILE_ID) {
       const environment = environmentBrainProfile()

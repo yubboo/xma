@@ -27,6 +27,11 @@ process.chdir(scriptDir)
 fs.rmSync(outputDir, { recursive: true, force: true })
 fs.mkdirSync(outputDir, { recursive: true })
 
+const compileTempRoot = process.env.BUN_TMPDIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP
+if (!compileTempRoot) throw new Error('Bun compile temp is not configured. Run the build through `pnpm run build:cli`.')
+fs.mkdirSync(compileTempRoot, { recursive: true })
+const stagedOutfile = path.join(compileTempRoot, `xiaoyu-${process.pid}-${Date.now()}${process.platform === 'win32' ? '.exe' : ''}`)
+
 const localParserWorker = path.join(scriptDir, 'node_modules', '@opentui', 'core', 'parser.worker.js')
 const rootParserWorker = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
 const parserWorkerCandidate = fs.existsSync(localParserWorker) ? localParserWorker : rootParserWorker
@@ -53,7 +58,8 @@ const result = await Bun.build({
   tsconfig: path.join(root, 'tsconfig.json'),
   plugins: [createSolidTransformPlugin()],
   format: 'esm',
-  minify: true,
+  // 中文说明：Bun 1.3.14 在 Windows 上存在已知 minify 构建崩溃案例；CLI 单文件发布优先保证可复现与稳定，暂不在 compile 阶段压缩。
+  minify: false,
   splitting: true,
   compile: {
     autoloadBunfig: false,
@@ -61,7 +67,9 @@ const result = await Bun.build({
     autoloadTsconfig: true,
     autoloadPackageJson: true,
     target,
-    outfile,
+    // 中文说明：先输出到已验证可写的 Bun 临时目录，再由 Node fs 复制到项目 dist。
+    // 这同时绕开 Windows 下项目路径包含 CJK/特殊字符时 compile outfile 的路径兼容风险。
+    outfile: stagedOutfile,
     windows: {},
   },
   entrypoints: [path.join(cliRoot, 'src', 'main.ts'), parserWorker],
@@ -74,4 +82,7 @@ if (!result.success) {
   for (const log of result.logs) console.error(log)
   process.exit(1)
 }
+if (!fs.existsSync(stagedOutfile)) throw new Error(`Bun compile reported success but staged executable is missing: ${stagedOutfile}`)
+fs.copyFileSync(stagedOutfile, outfile)
+fs.rmSync(stagedOutfile, { force: true })
 console.log(`[xma] OpenTUI CLI built: ${outfile}`)

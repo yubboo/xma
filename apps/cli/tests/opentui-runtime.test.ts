@@ -63,6 +63,23 @@ test('OpenTUI build embeds the parser worker from the prepared dependency island
   assert.doesNotMatch(source, /Bun\.resolveSync\('@opentui\/core\/parser\.worker\.js'/)
 })
 
+
+test('Bun CLI build uses a verified temp directory and stages the executable before copying into dist', () => {
+  const runner = readFileSync('scripts/cli/bun.ts', 'utf8')
+  const build = readFileSync('apps/cli/opentui-runtime/build.ts', 'utf8')
+  assert.match(runner, /function resolveBunCompileTemp/)
+  assert.match(runner, /function stageBunForCompile/)
+  assert.match(runner, /bunExecutable = stageBunForCompile\(bun, compileTemp\)/)
+  assert.match(runner, /childEnv\.BUN_TMPDIR = compileTemp/)
+  assert.match(runner, /childEnv\.TMPDIR = compileTemp/)
+  assert.match(runner, /childEnv\.TEMP = compileTemp/)
+  assert.match(runner, /childEnv\.TMP = compileTemp/)
+  assert.match(build, /const stagedOutfile = path\.join\(compileTempRoot/)
+  assert.match(build, /outfile: stagedOutfile/)
+  assert.match(build, /fs\.copyFileSync\(stagedOutfile, outfile\)/)
+  assert.match(build, /minify: false/)
+})
+
 test('OpenTUI visual migration preserves the existing Xiaoyu prompt rail instead of redesigning the workbench', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /placeholder="输入消息…（输入 \/ 唤起命令）"/)
@@ -179,4 +196,57 @@ test('OpenTUI transcript owns scrollback so long replies stay readable and mouse
   assert.doesNotMatch(source, /transcript\(\)\.slice\(-18\)/)
   assert.match(source, /transcriptScroll\.scrollBy\(-8\)/)
   assert.match(source, /transcriptScroll\.scrollTo\(1_000_000\)/)
+})
+
+test('OpenTUI model setup centers dialogs, releases the workbench cursor, and keeps Esc active during first-run setup', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const listStart = source.indexOf('function ListDialog(')
+  const secretStart = source.indexOf('function SecretInput(')
+  const listSource = source.slice(listStart, secretStart)
+  assert.match(listSource, /justifyContent="center"/)
+  assert.match(listSource, /renderer\.setCursorPosition\(0, 0, false\)/)
+  assert.match(source, /prompt\?\.blur\(\)/)
+  assert.doesNotMatch(source, /allowCancel: !initialSetup/)
+  assert.match(source, /label: item\.customEndpoint \? '自定义接口' : item\.displayName/)
+  assert.match(source, /description: item\.customEndpoint \? 'OpenAI 兼容 · 自定义 Base URL' : '官方 API · 自动读取模型'/)
+  assert.doesNotMatch(source, /<textarea[\s\S]{0,160}focused\n\s+minHeight=\{1\}[\s\S]{0,200}placeholder="输入消息…（输入 \/ 唤起命令）"/)
+})
+
+
+test('OpenTUI first-run provider wizard stays modal from API Key through model selection before entering the workbench', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const \[setupFlow, setSetupFlow\]/)
+  assert.match(source, /API Key 已保存 · 正在读取最新模型/)
+  assert.match(source, /const modelSelected = await selectModel\(initialSetup\)/)
+  assert.match(source, /if \(!modelSelected\) return false/)
+  assert.match(source, /if \(!initialSetup\) \{[\s\S]*selectReasoning\(false\)/)
+  assert.match(source, /完成模型选择与连接验证后进入主工作台/)
+  assert.match(source, /void runInitialSetup\(\)/)
+})
+
+test('DeepSeek model picker prefers the current V4 API names and excludes retired aliases', () => {
+  const main = readFileSync('apps/cli/src/main.ts', 'utf8')
+  const catalog = readFileSync('plugins/deepseek/catalog.ts', 'utf8')
+  const runtime = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(catalog, /deepseek-v4-pro/)
+  assert.match(catalog, /deepseek-v4-flash/)
+  assert.match(catalog, /deepseek-v4-flash-vision-exp/)
+  assert.match(catalog, /deepseek-flash/)
+  assert.match(main, /DEEPSEEK_DEPRECATED_MODEL_IDS/)
+  assert.match(main, /return \[\.\.\.DEEPSEEK_CURRENT_MODELS, \.\.\.extras\]/)
+  assert.match(runtime, /V4 Pro 0813/)
+  assert.match(runtime, /V4 Flash 0731/)
+  assert.match(runtime, /V4 Flash Vision/)
+})
+
+test('official Provider UI never renders DeepSeek plus DeepSeek 2 as stacked provider identities', () => {
+  const runtime = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const main = readFileSync('apps/cli/src/main.ts', 'utf8')
+  const brain = readFileSync('apps/cli/src/brain.ts', 'utf8')
+  assert.match(runtime, /provider\.customEndpoint && profiles\.length > 0 \? `\$\{provider\.displayName\} \$\{profiles\.length \+ 1\}` : provider\.displayName/)
+  assert.match(runtime, /const profileLabel = profile\.providerId === 'custom-openai-compatible' \? profile\.displayName : providerName/)
+  assert.match(runtime, /description: profile\.model/)
+  assert.match(main, /const label = profile\.providerId === CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID \? profile\.displayName : providerName/)
+  assert.match(main, /brainStore\.consolidateProvider\(preset\.id, preset\.displayName\)/)
+  assert.match(brain, /consolidateProvider\(providerId: string, displayName: string\)/)
 })
