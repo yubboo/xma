@@ -243,7 +243,15 @@ function Invoke-FullCheck {
   Assert-CoreDependencies
   Assert-CliJsDependencies
   Assert-DesktopJsDependencies
-  if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。' }
+  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+  if (-not $cargoCommand) { throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。' }
+  # 中文说明：全量检查必须完全离线；rustfmt 是 `[1]` 的准备职责。先做最小 preflight，
+  # 缺失时立即返回准备入口，避免 TypeScript/CLI 都跑完以后才在最后一步失败。
+  & $cargoCommand.Source fmt --version *> $null
+  if ($LASTEXITCODE -ne 0) {
+    throw '未检测到 rustfmt/cargo-fmt。请先运行 [1] 一键准备开发环境；[7] 不会联网补装 Rust 组件。'
+  }
+  Write-Host '[通过] Rust rustfmt 已就绪；[7] 将保持 offline。' -ForegroundColor Green
   Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
   Write-Host '[检查] 正在编译并烟测 Bun/OpenTUI Xiaoyu CLI...' -ForegroundColor Cyan
@@ -277,8 +285,8 @@ while ($true) {
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
   Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'
-  Write-Host '  [5] 一键构建发布 · 当前平台            默认 Electron 主桌面端'
-  Write-Host '  [6] 一键构建发布 · Windows             Electron Setup + Portable'
+  Write-Host '  [5] 构建发布 · Desktop 当前平台        默认 Electron 主桌面端'
+  Write-Host '  [6] 构建发布 · Desktop Windows         Electron Setup + Portable'
   Write-Host '  [7] 全量检查                          使用 [1] 已准备的依赖，不偷偷下载'
   Write-Host '  [0] 退出'
   Write-Host ''

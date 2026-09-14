@@ -41,33 +41,26 @@ function ensureWritableDirectory(candidate: string): string | undefined {
   }
 }
 
-function stageBunForCompile(source: string, compileTemp: string): string {
+function stageBunForCompile(source: string, compileCache: string): string {
   if (process.platform !== 'win32') return source
-  const staged = path.join(compileTemp, 'bun.exe')
+  const staged = path.join(compileCache, 'bun.exe')
   try {
     const sourceSize = statSync(source).size
     const stagedSize = existsSync(staged) ? statSync(staged).size : -1
     if (sourceSize !== stagedSize) copyFileSync(source, staged)
   } catch (error) {
-    throw new Error(`无法把 Bun Runtime 暂存到编译临时目录：${staged}。${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`无法把 Bun Runtime 暂存到项目级编译缓存：${staged}。${error instanceof Error ? error.message : String(error)}`)
   }
   return staged
 }
 
-function resolveBunCompileTemp(): string {
-  const candidates = [
-    process.platform === 'win32' && process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, 'Temp', 'xma-bun-compile', BUN_VERSION)
-      : undefined,
-    process.env.TEMP ? path.join(process.env.TEMP, 'xma-bun-compile', BUN_VERSION) : undefined,
-    process.env.TMP ? path.join(process.env.TMP, 'xma-bun-compile', BUN_VERSION) : undefined,
-    path.join(root, '.cache', 'bun-compile-tmp', BUN_VERSION),
-  ].filter((value): value is string => Boolean(value))
-  for (const candidate of candidates) {
-    const ready = ensureWritableDirectory(candidate)
-    if (ready) return ready
-  }
-  throw new Error('无法创建 Bun 编译临时目录。请检查 LOCALAPPDATA/TEMP/TMP 是否存在且当前用户可写。')
+function resolveBunCompileCache(): string {
+  // 中文说明：XMA 自己控制的编译 staging 只能进入项目 `.cache/`。
+  // 不再回退到 Windows 用户级临时目录，避免源码构建在系统盘留下隐式状态，也保证清理系统临时目录不会影响 XMA。
+  const candidate = path.join(root, '.cache', 'bun-compile', BUN_VERSION)
+  const ready = ensureWritableDirectory(candidate)
+  if (ready) return ready
+  throw new Error(`无法创建项目级 Bun 编译缓存：${candidate}。请检查 XMA 项目目录是否可写。`)
 }
 
 const bun = resolveBun()
@@ -85,18 +78,18 @@ if (!args) throw new Error('Usage: tsx scripts/cli/bun.ts <dev|build> [args...]'
 const childEnv = { ...process.env }
 let bunExecutable = bun
 if (command === 'build') {
-  // 中文说明：Bun 1.3.x 的 Windows `--compile` 会先把 bun.exe 复制到临时文件。
-  // 不继承可能失效的 TEMP/TMP/BUN_TMPDIR，而是先创建并探测一个确定可写目录，再同时写入四个临时目录变量。
-  // 这样项目位于中文路径、用户环境残留了不存在的临时目录时，也不会在 compile 阶段报 FileNotFound。
-  const compileTemp = resolveBunCompileTemp()
-  childEnv.BUN_TMPDIR = compileTemp
-  childEnv.TMPDIR = compileTemp
-  childEnv.TEMP = compileTemp
-  childEnv.TMP = compileTemp
+  // 中文说明：Bun 1.3.x 的 Windows `--compile` 会使用临时工作目录。XMA 把这类中间状态固定到项目 `.cache/`，
+  // 不依赖 Windows 用户级临时目录；`.cache` 被删除后下次构建会自动重建，正式 `dist/cli/xiaoyu.exe` 不依赖这里。
+  const compileCache = resolveBunCompileCache()
+  childEnv.BUN_TMPDIR = compileCache
+  childEnv.TMPDIR = compileCache
+  childEnv.TEMP = compileCache
+  childEnv.TMP = compileCache
   // 中文说明：Windows compile 会读取并复制 `process.execPath` 对应的 bun.exe。
-  // 开发环境的 Bun 固定在项目 `.xma/tools` 下，而用户项目目录可能包含中文；先复制到系统临时目录再启动，避免 Bun 1.3.14 在自复制阶段把 CJK 路径误判为 ENOENT。
-  bunExecutable = stageBunForCompile(bun, compileTemp)
-  console.log(`[xma] Bun compile temp: ${compileTemp}`)
+  // 开发环境的 Bun 固定在项目 `.xma/tools` 下；build 时复制到项目级 `.cache/bun-compile` staging，
+  // 让编译器的自复制与输出 staging 都由 XMA 项目目录托管，不向系统临时目录散落状态。
+  bunExecutable = stageBunForCompile(bun, compileCache)
+  console.log(`[xma] Bun compile cache: ${compileCache}`)
   console.log(`[xma] Bun compile runtime: ${bunExecutable}`)
 }
 const result = spawnSync(bunExecutable, args, { cwd: runtimeRoot, stdio: 'inherit', shell: false, env: childEnv })

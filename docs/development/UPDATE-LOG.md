@@ -341,3 +341,45 @@
 - PATH：`Refresh-XmaPath` 改为合并 `.cargo\\bin + Machine PATH + User PATH + 当前进程 PATH` 并去重，不再为了刷新 winget/rustup/npm 安装结果而丢失调用者已有的临时路径；进入 `[1/9]` 前先刷新一次，因此新终端和刚安装工具都能在同一轮准备流程被发现。
 - Launcher：`xma-dev.bat` 使用 `pushd "%~dp0"` 和 PowerShell 命名参数转发 `-Command/-Workspace`，不再直接 `%*` 拼接；保留调用者 Workspace，并加强任意盘符、空格、中文路径下的入口稳定性。
 - Gate：Windows Gate 更新为锁定项目级 stable override、PATH 自愈和安全 launcher 参数转发，防止后续回退到只检查 shim/全局 default 的旧逻辑。
+
+##28 · OpenTUI 动画拆帧后的回归测试合同同步
+
+- 日期：2026-09-14
+- 现象：Windows `[7]` 的 TypeScript 检查与绝大多数测试均通过，但 OpenTUI 流星回归测试仍断言旧接口 `frame={phase()}`，导致 108 个测试中 107 通过、1 个失败，阻断后续 Gate / build 阶段。
+- 根因：`##26` 已把背景动画拆成低频 `starFrame` 与高频 `meteorFrame` 以优化空闲性能；运行时代码已经使用 `starFrame={starFrame()}` 和 `meteorFrame={phase()}`，但静态回归测试没有同步更新，继续锁定已废弃的单一 `frame` prop。
+- 修复：测试合同改为显式验证 `starFrame = floor(phase / 4)`、`starFrame={starFrame()}` 与 `meteorFrame={phase()}`，继续锁定 Braille 流星、稀疏渲染和禁止全屏 StyledText 覆盖的安全边界。
+- 验证：在无项目 node_modules 的隔离环境中使用 Node.js 22 的 type stripping 直接执行 `apps/cli/tests/opentui-runtime.test.ts`，24/24 PASS。该批只修改测试合同与 UPDATE-LOG，不改 TUI Runtime、Provider、模型配置、流星实现或构建逻辑。
+
+
+##29 · Windows 新机依赖真实探测、Rust 安装位置与 Desktop 构建隔离
+
+- 日期：2026-09-14
+- 目的：根据全新 Windows 机器实测修复 `[1]` 在 rustup shim 存在但没有 toolchain/default 时直接失败的问题，并按用户要求给 Rust 提供 C/系统默认、D 盘和自定义安装位置；同时修复 `[5]/[6]` Desktop 构建错误捎带 CLI/Server/全 Rust workspace，导致无关 CLI 失败阻塞桌面安装包。
+- Bun/OpenTUI：`[4/9]` 继续使用项目级 `.xma/tools/bun/1.3.14/bun.exe`。文件不存在或版本不符才下载，存在且版本正确显示缓存命中并跳过下载；OpenTUI package 仍独立位于 `apps/cli/opentui-runtime/node_modules`。
+- Rust 真实探测：`[5/9]` 首先真实执行 `rustc --version` / `cargo --version`。`rustup.exe/cargo.exe/rustc.exe` shim 文件存在不再等价于 toolchain 可用；rustup 的 `no toolchain/default` stderr warn 通过可恢复 Probe 处理，不再被 `$ErrorActionPreference='Stop'` 提前升级成整个准备流程失败。若本机已经下载 stable 但仅未激活，则只设置 XMA 项目级 stable override，不重复下载。
+- Rust 安装位置：真正缺少 stable 时先询问是否由 XMA 安装，再提供 `[1] 系统盘用户默认 XMA/Rust`、`[2] D:\XMA\Rust`、`[3] 自定义目录`。XMA 从 Rust 官方下载 `rustup-init.exe + .sha256`，校验 SHA-256 后以 minimal stable 安装；选定根目录下分别创建 `rustup/` 与 `cargo/`，持久化 User `RUSTUP_HOME/CARGO_HOME` 和对应 `cargo/bin` User PATH。D 盘不存在时不会假装创建盘符，而是要求改选。
+- PATH：`Refresh-XmaPath` 同时识别进程级/User 级 `CARGO_HOME` 与传统 `%USERPROFILE%/.cargo`，合并 Machine/User/当前进程 PATH 并去重，支持自定义 Rust 位置且不覆盖其他临时路径。
+- Desktop 构建隔离：`scripts/windows/xma-build-release.ps1` 改为真正 Desktop-only。Electron 路径只验证 Desktop 依赖、按需准备 Electron Runtime、运行 `apps/desktop/tests/*.test.ts`，随后调用 `build:desktop:electron`；Tauri 只在明确选择时要求 Cargo/预取 Tauri crates。删除 Desktop 流程中的 `pnpm run build`、`build:cli`、`build:server`、`cargo build --workspace`、`scripts/release/cli.ts` 和 CLI portable staging。
+- 菜单：`[5]` / `[6]` 文案明确为 `Desktop 当前平台` / `Desktop Windows`，避免把“桌面安装包”误解为“全产品发行”。Xiaoyu Terminal portable 继续由独立 Release Workflow 构建。
+- 回归：Windows/Distribution Gate 新增 Rust 安装位置、SHA-256、Desktop-only release 边界；同时同步此前 OpenTUI `enableMouseMovement=false` 的性能合同。隔离环境静态 9 Gate PASS，OpenTUI 定向测试 24/24 PASS；真实 Rust 下载与 Electron/Tauri Native 构建仍由 Windows 实机完成最终验证。
+
+##30 · Electron Desktop 构建复用已准备 Runtime
+
+- 日期：2026-09-14
+- 目的：修复 Windows `[5]/[6]` 已显示 `Electron 41.2.0 Runtime 已就绪` 后，electron-builder 仍重新下载 `electron-v41.2.0-win32-x64.zip`，导致 Desktop 构建在 GitHub Releases 网络链路上长时间停滞的问题。
+- 根因：XMA Runtime 安装器把已校验 Electron 解压到 `apps/desktop/node_modules/electron/dist` 并写入 `path.txt`，但 release build 只给 electron-builder 设置了下载缓存环境变量，没有通过 `electronDist` 明确指定这份已准备的 unpacked Runtime；因此 builder 仍按自己的 Electron 获取流程判断并下载发行 ZIP。
+- 修复：`apps/desktop/scripts/electron/build.ts` 在生成 staging `electron-builder.json` 前，验证 Electron package 版本、`dist/version`、`path.txt` 与平台可执行文件，并把已验证的 `dist` 绝对路径写入 `electronDist`。构建脚本移除 `ELECTRON_CACHE` 回退，只保留 `.cache/electron-builder` 作为 builder 工具缓存；本地 Runtime 不完整时直接报错并引导从 Desktop 菜单显式准备。
+- Windows 流程：`xma-build-release.ps1` 在 Runtime 验证通过后明确打印“electron-builder 通过 electronDist 复用，不会再次下载 Electron”；继续保持 `[1]` 不下载 Chromium、`[3]/[5]/[6]` 用户明确选择 Electron 时才允许准备 Runtime 的惰性下载规范。
+- 回归：Desktop build-layout test、Architecture Gate 与 Windows Gate 增加 `electronDist` / 禁止 `ELECTRON_CACHE` / 本地 Runtime 验证合同，防止后续又退回 builder 自行下载 Electron。
+- 交付：`0.1.0` 未冻结，继续覆盖生成正式 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`，不创建 fixed/hotfix 临时包名。
+
+##31 · 项目级 Bun 编译缓存、rustfmt 准备与动画光标锚定
+
+- 日期：2026-09-14
+- 目的：根据 Windows 实机反馈同时修复三类开发体验回退：Bun compile 默认写入 `C:\Users\<user>\AppData\Local\Temp`、`[7]` 最后才因缺少 `cargo-fmt.exe` 失败，以及 Windows Terminal 的真实文本光标被星星/流星动画帧带到装饰 glyph 的位置。
+- Bun staging：`scripts/cli/bun.ts` 不再枚举 `LOCALAPPDATA/TEMP/TMP`。Bun Runtime 自复制、`BUN_TMPDIR/TMPDIR/TEMP/TMP` 与单文件临时 outfile 全部固定到项目 `.cache/bun-compile/1.3.14/`。该目录是可删除的 build cache；每次构建可自动重建，最终 `dist/cli/xiaoyu.exe` 只复制完整单文件结果，不依赖 `.cache` 或系统临时目录启动。
+- Rust 准备：`[1]` 在真实验证 stable `rustc/cargo` 后继续执行 `cargo fmt --version`；minimal profile 缺少 rustfmt 时通过已有 rustup stable toolchain 安装 `rustfmt` 组件并再次验证。`[7]` 在 TypeScript/CLI 构建之前先做离线 rustfmt preflight，缺失立即提示运行 `[1]`，自身不下载。
+- 光标：继续保留 OpenTUI 原生 `TextareaRenderable` 作为输入与 IME/focus 真值，不重新发明手写编辑器。动画 50ms phase 每帧同时请求聚焦 Prompt render，使前景 Textarea 的 `renderCursor()` 在装饰背景之后重新提交真实硬件 cursor 坐标；星点、流星、Logo 渐变只能改变画面，不能再改变硬件文本光标位置。
+- 回归：OpenTUI 测试锁定项目 `.cache/bun-compile`、禁止 `LOCALAPPDATA/TEMP/TMP` fallback，并锁定动画帧 `prompt?.requestRender()`；Windows Gate 锁定 `[1] rustfmt` 安装职责与 `[7]` 离线预检。
+- 交付：版本保持 `0.1.0`，继续覆盖正式 `xma-0.1.0.zip` 与 SHA-256，不生成 hotfix/fixed 临时命名。
+

@@ -28,7 +28,12 @@ test('Electron build stages in .cache and publishes only to dist/release/electro
   assert.match(source, /'dist', 'release', 'electron'/)
   assert.match(source, /'--base', '\.\/'/)
   assert.match(source, /'--emptyOutDir'/)
-  assert.match(source, /ELECTRON_CACHE: electronCache/)
+  assert.match(source, /electronDist: preparedElectronDist/)
+  assert.match(source, /'node_modules', 'electron'/)
+  assert.match(source, /electronRuntimeDist, 'version'/)
+  assert.match(source, /'path\.txt'/)
+  assert.match(source, /electron-builder 不允许在打包阶段二次下载 Electron/)
+  assert.doesNotMatch(source, /ELECTRON_CACHE/)
   assert.match(source, /ELECTRON_BUILDER_CACHE: builderCache/)
 
   const config = await readJson<{ files: string[]; electronVersion: string }>('apps/desktop/electron-builder.json')

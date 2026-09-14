@@ -28,7 +28,9 @@ Electron 是 XMA 默认 Desktop Runtime。项目将版本**精确锁定为 `41.2
 - 禁止再采用“先 `@electron/get` 下载、再另起 `electron/install.js` 子进程”的双阶段安装。该方式曾出现子进程返回 0 但 `dist/path.txt` 未落地的假成功，且难以证明安装真正完成；
 - `electron` 不进入 pnpm `allowBuilds`，避免任何普通 `pnpm install` 意外触发 Chromium 下载；
 - 官方源连续 45 秒无新数据时可切换到 Electron 官方安装文档示例镜像，并继续使用 package 内 `checksums.json` 校验；
-- 检测到 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许 `@electron/get` 使用用户已有代理。
+- 检测到 `HTTP_PROXY/HTTPS_PROXY/ALL_PROXY` 时允许 `@electron/get` 使用用户已有代理；
+- Runtime 安装完成后，Desktop 发布构建必须通过 electron-builder `electronDist` 直接复用 `apps/desktop/node_modules/electron/dist`。构建编排先核对 Electron package 版本、`dist/version`、`path.txt` 与平台可执行文件，任何一项不一致都 fail loud；禁止 electron-builder 回退到网络再次下载同版本 Electron。
+- `.cache/electron-builder/` 只承载 electron-builder 自身打包工具缓存（例如 Windows NSIS / winCodeSign）；这与 Electron Chromium Runtime 缓存是两个独立边界，不能把“打包工具首次准备”误做成 Electron Runtime 的第二次下载。
 
 ## 备用运行时：Tauri 2
 

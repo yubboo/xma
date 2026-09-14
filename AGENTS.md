@@ -282,6 +282,8 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
 - XMA 自己控制的开发/编译中间产物统一进入 `.cache/`：根 Rust 使用 `.cache/cargo-target/`，Tauri Rust 使用 `.cache/tauri-target/`，Desktop staging 使用 `.cache/desktop/`。正式可交付产物统一进入根 `dist/`。仓库根 `build/` / `target/` 与 `apps/desktop/dist|web|release|native` 只视为旧版遗留目录并应清理，禁止重新成为正常输出。
+- Bun/OpenTUI 单文件编译 staging 同样必须位于项目 `.cache/bun-compile/`；禁止默认使用 `%LOCALAPPDATA%\Temp`、`%TEMP%`、`%TMP%` 或其他用户系统临时目录承载 XMA 自己控制的编译状态。`.cache/` 可以随时删除并由后续构建重建；正式 `dist/cli/xiaoyu[.exe]` 不得依赖 `.cache` 或系统临时目录才能启动。
+- `[1]` 的 Rust 准备必须包含 `[7]` 实际需要的 `rustfmt` 组件；`[7]` 必须在开始重型检查前离线预检 `cargo fmt --version`，缺失时立即提示重新运行 `[1]`，禁止在 `[7]` 临时联网安装组件。
 - `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
 
 

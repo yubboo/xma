@@ -89,11 +89,16 @@ function Confirm-XmaAction([string]$Message) {
 }
 
 function Refresh-XmaPath {
-  # 中文说明：新电脑上 winget/rustup/npm 可能刚写入 User/Machine PATH，而当前 PowerShell 进程仍保留旧 PATH。
-  # 这里合并“当前进程 + Machine + User + .cargo\bin”，并做大小写不敏感去重；禁止为了刷新 PATH 丢掉调用者已有的临时路径。
-  $cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+  # 中文说明：新电脑上安装器刚写入 User/Machine PATH 后，当前 PowerShell 仍可能保留旧 PATH。
+  # Rust 允许用户选择 C / D / 自定义位置，因此同时识别进程级与 User 级 CARGO_HOME；禁止只假设 %USERPROFILE%\.cargo。
+  $cargoHomes = @(
+    $env:CARGO_HOME,
+    [Environment]::GetEnvironmentVariable('CARGO_HOME','User'),
+    (Join-Path $env:USERPROFILE '.cargo')
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+  $cargoBins = @($cargoHomes | ForEach-Object { Join-Path $_ 'bin' })
   $sources = @(
-    $cargoBin,
+    $cargoBins,
     [Environment]::GetEnvironmentVariable('Path','Machine'),
     [Environment]::GetEnvironmentVariable('Path','User'),
     $env:Path
@@ -101,12 +106,15 @@ function Refresh-XmaPath {
   $entries = New-Object System.Collections.Generic.List[string]
   $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
   foreach ($source in $sources) {
-    if ([string]::IsNullOrWhiteSpace($source)) { continue }
-    foreach ($entry in ($source -split ';')) {
-      $candidate = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
-      if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-      $normalized = $candidate.TrimEnd([char[]]@('\','/'))
-      if ($seen.Add($normalized)) { [void]$entries.Add($candidate) }
+    if ($null -eq $source) { continue }
+    foreach ($value in @($source)) {
+      if ([string]::IsNullOrWhiteSpace([string]$value)) { continue }
+      foreach ($entry in ([string]$value -split ';')) {
+        $candidate = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $normalized = $candidate.TrimEnd([char[]]@('\','/'))
+        if ($seen.Add($normalized)) { [void]$entries.Add($candidate) }
+      }
     }
   }
   $env:Path = ($entries -join ';')
@@ -130,7 +138,7 @@ function Install-XmaBunRuntime {
     if ($actual -eq $BunVersion) {
       # 中文说明：旧版本准备器可能残留下载 ZIP / extract 副本；固定 bun.exe 已就绪时顺手清理一次性安装介质。
       Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
-      Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+      Write-Host "[缓存] Bun $actual · Xiaoyu OpenTUI Runtime 已存在，跳过重复下载。" -ForegroundColor DarkCyan
       Write-Host "[位置] $bunExe" -ForegroundColor DarkGray
       return $bunExe
     }
@@ -196,6 +204,150 @@ function Get-XmaPathEntries([string]$Value) {
 function Get-XmaNormalizedPath([string]$Value) {
   try { $candidate = [IO.Path]::GetFullPath($Value) } catch { $candidate = $Value }
   return $candidate.TrimEnd([char[]]@('\','/'))
+}
+
+
+function Invoke-XmaProbe([string]$FilePath, [string[]]$ArgumentList = @()) {
+  # 中文说明：rustup 在“已安装 shim、但没有 toolchain/default”时会把 warn 写到 stderr。
+  # 这属于“依赖尚未准备”的可恢复状态，不能被 $ErrorActionPreference='Stop' 提前升级成整个 [1] 失败。
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = @(& $FilePath @ArgumentList 2>$null)
+    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
+  } catch {
+    return [pscustomobject]@{ ExitCode = -1; Output = @($_.Exception.Message) }
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+}
+
+function Add-XmaUserPathEntry([string]$Directory) {
+  $normalizedTarget = Get-XmaNormalizedPath $Directory
+  $current = [Environment]::GetEnvironmentVariable('Path','User')
+  $entries = @(Get-XmaPathEntries $current)
+  if ($entries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedTarget }) { return $false }
+  $next = (@($Directory) + $entries) -join ';'
+  [Environment]::SetEnvironmentVariable('Path', $next, 'User')
+  return $true
+}
+
+function Test-XmaWritableDirectory([string]$Path) {
+  try {
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    $probe = Join-Path $Path ('.xma-write-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($probe, 'ok', ([Text.UTF8Encoding]::new($false)))
+    Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Select-XmaRustInstallRoot {
+  $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = Join-Path $env:USERPROFILE 'AppData\Local' }
+  $defaultRoot = Join-Path $localAppData 'XMA\Rust'
+  $driveD = 'D:\XMA\Rust'
+
+  while ($true) {
+    Write-Host ''
+    Write-Host '[Rust 安装位置] 未检测到可用的 stable toolchain，请选择安装位置：' -ForegroundColor Cyan
+    Write-Host "  [1] 系统盘默认位置（推荐）  $defaultRoot" -ForegroundColor Green
+    Write-Host "  [2] D 盘                    $driveD" -ForegroundColor Gray
+    Write-Host '  [3] 自定义安装位置' -ForegroundColor Gray
+    $choice = (Read-Host '请选择 [1]').Trim()
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
+
+    if ($choice -eq '1') {
+      if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 系统盘默认目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      return $defaultRoot
+    }
+    if ($choice -eq '2') {
+      if (-not (Test-Path -LiteralPath 'D:\' -PathType Container)) {
+        Write-Host '[不可用] 当前电脑没有 D: 盘，请选择 [1] 或 [3]。' -ForegroundColor Yellow
+        continue
+      }
+      if (-not (Test-XmaWritableDirectory $driveD)) { Write-Host '[不可用] D 盘目标目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      Write-Host "[提示] 已准备 $driveD，将在其中保存 rustup / cargo。" -ForegroundColor DarkCyan
+      return $driveD
+    }
+    if ($choice -eq '3') {
+      $custom = (Read-Host '请输入 Rust 安装根目录，例如 E:\DevTools\XMA-Rust').Trim().Trim('"')
+      if ([string]::IsNullOrWhiteSpace($custom)) {
+        Write-Host '[提示] 自定义路径不能为空。' -ForegroundColor Yellow
+        continue
+      }
+      try { $resolved = [IO.Path]::GetFullPath($custom) } catch {
+        Write-Host '[提示] 路径格式无效，请重新输入。' -ForegroundColor Yellow
+        continue
+      }
+      if (-not (Test-XmaWritableDirectory $resolved)) { Write-Host '[不可用] 自定义目标目录不可写，请重新选择。' -ForegroundColor Yellow; continue }
+      Write-Host "[提示] 已准备 $resolved，将在其中保存 rustup / cargo。" -ForegroundColor DarkCyan
+      return $resolved
+    }
+    Write-Host '请输入 1、2 或 3。' -ForegroundColor Yellow
+  }
+}
+
+function Set-XmaRustHomes([string]$InstallRoot) {
+  $rustupHome = Join-Path $InstallRoot 'rustup'
+  $cargoHome = Join-Path $InstallRoot 'cargo'
+  New-Item -ItemType Directory -Force -Path $rustupHome | Out-Null
+  New-Item -ItemType Directory -Force -Path $cargoHome | Out-Null
+
+  # 先只作用于当前安装进程；只有 rustup-init + 校验真正成功后，才持久化 User 环境，避免失败安装污染后续终端。
+  $env:RUSTUP_HOME = $rustupHome
+  $env:CARGO_HOME = $cargoHome
+  $cargoBin = Join-Path $cargoHome 'bin'
+  return [pscustomobject]@{ Root = $InstallRoot; RustupHome = $rustupHome; CargoHome = $cargoHome; CargoBin = $cargoBin }
+}
+
+function Save-XmaRustHomes($Homes) {
+  [Environment]::SetEnvironmentVariable('RUSTUP_HOME', $Homes.RustupHome, 'User')
+  [Environment]::SetEnvironmentVariable('CARGO_HOME', $Homes.CargoHome, 'User')
+  [void](Add-XmaUserPathEntry $Homes.CargoBin)
+  Refresh-XmaPath
+}
+
+function Install-XmaRustStable {
+  $installRoot = Select-XmaRustInstallRoot
+  $homes = Set-XmaRustHomes $installRoot
+  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  $triple = if ($arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
+  $cacheRoot = Join-Path $Root '.cache\rustup'
+  $installer = Join-Path $cacheRoot "rustup-init-$triple.exe"
+  $checksumFile = "$installer.sha256"
+  $url = "https://static.rust-lang.org/rustup/dist/$triple/rustup-init.exe"
+  $checksumUrl = "$url.sha256"
+  New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+  Write-Host "[安装位置] $($homes.Root)" -ForegroundColor Cyan
+  Write-Host "[下载] 正在下载 Rust 官方 rustup-init（$triple）..." -ForegroundColor Yellow
+  Write-Host "[来源] $url" -ForegroundColor DarkGray
+  try {
+    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+    Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumFile -UseBasicParsing
+    $expected = ((Get-Content -LiteralPath $checksumFile -Raw -Encoding ASCII).Trim() -split '\s+')[0].ToLowerInvariant()
+    $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($expected -ne $actual) { throw 'rustup-init SHA-256 校验失败，已拒绝执行。' }
+    Write-Host '[验证] rustup-init SHA-256 校验通过。' -ForegroundColor DarkCyan
+    Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path')
+  } finally {
+    Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $checksumFile -Force -ErrorAction SilentlyContinue
+  }
+
+  $rustupExe = Join-Path $homes.CargoBin 'rustup.exe'
+  if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw "Rust 安装完成但未找到 rustup：$rustupExe" }
+  Save-XmaRustHomes $homes
+  Push-Location $Root
+  try {
+    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable')
+  } finally {
+    Pop-Location
+  }
+  Write-Host "[完成] Rust stable 已安装：$($homes.Root)" -ForegroundColor Green
 }
 
 function Install-XmaDevelopmentCommands {
@@ -318,61 +470,85 @@ $bunExe = Install-XmaBunRuntime
 
 Write-Host ''
 Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
-Write-Host '[检查] 正在检查 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
-# 中文说明：rustup 会先安装 cargo.exe/rustc.exe shim；“命令存在”不代表已经有默认/项目 toolchain。
-# 新电脑最常见状态就是 shim 已存在但 `rustup default` 为空，此时 cargo --version 会直接失败。
+Write-Host '[检查] 正在真实验证 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
 Refresh-XmaPath
-$hasRustup = [bool](Get-Command rustup.exe -ErrorAction SilentlyContinue)
-$hasCargo = [bool](Get-Command cargo.exe -ErrorAction SilentlyContinue)
-$hasRustc = [bool](Get-Command rustc.exe -ErrorAction SilentlyContinue)
 
-if (-not $hasRustup -and (-not $hasCargo -or -not $hasRustc)) {
-  Write-Host '[缺少] Rust/rustup 尚未完整安装。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否通过 rustup 自动安装 Rust？')) { throw 'Rust 是 XMA Native Runtime 的必要依赖。' }
-  Ensure-XmaWinget
-  Write-Host '[安装] 正在安装 rustup...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Rustlang.Rustup','--exact','--accept-source-agreements','--accept-package-agreements')
-  Refresh-XmaPath
-  $hasRustup = [bool](Get-Command rustup.exe -ErrorAction SilentlyContinue)
+# 中文说明：先验证 rustc/cargo 是否真的能执行，不能再用“cargo.exe 文件存在”冒充 toolchain 已就绪。
+$rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
+$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+$rustReady = $false
+if ($rustcCommand -and $cargoCommand) {
+  $rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
+  $cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
+  $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
 }
 
-if ($hasRustup) {
-  $toolchainOutput = @(& rustup.exe toolchain list 2>&1)
-  if ($LASTEXITCODE -ne 0) { throw "rustup 无法读取已安装 toolchain：$($toolchainOutput -join ' ')" }
-  $stableInstalled = [bool]($toolchainOutput | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
-  if (-not $stableInstalled) {
-    Write-Host '[安装] 当前 rustup 没有 stable toolchain，正在安装 minimal stable...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')
-  }
-
-  # 中文说明：使用“项目目录 override”而不是修改用户全局 default。
-  # 这样即使新电脑没有 default，或开发者全局使用 nightly，XMA 根目录及子目录仍固定使用 stable，同时不污染其他项目。
-  $activeOutput = @(& rustup.exe show active-toolchain 2>&1)
-  $activeStable = ($LASTEXITCODE -eq 0) -and [bool]($activeOutput | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
-  if (-not $activeStable) {
-    Write-Host '[修复] 当前 XMA 目录没有可用的 Rust stable toolchain，正在绑定项目级 stable override...' -ForegroundColor Yellow
+$rustupCommand = Get-Command rustup.exe -ErrorAction SilentlyContinue
+if (-not $rustReady -and $rustupCommand) {
+  # rustup shim 已存在但没有 default/toolchain 时，stderr 会输出 warn；Probe 必须把它当“未准备”而不是整个脚本失败。
+  $toolchainProbe = Invoke-XmaProbe -FilePath $rustupCommand.Source -ArgumentList @('toolchain','list')
+  $stableInstalled = ($toolchainProbe.ExitCode -eq 0) -and [bool]($toolchainProbe.Output | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
+  if ($stableInstalled) {
+    Write-Host '[修复] 已检测到 stable toolchain，但当前 XMA 目录没有激活它；正在绑定项目级 stable override...' -ForegroundColor Yellow
     Push-Location $Root
     try {
-      Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('override','set','stable')
+      Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('override','set','stable')
     } finally {
       Pop-Location
     }
+    Refresh-XmaPath
+    $rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
+    $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+    if ($rustcCommand -and $cargoCommand) {
+      $rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
+      $cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
+      $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
+    }
   }
+}
+
+if (-not $rustReady) {
+  Write-Host '[缺少] 没有检测到可实际运行的 Rust stable toolchain。' -ForegroundColor Yellow
+  if (-not (Confirm-XmaAction '是否由 XMA 下载并安装 Rust stable？')) { throw 'Rust stable 是 XMA Native Runtime 的必要依赖。' }
+  Install-XmaRustStable
   Refresh-XmaPath
 }
 
-if (-not (Get-Command rustc.exe -ErrorAction SilentlyContinue)) { throw '未检测到 rustc。请重新运行 [1]，XMA 会修复 Rust stable toolchain。' }
-if (-not (Get-Command cargo.exe -ErrorAction SilentlyContinue)) { throw '未检测到 cargo。请重新运行 [1]，XMA 会修复 Rust stable toolchain。' }
-$rustcVersionOutput = @(& rustc.exe --version 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "rustc 命令存在但 toolchain 不可用：$($rustcVersionOutput -join ' ')" }
-$cargoVersionOutput = @(& cargo.exe --version 2>&1)
-if ($LASTEXITCODE -ne 0) { throw "cargo 命令存在但 toolchain 不可用：$($cargoVersionOutput -join ' ')" }
-$rustcVersion = ($rustcVersionOutput -join ' ').Trim()
-$cargoVersion = ($cargoVersionOutput -join ' ').Trim()
+$rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
+$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+if (-not $rustcCommand) { throw 'Rust 安装/修复后仍未检测到 rustc。' }
+if (-not $cargoCommand) { throw 'Rust 安装/修复后仍未检测到 cargo。' }
+$rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
+$cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
+if ($rustProbe.ExitCode -ne 0) { throw "rustc toolchain 仍不可用：$($rustProbe.Output -join ' ')" }
+if ($cargoProbe.ExitCode -ne 0) { throw "cargo toolchain 仍不可用：$($cargoProbe.Output -join ' ')" }
+$rustcVersion = ($rustProbe.Output -join ' ').Trim()
+$cargoVersion = ($cargoProbe.Output -join ' ').Trim()
 Write-Host "[通过] $rustcVersion" -ForegroundColor Green
 Write-Host "[通过] $cargoVersion" -ForegroundColor Green
 
-Write-Host ''
+# 中文说明：`[7] 全量检查` 固定执行 `cargo fmt --check`，minimal stable 默认可能不包含 rustfmt。
+# rustfmt 因此属于 `[1]` 必须准备的开发工具，而不是让 `[7]` 在离线检查阶段临时下载。
+$rustfmtProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('fmt','--version')
+if ($rustfmtProbe.ExitCode -ne 0) {
+  $rustupCommand = Get-Command rustup.exe -ErrorAction SilentlyContinue
+  if (-not $rustupCommand) {
+    throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且未检测到 rustup。请安装 rustfmt 后重新运行 [1]。'
+  }
+  Write-Host '[缺少] 未检测到 rustfmt；XMA 全量检查需要 cargo fmt --check。' -ForegroundColor Yellow
+  Write-Host '[安装] 正在为 XMA stable toolchain 安装 rustfmt 组件...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('component','add','rustfmt','--toolchain','stable')
+  $rustfmtProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('fmt','--version')
+  if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
+}
+Write-Host "[通过] $((($rustfmtProbe.Output -join ' ').Trim()))" -ForegroundColor Green
+
+if (-not [string]::IsNullOrWhiteSpace($env:RUSTUP_HOME) -or -not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) {
+  Write-Host "[位置] RUSTUP_HOME=$env:RUSTUP_HOME · CARGO_HOME=$env:CARGO_HOME" -ForegroundColor DarkGray
+} else {
+  Write-Host "[位置] rustc=$($rustcCommand.Source) · cargo=$($cargoCommand.Source)" -ForegroundColor DarkGray
+}
+
 Write-Host '[6/9] MSVC C++ Build Tools' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Windows C++ 编译与链接工具...' -ForegroundColor DarkCyan
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'

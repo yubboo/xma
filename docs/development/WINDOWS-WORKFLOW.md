@@ -56,7 +56,7 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
 
 `[1] 一键准备开发环境` 是首次运行的推荐入口，必须一次完成：
 
-- Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；
+- Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；Rust 必须执行真实 `rustc --version` / `cargo --version` 探针，不能因为 rustup shim 文件存在就误判为可用。缺少 stable toolchain 时由用户选择安装根目录：系统盘用户默认位置（推荐）、`D:\XMA\Rust`、或自定义目录；XMA 使用 `RUSTUP_HOME/CARGO_HOME` 保存选择并把对应 `cargo\bin` 写入 User PATH，已有可用 Rust 时不重复下载；
 - 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
 - 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本` 指纹缓存；未变化时跳过重复 `cargo fetch`。没有 stamp 但已有 crate 缓存时先执行 `cargo fetch --locked --offline` 验证，只有本地确实缺 crate 才联网 `cargo fetch --locked`。
@@ -70,7 +70,7 @@ $env:XMA_TARGET_ROOT = 'D:\Dev\xma'
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
-- `[5]/[6] 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行构建；不得再次执行 `pnpm install`。
+- `[5]/[6] Desktop 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行桌面端专用测试/构建；Electron 只构建 Web + Electron Main + Setup/Portable，Tauri 只构建自身 Web/Rust bundle。**禁止顺带执行 `build:cli`、`build:server`、`scripts/release/cli.ts` 或 `cargo build --workspace`**；Xiaoyu Terminal portable 发行继续由 `scripts/release/` 与 Release Workflow 独立负责，因此 CLI 构建错误不能阻塞 Desktop 安装包。
 
 `[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，再委托 `xma-dev.bat cli` 启动；不会因为 `xma-console.ps1` 自己切回仓库根而丢失用户 Workspace。一个用户只保留一个激活的 `.xma\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。切换 checkout 后重新运行 `[1]` 才会更新指向。
 
@@ -98,7 +98,8 @@ Electron 版本固定为 `41.2.0`，只存在于 `apps/desktop/package.json`，�
 3. XMA 直接通过 `@electron/get` API 输出实时百分比与 MB；下载连接连续 45 秒没有新数据就主动中止，避免界面无限停在 postinstall；
 4. `@electron/get` 返回已校验 ZIP 后，Windows 安装器调用系统 PowerShell `Expand-Archive` 解压到 staging，先验证版本和 `electron.exe`，再原子替换正式 `dist` 并写 `path.txt`；Windows 固定使用系统解压链，不把安装成功依赖于 Node `extract-zip/yauzl` 流；
 5. 默认使用官方 GitHub Releases；连接停滞时切换 Electron 官方文档示例镜像 `npmmirror`，并继续使用包内 `checksums.json` 校验；下载 ZIP 默认缓存到 XMA 项目根 `.cache/electron/`，不写入 Windows 用户 `%LOCALAPPDATA%`，后续运行不重复下载；
-6. 如果 Electron 下载失败，用户可以直接返回菜单选择 Tauri 2。
+6. 如果 Electron 下载失败，用户可以直接返回菜单选择 Tauri 2；
+7. Electron Runtime 一旦准备完成，`apps/desktop/scripts/electron/build.ts` 必须验证 `electron/package.json`、`dist/version`、`path.txt` 与平台可执行文件，并通过 electron-builder `electronDist` 直接复用 `apps/desktop/node_modules/electron/dist`。禁止 electron-builder 在同一次 `[5]/[6]` 构建里再次下载 `electron-v41.2.0-*`；本地 Runtime 不完整时直接 fail loud，并提示重新进入 Desktop 显式准备。
 
 ## Tauri 2 备用桌面端
 
@@ -120,7 +121,7 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 > **重要：** 仓库根 `/runtime/` 是用户运行数据，禁止提交；`native/runtime/` 是 XMA Rust Native Runtime 源码，必须同步、提交并进入 CI。任何 ignore/sync/safety 规则都不得把两者混为一谈。
 
-- Electron 发布包通过 `file://` 加载 `.cache/desktop/electron/app/web/` staging 打入应用的 `web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`。最终 Setup/Portable 由 electron-builder 直接写到 `dist/release/electron/`；禁止恢复 `apps/desktop/web|release` 中转目录。
+- Electron 发布包通过 `file://` 加载 `.cache/desktop/electron/app/web/` staging 打入应用的 `web/`，因此 Desktop 专用 Vite 构建必须使用相对资源基址 `--base ./`。最终 Setup/Portable 由 electron-builder 直接写到 `dist/release/electron/`；禁止恢复 `apps/desktop/web|release` 中转目录。electron-builder 自身的 NSIS / winCodeSign 等打包工具可在用户明确选择 Desktop 构建时进入 `.cache/electron-builder/`，但不得借此重新下载已经由 XMA Runtime 安装器验证过的 Electron Chromium Runtime。
 
 - `XMA-Sync.bat` 必须优先使用 Source Manifest，而不是按目录名字猜哪些是源码。即使用户把新 ZIP 覆盖解压到旧目录导致 Source 残留旧文件，Manifest 之外的残留也不得重新同步回 Git 工作目录；`scripts/release/` 等正式源码目录必须正常同步。
 - Source Manifest 同步状态保存在目标工作目录 `.xma/source-sync.json`，只属于本地同步状态，不进入 Git。新增目录不需要修改 Sync 白名单；上一版受管文件若从新 Manifest 消失，则自动视为删除/重命名并清理。

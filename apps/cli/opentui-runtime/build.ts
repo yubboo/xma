@@ -27,10 +27,10 @@ process.chdir(scriptDir)
 fs.rmSync(outputDir, { recursive: true, force: true })
 fs.mkdirSync(outputDir, { recursive: true })
 
-const compileTempRoot = process.env.BUN_TMPDIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP
-if (!compileTempRoot) throw new Error('Bun compile temp is not configured. Run the build through `pnpm run build:cli`.')
-fs.mkdirSync(compileTempRoot, { recursive: true })
-const stagedOutfile = path.join(compileTempRoot, `xiaoyu-${process.pid}-${Date.now()}${process.platform === 'win32' ? '.exe' : ''}`)
+const compileStageRoot = process.env.BUN_TMPDIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP
+if (!compileStageRoot) throw new Error('Bun compile staging cache is not configured. Run the build through `pnpm run build:cli`.')
+fs.mkdirSync(compileStageRoot, { recursive: true })
+const stagedOutfile = path.join(compileStageRoot, `xiaoyu-${process.pid}-${Date.now()}${process.platform === 'win32' ? '.exe' : ''}`)
 
 const localParserWorker = path.join(scriptDir, 'node_modules', '@opentui', 'core', 'parser.worker.js')
 const rootParserWorker = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
@@ -67,8 +67,8 @@ const result = await Bun.build({
     autoloadTsconfig: true,
     autoloadPackageJson: true,
     target,
-    // 中文说明：先输出到已验证可写的 Bun 临时目录，再由 Node fs 复制到项目 dist。
-    // 这同时绕开 Windows 下项目路径包含 CJK/特殊字符时 compile outfile 的路径兼容风险。
+    // 中文说明：先输出到 `scripts/cli/bun.ts` 已验证的项目级 `.cache/bun-compile` staging，再复制到项目 dist。
+    // staging 只是可删除的构建中间态，最终 `dist/cli/xiaoyu` 不依赖 `.cache`，也不依赖 Windows 系统 TEMP。
     outfile: stagedOutfile,
     windows: {},
   },

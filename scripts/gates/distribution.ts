@@ -59,7 +59,7 @@ for (const marker of [
   'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}',
   "event.name === 'tab'", "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
   'commandPaletteOptions()', '模型 / 提供方', '模型就绪测试', '选择真实模型', '终端设置', 'Tool Approval',
-  'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: true', 'useMouse: true',
+  'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: false', 'useMouse: true',
 ]) {
   if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI marker missing: ${marker}`)
 }
@@ -161,8 +161,17 @@ for (const forbidden of ['pnpm ', 'cargo ', 'git clone']) {
 }
 
 const release = text('scripts/windows/xma-build-release.ps1')
-for (const marker of ['scripts/release/cli.ts', 'scripts/release/manifest.ts', 'xma-install.ps1', 'xma-install.sh']) {
-  if (!release.includes(marker)) throw new Error(`XMA Windows release distribution marker missing: ${marker}`)
+for (const marker of [
+  'Desktop 专用测试',
+  'build:desktop:electron',
+  'build:desktop:tauri',
+  '不会构建或打包 Xiaoyu Terminal / CLI / Server',
+  'dist\\release\\electron',
+]) {
+  if (!release.includes(marker)) throw new Error(`XMA Windows Desktop release marker missing: ${marker}`)
+}
+for (const forbidden of ['scripts/release/cli.ts', "@('run','build')", 'build:cli', 'build:server', "@('build','--workspace','--release')"]) {
+  if (release.includes(forbidden)) throw new Error(`Desktop release must stay isolated from CLI/Server/full workspace release: ${forbidden}`)
 }
 const manifestSource = text('scripts/release/manifest.ts')
 for (const marker of ["argument('directory', 'dist/release')", "'release-manifest.json'", "'checksums.txt'"]) {

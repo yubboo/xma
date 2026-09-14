@@ -1,8 +1,8 @@
 ﻿<#
-文件作用：构建 XMA 可交付产物；复用 [1] 已准备的通用依赖，只为明确选择的 Desktop Runtime 补齐运行时并执行构建。
-关联模块：package.json、apps/desktop、Rust workspace、xma-prepare.ps1。
-当前实现：TypeScript/Web/CLI/Server、Rust Native release、Electron 41.2.0 主桌面端；可选构建 Tauri 2 备用桌面端。
-职责边界：macOS 安装包必须在 macOS Runner/机器构建；Linux 包必须在 Linux Runner/机器构建，不伪造跨平台完成。
+文件作用：构建 XMA Desktop 可交付产物；复用 [1] 已准备的依赖，只构建用户明确选择的 Electron / Tauri 桌面端。
+关联模块：apps/desktop、apps/web、xma-console.ps1、xma-prepare.ps1。
+当前实现：Desktop 专用检查、Electron 41.2.0 Runtime 按需准备并强制复用、Electron Setup/Portable 与可选 Tauri 2 构建。
+职责边界：本脚本不构建 Xiaoyu Terminal / CLI / Server，也不生成 CLI portable bundle；CLI 发行由 scripts/release/ 与 Release Workflow 独立负责。
 #>
 param(
   [switch]$WindowsPackages,
@@ -15,93 +15,84 @@ Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
-$CargoTargetDir = Join-Path $Root '.cache\cargo-target'
 $TauriTargetDir = Join-Path $Root '.cache\tauri-target'
 $DesktopCacheDir = Join-Path $Root '.cache\desktop'
+$DesktopReleaseRoot = Join-Path $Root 'dist\release'
 
-$requiredCommands = @('node.exe','pnpm.cmd','cargo.exe')
+$requiredCommands = @('node.exe','pnpm.cmd')
 $requiredFiles = @(
   (Join-Path $Root 'node_modules\.bin\tsx.cmd'),
   (Join-Path $Root 'node_modules\.bin\vite.cmd'),
-  (Join-Path $Root 'node_modules\.bin\tsc.cmd'),
-  (Join-Path $Root 'node_modules\.bin\tsup.cmd'),
-  (Join-Path $Root 'apps\desktop\node_modules\electron\package.json')
+  (Join-Path $Root 'node_modules\.bin\tsup.cmd')
 )
-$needsPrepare = $false
-foreach ($command in $requiredCommands) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { $needsPrepare = $true }
+if ($DesktopRuntime -in @('electron','both')) {
+  $requiredFiles += (Join-Path $Root 'apps\desktop\node_modules\electron\package.json')
+  $requiredFiles += (Join-Path $Root 'apps\desktop\node_modules\.bin\electron-builder.cmd')
 }
-foreach ($file in $requiredFiles) {
-  if (-not (Test-Path $file)) { $needsPrepare = $true }
-}
-if ($needsPrepare) {
-  throw '构建所需开发环境或通用 Workspace 依赖不完整。请先运行 xma-dev.bat → [1] 一键准备开发环境；构建流程不会重复安装 Workspace 依赖。'
+if ($DesktopRuntime -in @('tauri','both')) {
+  $requiredCommands += 'cargo.exe'
+  $requiredFiles += (Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd')
 }
 
-Write-Host '[依赖] 正在复用 [1] 已准备的 Workspace JavaScript / Rust 依赖；构建流程不会再次执行 pnpm install。' -ForegroundColor DarkCyan
-Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override。' -ForegroundColor DarkGray
+$missing = New-Object System.Collections.Generic.List[string]
+foreach ($command in ($requiredCommands | Select-Object -Unique)) {
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { [void]$missing.Add($command) }
+}
+foreach ($file in ($requiredFiles | Select-Object -Unique)) {
+  if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { [void]$missing.Add($file) }
+}
+if ($missing.Count -gt 0) {
+  Write-Host '[缺少] Desktop 构建依赖不完整：' -ForegroundColor Yellow
+  foreach ($item in $missing) { Write-Host "  - $item" -ForegroundColor DarkGray }
+  throw '请先运行 xma-dev.bat → [1] 一键准备开发环境；Desktop 构建不会偷偷执行 pnpm install。'
+}
+
+Write-Host '[依赖] 复用 [1] 已准备的 Desktop/Web JavaScript 依赖；不会重复执行 pnpm install。' -ForegroundColor DarkCyan
+Write-Host '[隔离] 本次只构建 Desktop；不会构建或打包 Xiaoyu Terminal / CLI / Server。' -ForegroundColor Green
 
 if ($DesktopRuntime -in @('electron','both')) {
   $electronRoot = Join-Path $Root 'apps\desktop\node_modules\electron'
-  $electronExe = Join-Path $electronRoot 'dist\electron.exe'
   if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) {
-    Write-Host "[下载] 正在准备 Electron $ElectronVersion 主桌面 Runtime；首次下载包含 Chromium，可能需要数分钟。" -ForegroundColor Yellow
-    Write-Host '[进度] 使用 XMA Electron Runtime 下载器显示实时百分比/MB；Windows 使用系统 PowerShell Expand-Archive 解压已校验 ZIP。' -ForegroundColor DarkYellow
+    Write-Host "[下载] 正在准备 Electron $ElectronVersion 主桌面 Runtime；首次下载包含 Chromium，之后复用缓存。" -ForegroundColor Yellow
     Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','apps/desktop/scripts/electron/install-runtime.ts')
   }
-  if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) { throw 'Electron Runtime 未准备成功；可重试或使用 -DesktopRuntime tauri 构建备用桌面端。' }
+  if (-not (Test-XmaElectronRuntime -ElectronPackageRoot $electronRoot -ExpectedVersion $ElectronVersion)) {
+    throw 'Electron Runtime 未准备成功；可重试或选择 Tauri 2 备用桌面端。'
+  }
   Write-Host "[通过] Electron $ElectronVersion Runtime 已就绪。" -ForegroundColor Green
+  Write-Host '[复用] electron-builder 将通过 electronDist 使用上述 Runtime，不会再次下载 Electron。' -ForegroundColor DarkCyan
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {
-  Write-Host '[同步] 正在预取 Tauri 2 备用桌面端 Rust crates...' -ForegroundColor Yellow
+  Write-Host '[检查] 正在验证 Tauri 2 / Cargo...' -ForegroundColor DarkCyan
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','exec','tauri','--version')
+  Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('--version')
+  Write-Host '[同步] 正在按需预取 Tauri 2 Rust crates...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')
 }
 
-Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','check')
-Write-Host '[目录] XMA 中间产物统一进入 .cache\；正式产品统一进入 dist\；不再使用根 build\ / target\ 或 apps\desktop\dist|web|release。' -ForegroundColor DarkGray
-Write-Host '[构建] 正在构建 Web / CLI / Server...' -ForegroundColor Cyan
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build')
-Write-Host "[构建] 正在构建 XMA Native Runtime；Cargo 中间产物统一写入 $CargoTargetDir，不再生成仓库根 target\ 目录。" -ForegroundColor Cyan
-Invoke-XmaExternal -FilePath 'cargo.exe' -ArgumentList @('build','--workspace','--release')
-
-$release = Join-Path $Root 'dist\release'
-if (Test-Path $release) { Remove-Item $release -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $release | Out-Null
-$nativeExe = Join-Path $CargoTargetDir 'release\xma-native-runtime.exe'
-if (Test-Path $nativeExe) { Copy-Item $nativeExe (Join-Path $release 'xma-native-runtime.exe') -Force }
-
-Write-Host '[发行] 正在生成 Xiaoyu Terminal portable bundle（内置 Node + CLI/Server/Web + Rust Native Kernel）...' -ForegroundColor Cyan
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','scripts/release/cli.ts')
-$stageInfoPath = Join-Path $Root '.cache\release\cli\stage.json'
-if (-not (Test-Path $stageInfoPath)) { throw 'Xiaoyu CLI staging 完成但 stage.json 不存在。' }
-$stageInfo = Get-Content $stageInfoPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($stageInfo.os -ne 'windows') { throw "Windows 发布流程收到非 Windows CLI staging：$($stageInfo.os)。" }
-$cliArchive = Join-Path $release ([string]$stageInfo.archiveName)
-if (Test-Path $cliArchive) { Remove-Item $cliArchive -Force }
-Compress-Archive -Path (Join-Path ([string]$stageInfo.stageRoot) '*') -DestinationPath $cliArchive -CompressionLevel Optimal
-$releaseBaseUrl = "https://github.com/yubboo/xma/releases/download/v$ProjectVersion"
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @(
-  'exec','tsx','scripts/release/manifest.ts',
-  "--directory=$release",
-  "--version=$ProjectVersion",
-  "--base-url=$releaseBaseUrl"
-)
-Copy-Item (Join-Path $Root 'scripts\install\xma-install.ps1') (Join-Path $release 'xma-install.ps1') -Force
-Copy-Item (Join-Path $Root 'scripts\install\xma-install.sh') (Join-Path $release 'xma-install.sh') -Force
-Write-Host "[完成] Xiaoyu Terminal 安装资产：$cliArchive" -ForegroundColor Green
-Write-Host '[说明] 普通用户安装包不包含源码/node_modules/Cargo cache，也不要求 pnpm/Rust/MSVC。' -ForegroundColor DarkGray
+Write-Host '[检查] 正在运行 Desktop 专用测试；全项目 TypeScript / CLI / Gates 请使用菜单 [7]。' -ForegroundColor Cyan
+Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--test','apps/desktop/tests/*.test.ts')
+Write-Host '[目录] Desktop 中间产物统一进入 .cache\desktop；正式桌面产物进入 dist\release\electron|tauri。' -ForegroundColor DarkGray
+New-Item -ItemType Directory -Force -Path $DesktopReleaseRoot | Out-Null
 
 if ($DesktopRuntime -in @('electron','both')) {
-  Write-Host "[构建] 正在构建 Electron $ElectronVersion 主桌面端；staging 写入 $DesktopCacheDir，最终产物直接写入 dist\release\electron。" -ForegroundColor Cyan
+  if ($WindowsPackages) {
+    Write-Host "[构建] Electron $ElectronVersion · Windows Setup + Portable..." -ForegroundColor Cyan
+  } else {
+    Write-Host "[构建] Electron $ElectronVersion · 当前 Windows 平台..." -ForegroundColor Cyan
+  }
+  Write-Host "[staging] $DesktopCacheDir" -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','build:desktop:electron')
-  $electronRelease = Join-Path $release 'electron'
-  if (-not (Test-Path $electronRelease)) { throw 'Electron 构建完成但 dist\release\electron 不存在。' }
+  $electronRelease = Join-Path $DesktopReleaseRoot 'electron'
+  if (-not (Test-Path -LiteralPath $electronRelease -PathType Container)) {
+    throw 'Electron 构建完成但 dist\release\electron 不存在。'
+  }
+  Write-Host "[完成] Electron Desktop：$electronRelease" -ForegroundColor Green
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {
-  Write-Host "[构建] 正在构建 Tauri 2 备用桌面端；Tauri Rust 缓存写入 $TauriTargetDir。" -ForegroundColor Cyan
+  Write-Host "[构建] Tauri 2 备用桌面端；Rust 中间缓存：$TauriTargetDir" -ForegroundColor Cyan
   $previousCargoTargetDir = $env:CARGO_TARGET_DIR
   $env:CARGO_TARGET_DIR = $TauriTargetDir
   try {
@@ -113,13 +104,17 @@ if ($DesktopRuntime -in @('tauri','both')) {
   } finally {
     if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
   }
+
   $tauriRelease = Join-Path $TauriTargetDir 'release'
-  $tauriOutput = Join-Path $release 'tauri'
+  $tauriOutput = Join-Path $DesktopReleaseRoot 'tauri'
+  if (Test-Path -LiteralPath $tauriOutput) { Remove-Item -LiteralPath $tauriOutput -Recurse -Force }
   New-Item -ItemType Directory -Force -Path $tauriOutput | Out-Null
   $tauriExe = Join-Path $tauriRelease 'xma-desktop.exe'
-  if (Test-Path $tauriExe) { Copy-Item $tauriExe (Join-Path $tauriOutput 'xma-desktop.exe') -Force }
+  if (Test-Path -LiteralPath $tauriExe -PathType Leaf) { Copy-Item -LiteralPath $tauriExe -Destination (Join-Path $tauriOutput 'xma-desktop.exe') -Force }
   $tauriBundle = Join-Path $tauriRelease 'bundle'
-  if (Test-Path $tauriBundle) { Copy-Item $tauriBundle (Join-Path $tauriOutput 'bundle') -Recurse -Force }
+  if (Test-Path -LiteralPath $tauriBundle -PathType Container) { Copy-Item -LiteralPath $tauriBundle -Destination (Join-Path $tauriOutput 'bundle') -Recurse -Force }
+  Write-Host "[完成] Tauri Desktop：$tauriOutput" -ForegroundColor Green
 }
 
-Write-Host "[完成] XMA $ProjectVersion 发布产物：$release" -ForegroundColor Green
+Write-Host "[完成] XMA $ProjectVersion Desktop 构建结束。" -ForegroundColor Green
+Write-Host '[说明] Xiaoyu Terminal / CLI portable 发行与 Desktop 已解耦，不会因为 CLI 构建失败阻塞 Desktop 安装包。' -ForegroundColor DarkCyan

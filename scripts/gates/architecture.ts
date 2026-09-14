@@ -470,9 +470,10 @@ if (!desktopWebDev.includes('exec vite apps/web --host 127.0.0.1 --port 1420 --s
 }
 if (desktopWebDev.includes(' -- --host')) throw new Error('XMA Desktop web:dev must not pass a literal -- to Vite')
 const electronBuildSource = readFileSync('apps/desktop/scripts/electron/build.ts', 'utf8')
-for (const marker of ["'.cache', 'desktop', 'electron', 'app'", "'dist', 'release', 'electron'", "'--base', './'", "'--emptyOutDir'", 'ELECTRON_CACHE: electronCache', 'ELECTRON_BUILDER_CACHE: builderCache']) {
+for (const marker of ["'.cache', 'desktop', 'electron', 'app'", "'dist', 'release', 'electron'", "'--base', './'", "'--emptyOutDir'", "'node_modules', 'electron'", "electronRuntimeDist, 'version'", "'path.txt'", 'electronDist: preparedElectronDist', 'electron-builder 不允许在打包阶段二次下载 Electron', 'ELECTRON_BUILDER_CACHE: builderCache']) {
   if (!electronBuildSource.includes(marker)) throw new Error(`XMA Electron unified output contract missing: ${marker}`)
 }
+if (electronBuildSource.includes('ELECTRON_CACHE')) throw new Error('XMA Electron release build must reuse prepared electronDist instead of falling back to Electron download cache')
 const electronBuilder = JSON.parse(readFileSync('apps/desktop/electron-builder.json', 'utf8')) as { electronVersion?: string; files?: string[] }
 if (electronBuilder.electronVersion !== '41.2.0') throw new Error('XMA Electron builder template must pin Electron 41.2.0')
 if (JSON.stringify(electronBuilder.files) !== JSON.stringify(['main/**', 'web/**', 'package.json'])) throw new Error('XMA Electron builder must package only staged main/web/package.json')

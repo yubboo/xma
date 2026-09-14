@@ -54,9 +54,17 @@ if (existsSync('XMA.bat') || existsSync('xma.bat')) {
 
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
-  "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('toolchain','install','stable','--profile','minimal')",
-  "Invoke-XmaExternal -FilePath 'rustup.exe' -ArgumentList @('override','set','stable')",
-  '当前 XMA 目录没有可用的 Rust stable toolchain',
+  'function Invoke-XmaProbe',
+  'function Select-XmaRustInstallRoot',
+  'function Install-XmaRustStable',
+  "Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('override','set','stable')",
+  '没有检测到可实际运行的 Rust stable toolchain',
+  "$driveD = 'D:\\XMA\\Rust'",
+  "SetEnvironmentVariable('RUSTUP_HOME'",
+  "SetEnvironmentVariable('CARGO_HOME'",
+  'rustup-init SHA-256 校验通过',
+  "@('component','add','rustfmt','--toolchain','stable')",
+  '全量检查需要 cargo fmt --check',
   'Refresh-XmaPath',
   '[检查] 正在检查 Git 是否可用...',
   '[完成] XMA 开发环境与通用项目依赖已准备完成。',
@@ -95,6 +103,19 @@ if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/
   throw new Error('XMA preparation must not prefetch Tauri Rust crates')
 }
 
+const desktopReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
+for (const marker of [
+  'Desktop 专用测试',
+  'build:desktop:electron',
+  'build:desktop:tauri',
+  '不会构建或打包 Xiaoyu Terminal / CLI / Server',
+]) {
+  if (!desktopReleaseSource.includes(marker)) throw new Error(`Desktop release isolation contract missing: ${marker}`)
+}
+for (const forbidden of ['scripts/release/cli.ts', "@('run','build')", 'build:cli', 'build:server', "@('build','--workspace','--release')"]) {
+  if (desktopReleaseSource.includes(forbidden)) throw new Error(`Desktop release must not build CLI/Server/full Rust workspace: ${forbidden}`)
+}
+
 
 const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
@@ -106,8 +127,24 @@ for (const marker of [
   "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]",
   "'cli' { Start-Cli -WorkspacePath $Workspace }",
   "$cliArguments += @('--', $resolvedWorkspace)",
+  '未检测到 rustfmt/cargo-fmt。请先运行 [1] 一键准备开发环境',
+  'Rust rustfmt 已就绪；[7] 将保持 offline',
 ]) {
   if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
+}
+
+
+const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
+for (const marker of [
+  "path.join(root, '.cache', 'bun-compile', BUN_VERSION)",
+  'childEnv.BUN_TMPDIR = compileCache',
+  'childEnv.TEMP = compileCache',
+  'childEnv.TMP = compileCache',
+]) {
+  if (!bunRunnerSource.includes(marker)) throw new Error(`Bun project-cache contract regression: missing ${marker}`)
+}
+for (const forbidden of ['process.env.LOCALAPPDATA', "process.env.TEMP ? path.join", "process.env.TMP ? path.join"]) {
+  if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun compile must not fall back to Windows user temp storage: ${forbidden}`)
 }
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
@@ -323,25 +360,34 @@ for (const marker of ['Expand-Archive', '-LiteralPath', "$ErrorActionPreference 
 }
 const buildReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
 for (const marker of [
-  '构建流程不会再次执行 pnpm install',
-  'pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override',
+  'Desktop 专用测试',
+  'Desktop 构建不会偷偷执行 pnpm install',
   'apps/desktop/scripts/electron/install-runtime.ts',
-  "$CargoTargetDir = Join-Path $Root '.cache\\cargo-target'",
+  'electronDist',
+  '不会再次下载 Electron',
   "$TauriTargetDir = Join-Path $Root '.cache\\tauri-target'",
   "$DesktopCacheDir = Join-Path $Root '.cache\\desktop'",
-  "$nativeExe = Join-Path $CargoTargetDir 'release\\xma-native-runtime.exe'",
-  "$electronRelease = Join-Path $release 'electron'",
-  '最终产物直接写入 dist\\release\\electron',
-  "$tauriBundle = Join-Path $tauriRelease 'bundle'",
-  "$tauriExe = Join-Path $tauriRelease 'xma-desktop.exe'",
+  "$DesktopReleaseRoot = Join-Path $Root 'dist\\release'",
+  'build:desktop:electron',
+  'build:desktop:tauri',
+  "Join-Path $DesktopReleaseRoot 'electron'",
+  "Join-Path $DesktopReleaseRoot 'tauri'",
+  '不会构建或打包 Xiaoyu Terminal / CLI / Server',
 ]) {
-  if (!buildReleaseSource.includes(marker)) throw new Error(`Build release dependency/runtime contract missing: ${marker}`)
+  if (!buildReleaseSource.includes(marker)) throw new Error(`Build release Desktop-isolation contract missing: ${marker}`)
 }
-if (buildReleaseSource.includes("@('install','--ignore-scripts')")) {
-  throw new Error('Build release must reuse [1] prepared Workspace dependencies instead of reinstalling them')
+for (const forbidden of [
+  "@('install','--ignore-scripts')",
+  'scripts/release/cli.ts',
+  'build:cli',
+  'build:server',
+  "@('run','build')",
+  "@('build','--workspace','--release')",
+]) {
+  if (buildReleaseSource.includes(forbidden)) throw new Error(`Desktop build must not prepare/package unrelated CLI/Server/full workspace: ${forbidden}`)
 }
 if (buildReleaseSource.includes('Copy-Item $tauriRelease (Join-Path $release')) throw new Error('Tauri Cargo release cache must not be copied wholesale into dist/release')
-if (buildReleaseSource.includes('apps\\desktop\\release\\electron')) throw new Error('Electron release must be written directly to dist/release/electron, not copied from apps/desktop/release')
+if (buildReleaseSource.includes('apps\desktop\release\electron')) throw new Error('Electron release must be written directly to dist/release/electron, not copied from apps/desktop/release')
 
 const consoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
@@ -356,6 +402,8 @@ for (const marker of [
   '$env:XIAOYU_NATIVE_RUNTIME = $nativeExe',
   '复用 Cargo 增量缓存，离线构建，不下载依赖',
   '[3] 开发运行 · Desktop',
+  '[5] 构建发布 · Desktop 当前平台',
+  '[6] 构建发布 · Desktop Windows',
   'Electron 41.2.0',
   'Tauri 2',
   '主 / 推荐',

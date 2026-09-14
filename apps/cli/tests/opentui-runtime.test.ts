@@ -64,17 +64,21 @@ test('OpenTUI build embeds the parser worker from the prepared dependency island
 })
 
 
-test('Bun CLI build uses a verified temp directory and stages the executable before copying into dist', () => {
+test('Bun CLI build uses only project .cache staging and never depends on Windows user temp directories', () => {
   const runner = readFileSync('scripts/cli/bun.ts', 'utf8')
   const build = readFileSync('apps/cli/opentui-runtime/build.ts', 'utf8')
-  assert.match(runner, /function resolveBunCompileTemp/)
+  assert.match(runner, /function resolveBunCompileCache/)
+  assert.match(runner, /path\.join\(root, '\.cache', 'bun-compile', BUN_VERSION\)/)
   assert.match(runner, /function stageBunForCompile/)
-  assert.match(runner, /bunExecutable = stageBunForCompile\(bun, compileTemp\)/)
-  assert.match(runner, /childEnv\.BUN_TMPDIR = compileTemp/)
-  assert.match(runner, /childEnv\.TMPDIR = compileTemp/)
-  assert.match(runner, /childEnv\.TEMP = compileTemp/)
-  assert.match(runner, /childEnv\.TMP = compileTemp/)
-  assert.match(build, /const stagedOutfile = path\.join\(compileTempRoot/)
+  assert.match(runner, /bunExecutable = stageBunForCompile\(bun, compileCache\)/)
+  assert.match(runner, /childEnv\.BUN_TMPDIR = compileCache/)
+  assert.match(runner, /childEnv\.TMPDIR = compileCache/)
+  assert.match(runner, /childEnv\.TEMP = compileCache/)
+  assert.match(runner, /childEnv\.TMP = compileCache/)
+  assert.doesNotMatch(runner, /process\.env\.LOCALAPPDATA/)
+  assert.doesNotMatch(runner, /process\.env\.TEMP \? path\.join/)
+  assert.doesNotMatch(runner, /process\.env\.TMP \? path\.join/)
+  assert.match(build, /const stagedOutfile = path\.join\(compileStageRoot/)
   assert.match(build, /outfile: stagedOutfile/)
   assert.match(build, /fs\.copyFileSync\(stagedOutfile, outfile\)/)
   assert.match(build, /minify: false/)
@@ -139,7 +143,11 @@ test('OpenTUI vivid home uses sparse MiMo-style Braille meteors without repainti
   assert.match(source, /String\.fromCharCode\(0x2800 \+ value\.dots\)/)
   assert.match(source, /function meteorGlyphs/)
   assert.match(source, /<For each=\{meteorItems\(\)\}>/)
-  assert.match(source, /frame=\{phase\(\)\}/)
+  // 中文说明：性能优化后星星使用低频 starFrame，流星继续使用 50ms meteorFrame；
+  // 回归测试必须验证拆帧后的真实接口，不能继续锁定已经废弃的单一 frame={phase()} 调用。
+  assert.match(source, /const starFrame = createMemo\(\(\) => Math\.floor\(phase\(\) \/ 4\)\)/)
+  assert.match(source, /starFrame=\{starFrame\(\)\}/)
+  assert.match(source, /meteorFrame=\{phase\(\)\}/)
   assert.doesNotMatch(source, /return new StyledText\(chunks\)/)
   assert.doesNotMatch(source, /appendSkyChunk/)
   assert.doesNotMatch(source, /type TextRenderable/)
@@ -260,12 +268,13 @@ test('official Provider UI never renders DeepSeek plus DeepSeek 2 as stacked pro
 })
 
 
-test('main prompt uses a slower app-managed cursor cadence and lower idle renderer cost', () => {
+test('main prompt keeps native cursor cadence and re-anchors the hardware cursor on animated frames', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(source, /const \[promptCursorVisible, setPromptCursorVisible\] = createSignal\(true\)/)
   assert.match(source, /showCursor=\{promptCursorVisible\(\)\}/)
   assert.match(source, /cursorStyle=\{\{ style: 'block', blinking: false \}\}/)
   assert.match(source, /setPromptCursorVisible\(value => !value\)[\s\S]{0,80}, 800\)/)
+  assert.match(source, /setPhase\(value => value \+ 1\)[\s\S]{0,420}prompt\?\.requestRender\(\)/)
   assert.match(source, /targetFps: 30/)
   assert.match(source, /maxFps: 30/)
   assert.match(source, /enableMouseMovement: false/)
