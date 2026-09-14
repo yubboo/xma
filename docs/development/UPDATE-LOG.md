@@ -310,3 +310,14 @@
 - 层级：StarryBackground 继续固定 `zIndex=0`，业务 UI 在前景层；Logo、Transcript、快捷栏、提示、footer 去掉无必要的大块 `COLOR.background` 遮罩，使流星可在空白区域连续穿过中部，但 Prompt 卡片等需要可读性的实体面板仍保持前景背景，不让装饰覆盖文本。
 - 稳定性：清理迁移过程中误落入 ListDialog/InputDialog 的重复 `runInitialSetup` helper，并补回 `createEffect` 显式导入；避免后续 `[7]` TypeScript 检查出现无关回归。
 - 回归：OpenTUI 静态合同改为锁定 Braille 位映射、连续左下运动向量、StyledText 单背景面、MiMo 同类帧率/尾长参数，并禁止恢复旧 `METEOR_TRACKS/METEOR_TRAIL` 字符队列。
+
+
+##26 · 主输入光标降频与 OpenTUI 空闲性能收口
+
+- 日期：2026-09-14
+- 目的：根据 Windows Terminal 实机反馈，降低主 Prompt 首字符白色块光标的闪烁频率，并减少 vivid 首页在空闲状态下的无意义重绘；本批不改 Provider、模型配置、菜单、会话、Agent Runtime 与既有流星视觉语义。
+- 光标：OpenTUI 0.1.101 原生 EditBuffer 光标默认 `blinking: true`，闪烁节奏由终端控制。主 Prompt 改为 `blinking: false` 的 block cursor，再由 Xiaoyu 以 800ms 半周期控制 `showCursor`，形成约 1.6 秒完整闪烁周期；输入、移动光标或重新获得焦点时立即显示，避免操作时等待下一帧。搜索框和配置输入框保持原生行为，不扩大改动面。
+- Renderer：`targetFps/maxFps` 从 60 下调到 30；当前 TUI 没有 hover 交互，因此关闭 `enableMouseMovement`，保留点击和滚轮；Provider 状态轮询由 250ms 放宽到 1000ms，而配置/状态变更仍通过既有 `refresh()` 立即刷新。
+- 动画：流星继续保持 50ms 轨迹帧，不为性能牺牲坠落平滑度；星星帧通过独立 `starFrame` memo 降频。Braille 流星尾部采样点预计算，活动帧使用数字 cell key 代替字符串 key/split，减少 Map 热路径中的短生命周期分配。
+- 回归：OpenTUI 静态合同新增慢光标、30FPS renderer、关闭 mouse-move、1s clock 与流星低分配热路径检查。
+- 交付：`0.1.0` 未冻结，继续只生成 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`。

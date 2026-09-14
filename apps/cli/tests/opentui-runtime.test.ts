@@ -258,3 +258,24 @@ test('official Provider UI never renders DeepSeek plus DeepSeek 2 as stacked pro
   assert.match(main, /brainStore\.consolidateProvider\(preset\.id, preset\.displayName\)/)
   assert.match(brain, /consolidateProvider\(providerId: string, displayName: string\)/)
 })
+
+
+test('main prompt uses a slower app-managed cursor cadence and lower idle renderer cost', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const \[promptCursorVisible, setPromptCursorVisible\] = createSignal\(true\)/)
+  assert.match(source, /showCursor=\{promptCursorVisible\(\)\}/)
+  assert.match(source, /cursorStyle=\{\{ style: 'block', blinking: false \}\}/)
+  assert.match(source, /setPromptCursorVisible\(value => !value\)[\s\S]{0,80}, 800\)/)
+  assert.match(source, /targetFps: 30/)
+  assert.match(source, /maxFps: 30/)
+  assert.match(source, /enableMouseMovement: false/)
+  assert.match(source, /const clockTimer = setInterval\(\(\) => setClock\(Date\.now\(\)\), 1000\)/)
+})
+
+test('meteor frame path reuses tail samples and numeric cell keys to reduce per-frame allocations', () => {
+  const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /const METEOR_TAIL_POINTS = Array\.from/)
+  assert.match(source, /new Map<number, \{ dots: number; nearestTailPoint: number \}>\(\)/)
+  assert.match(source, /const key = cellY \* width \+ cellX/)
+  assert.doesNotMatch(source, /key\.split\(','\)/)
+})

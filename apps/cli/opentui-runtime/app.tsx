@@ -97,6 +97,10 @@ const METEOR_DURATION_MS = METEOR_DURATION_FRAMES * METEOR_FRAME_MS
 const METEOR_ANGLE = 0.36
 const METEOR_TAIL = 32
 const METEOR_STEP = 0.15
+const METEOR_TAIL_POINTS = Array.from(
+  { length: Math.floor(METEOR_TAIL / METEOR_STEP) + 1 },
+  (_, index) => index * METEOR_STEP,
+)
 
 interface SkyGlyph {
   left: number
@@ -166,7 +170,7 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
   const headX = startX + distance * dx
   const headY = startY + distance * dy
   const envelope = Math.sin((step / METEOR_DURATION_FRAMES) * Math.PI)
-  const cells = new Map<string, { dots: number; nearestTailPoint: number }>()
+  const cells = new Map<number, { dots: number; nearestTailPoint: number }>()
 
   const setDot = (pixelX: number, pixelY: number, tailPoint: number) => {
     const subX = Math.floor(pixelX * 2)
@@ -175,7 +179,7 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
     const cellY = subY >> 2
     if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) return
     const bit = brailleBit(subX & 1, subY & 3)
-    const key = `${cellX},${cellY}`
+    const key = cellY * width + cellX
     const previous = cells.get(key)
     cells.set(key, {
       dots: (previous?.dots ?? 0) | (1 << bit),
@@ -183,7 +187,7 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
     })
   }
 
-  for (let tailPoint = 0; tailPoint <= METEOR_TAIL; tailPoint += METEOR_STEP) {
+  for (const tailPoint of METEOR_TAIL_POINTS) {
     setDot(headX - tailPoint * dx, headY - tailPoint * dy, tailPoint)
   }
 
@@ -198,7 +202,7 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
       const cellY = subY >> 2
       if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) continue
       const bit = brailleBit(subX & 1, subY & 3)
-      const key = `${cellX},${cellY}`
+      const key = cellY * width + cellX
       const previous = cells.get(key)
       cells.set(key, { dots: (previous?.dots ?? 0) | (1 << bit), nearestTailPoint: 0 })
     }
@@ -206,9 +210,8 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
 
   const glyphs: SkyGlyph[] = []
   for (const [key, value] of cells) {
-    const [leftText, topText] = key.split(',')
-    const left = Number(leftText)
-    const top = Number(topText)
+    const left = key % width
+    const top = Math.floor(key / width)
     const fade = Math.pow(1 - value.nearestTailPoint / METEOR_TAIL, 1.3) * envelope
     const headBlend = Math.max(0, 1 - value.nearestTailPoint / 5)
     const beam = blendHex('#b4d7ff', '#ffffff', headBlend)
@@ -222,13 +225,14 @@ function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] 
 function BackgroundSky(props: {
   width: number
   height: number
-  frame: number
+  starFrame: number
+  meteorFrame: number
   vivid: boolean
   stars: boolean
   meteors: boolean
 }) {
-  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, Math.floor(props.frame / 4)) : [])
-  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.frame) : [])
+  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, props.starFrame) : [])
+  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.meteorFrame) : [])
   return (
     <Show when={props.vivid && (props.stars || props.meteors)}>
       <box position="absolute" zIndex={0} width={props.width} height={props.height} left={0} top={0}>
@@ -699,6 +703,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
   const [setupFlow, setSetupFlow] = createSignal({ active: false, message: '' })
   const [phase, setPhase] = createSignal(0)
+  const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
@@ -715,6 +720,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
+  const starFrame = createMemo(() => Math.floor(phase() / 4))
   const logoFrame = createMemo(() => Math.floor(phase() / 2))
   const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][Math.floor(phase() / 3) % 4]!)
   const tip = createMemo(() => {
@@ -743,7 +749,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     setClock(Date.now())
     renderer.requestRender()
   }
-  const refocusPrompt = () => queueMicrotask(() => { if (!setupFlow().active && dialog() === undefined) prompt?.focus() })
+  const refocusPrompt = () => queueMicrotask(() => {
+    if (setupFlow().active || dialog() !== undefined) return
+    setPromptCursorVisible(true)
+    prompt?.focus()
+  })
   const setSetupStage = (message: string) => {
     if (!setupFlow().active) return
     setSetupFlow({ active: true, message })
@@ -1341,11 +1351,16 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   onMount(() => {
     process.title = 'Xiaoyu'
     const animation = setInterval(() => setPhase(value => value + 1), 50)
+    const promptCursor = setInterval(() => {
+      if (setupFlow().active || dialog() !== undefined) return
+      setPromptCursorVisible(value => !value)
+    }, 800)
     const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
-    const clockTimer = setInterval(() => setClock(Date.now()), 250)
+    const clockTimer = setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => {
       clearInterval(animation)
+      clearInterval(promptCursor)
       clearInterval(streamPump)
       clearInterval(tips)
       clearInterval(clockTimer)
@@ -1378,7 +1393,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       <BackgroundSky
         width={dimensions().width}
         height={dimensions().height}
-        frame={phase()}
+        starFrame={starFrame()}
+        meteorFrame={phase()}
         vivid={settings().visual === 'vivid'}
         stars={settings().stars}
         meteors={settings().meteors}
@@ -1443,7 +1459,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
                   placeholderColor={COLOR.faint}
                   textColor={COLOR.text}
                   focusedTextColor={COLOR.text}
+                  showCursor={promptCursorVisible()}
                   cursorColor={COLOR.text}
+                  cursorStyle={{ style: 'block', blinking: false }}
+                  onContentChange={() => setPromptCursorVisible(true)}
+                  onCursorChange={() => setPromptCursorVisible(true)}
                   onSubmit={() => { void submit(prompt?.plainText ?? '') }}
                   onKeyDown={(event: KeyEvent) => {
                     if (event.name !== 'tab') return
@@ -1534,14 +1554,14 @@ export async function runOpenTui(backend: TerminalBackend): Promise<void> {
 
   const renderer = await createCliRenderer({
     externalOutputMode: 'passthrough',
-    targetFps: 60,
-    maxFps: 60,
+    targetFps: 30,
+    maxFps: 30,
     gatherStats: false,
     exitOnCtrlC: false,
     useKittyKeyboard: {},
     autoFocus: false,
     openConsoleOnError: false,
-    enableMouseMovement: true,
+    enableMouseMovement: false,
     useMouse: true,
   })
 
