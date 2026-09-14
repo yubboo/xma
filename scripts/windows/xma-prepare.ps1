@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持用户选择并持久化安装位置；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -132,54 +132,140 @@ function Ensure-XmaWinget {
 }
 
 
-function Get-XmaBunExecutable {
-  return (Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe")
+function Select-XmaBunInstallRoot {
+  $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = Join-Path $env:USERPROFILE 'AppData\Local' }
+  $defaultRoot = Join-Path $localAppData 'XMA\Bun'
+  $driveD = 'D:\XMA\Bun'
+
+  while ($true) {
+    Write-Host ''
+    Write-Host '[Bun 安装位置] 未检测到已配置的 Bun Runtime，请选择安装位置：' -ForegroundColor Cyan
+    Write-Host "  [1] 当前用户工具目录        $defaultRoot" -ForegroundColor Green
+    Write-Host "  [2] D 盘                    $driveD" -ForegroundColor Gray
+    Write-Host '  [3] 自定义安装位置' -ForegroundColor Gray
+    $choice = (Read-Host '请选择 [1]').Trim()
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
+
+    if ($choice -eq '1') {
+      if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 当前用户工具目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      return $defaultRoot
+    }
+    if ($choice -eq '2') {
+      if (-not (Test-Path -LiteralPath 'D:\' -PathType Container)) {
+        Write-Host '[不可用] 当前电脑没有 D: 盘，请选择 [1] 或 [3]。' -ForegroundColor Yellow
+        continue
+      }
+      if (-not (Test-XmaWritableDirectory $driveD)) { Write-Host '[不可用] D 盘目标目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      Write-Host "[提示] 已准备 $driveD，将在其中保存 Bun $BunVersion。" -ForegroundColor DarkCyan
+      return $driveD
+    }
+    if ($choice -eq '3') {
+      $custom = (Read-Host '请输入 Bun 安装根目录，例如 E:\DevTools\XMA-Bun').Trim().Trim('"')
+      if ([string]::IsNullOrWhiteSpace($custom)) {
+        Write-Host '[提示] 自定义路径不能为空。' -ForegroundColor Yellow
+        continue
+      }
+      try { $resolved = [IO.Path]::GetFullPath($custom) } catch {
+        Write-Host '[提示] 路径格式无效，请重新输入。' -ForegroundColor Yellow
+        continue
+      }
+      if (-not (Test-XmaWritableDirectory $resolved)) { Write-Host '[不可用] 自定义目标目录不可写，请重新选择。' -ForegroundColor Yellow; continue }
+      Write-Host "[提示] 已准备 $resolved，将在其中保存 Bun $BunVersion。" -ForegroundColor DarkCyan
+      return $resolved
+    }
+    Write-Host '请输入 1、2 或 3。' -ForegroundColor Yellow
+  }
+}
+
+function Save-XmaBunHome([string]$BunHome) {
+  $normalized = [IO.Path]::GetFullPath($BunHome)
+  $env:XMA_BUN_HOME = $normalized
+  [Environment]::SetEnvironmentVariable('XMA_BUN_HOME', $normalized, 'User')
+  Save-XmaBunEnvironmentState -ProjectRoot $Root -BunHome $normalized -Version $BunVersion
+}
+
+function Test-XmaBunExecutable([string]$Executable) {
+  if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { return $false }
+  $probe = Invoke-XmaProbe -FilePath $Executable -ArgumentList @('--version')
+  return ($probe.ExitCode -eq 0) -and (($probe.Output -join ' ').Trim() -eq $BunVersion)
 }
 
 function Install-XmaBunRuntime {
-  $bunExe = Get-XmaBunExecutable
-  if (Test-Path $bunExe) {
-    $actual = (& $bunExe --version).Trim()
-    if ($actual -eq $BunVersion) {
-      # 中文说明：旧版本准备器可能残留下载 ZIP / extract 副本；固定 bun.exe 已就绪时顺手清理一次性安装介质。
-      Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
-      Write-Host "[缓存] Bun $actual · Xiaoyu OpenTUI Runtime 已存在，跳过重复下载。" -ForegroundColor DarkCyan
-      Write-Host "[位置] $bunExe" -ForegroundColor DarkGray
-      return $bunExe
+  # 中文说明：Bun 与 Rust 一样由 `[1]` 记录真实安装位置。以后 `[4]/[7]/build:cli` 都只复用这个配置，
+  # 不再把仓库 `.xma/tools/bun` 当成固定 Runtime Home，避免移动 U 盘/仓库后把旧盘符误当依赖真值。
+  $existing = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  if ($existing) {
+    Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[缓存] Bun $($existing.Version) · 已按 `[1]` 配置位置恢复，跳过重复下载。" -ForegroundColor DarkCyan
+    Write-Host "[位置] XMA_BUN_HOME=$($existing.BunHome)" -ForegroundColor DarkGray
+    Write-Host "[运行时] $($existing.BunExe)" -ForegroundColor DarkGray
+    return $existing.BunExe
+  }
+
+  $installRoot = Select-XmaBunInstallRoot
+  $targetRoot = Join-Path $installRoot $BunVersion
+  $bunExe = Join-Path $targetRoot 'bun.exe'
+  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+
+  # 0.1.0 早期把 Bun 固定放在 checkout `.xma/tools`。升级后如果旧 Runtime 仍完整，直接迁移到用户新选位置，避免重复下载。
+  $legacyExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
+  $migrated = $false
+  $runtimeReady = Test-XmaBunExecutable $bunExe
+  if ($runtimeReady) {
+    Write-Host "[发现] 你选择的位置已经存在可用 Bun $BunVersion，将直接接管并记录该 Runtime。" -ForegroundColor DarkCyan
+  } elseif (Test-XmaBunExecutable $legacyExe) {
+    $legacyFull = [IO.Path]::GetFullPath($legacyExe)
+    $targetFull = [IO.Path]::GetFullPath($bunExe)
+    if ($legacyFull -ine $targetFull) {
+      Write-Host "[迁移] 检测到旧项目内 Bun $BunVersion，正在复制到你选择的位置；不会重新下载。" -ForegroundColor Yellow
+      Copy-Item -LiteralPath $legacyExe -Destination $bunExe -Force
+    }
+    $migrated = $true
+    $runtimeReady = $true
+  }
+
+  $cacheRoot = Join-Path $Root '.cache\bun'
+  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
+  $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
+  $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
+
+  if (-not $runtimeReady) {
+    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+    if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+    $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
+    Write-Host "[下载] 正在准备固定 Bun $BunVersion（OpenTUI Runtime）..." -ForegroundColor Yellow
+    Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
+    Write-Host "[来源] $url" -ForegroundColor DarkGray
+    try {
+      Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+      Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+      $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
+      if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
+      Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
+    } finally {
+      # Bun ZIP/解压目录只是一次性安装介质；真实 Runtime 已进入用户选定的 XMA_BUN_HOME 后立即清理项目下载缓存。
+      Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
 
-  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-  $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
-  $toolsRoot = Join-Path $Root '.xma\tools\bun'
-  $targetRoot = Join-Path $toolsRoot $BunVersion
-  $cacheRoot = Join-Path $Root '.cache\bun'
-  $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
-  $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
-  New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
-  if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
+  if (-not (Test-XmaBunExecutable $bunExe)) { throw "Bun $BunVersion 安装/迁移后真实执行校验失败：$bunExe" }
+  Save-XmaBunHome -BunHome $installRoot
 
-  $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
-  Write-Host "[下载] 正在准备固定 Bun $BunVersion（OpenTUI Runtime）..." -ForegroundColor Yellow
-  Write-Host "[来源] $url" -ForegroundColor DarkGray
-  try {
-    Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
-    Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-    $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
-    if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
-    if (Test-Path $targetRoot) { Remove-Item $targetRoot -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
-    Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
-    $actual = (& $bunExe --version).Trim()
-    if ($actual -ne $BunVersion) { throw "Bun 版本校验失败：期望 $BunVersion，实际 $actual。" }
-    Write-Host "[通过] Bun $actual · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
-    Write-Host "[位置] $bunExe" -ForegroundColor DarkGray
-    return $bunExe
-  } finally {
-    # 中文说明：Bun ZIP/解压目录只是一次性安装介质。固定 bun.exe 已复制到 .xma	ools 后立即清理，避免项目里长期多占一份压缩包和解压副本。
-    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+  if ($migrated) {
+    $legacyRoot = [IO.Path]::GetFullPath((Join-Path $Root ".xma\tools\bun\$BunVersion"))
+    $selectedRoot = [IO.Path]::GetFullPath($targetRoot)
+    if ($legacyRoot -ine $selectedRoot) {
+      Remove-Item -LiteralPath $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
   }
+  Remove-Item -LiteralPath $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+  Write-Host "[通过] Bun $BunVersion · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
+  Write-Host "[位置] XMA_BUN_HOME=$installRoot" -ForegroundColor DarkGray
+  Write-Host "[运行时] $bunExe" -ForegroundColor DarkGray
+  return $bunExe
 }
 
 
@@ -405,7 +491,7 @@ Write-Host '====================================================================
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：会安装 Workspace JavaScript 依赖、固定 Bun/OpenTUI Runtime、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
+Write-Host '说明：会安装 Workspace JavaScript 依赖、可选择安装位置的固定 Bun/OpenTUI Runtime、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
 # 中文说明：先刷新当前进程 PATH，确保新电脑刚安装到 User/Machine PATH 的工具无需重开终端即可被发现。
@@ -470,7 +556,7 @@ Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[4/9] Bun 1.3.14 / OpenTUI Runtime' -ForegroundColor Cyan
-Write-Host '[检查] 正在准备 Xiaoyu OpenTUI 使用的固定 Bun Runtime...' -ForegroundColor DarkCyan
+Write-Host '[检查] 正在恢复或准备 Xiaoyu OpenTUI 使用的 Bun Runtime（安装位置由用户选择）...' -ForegroundColor DarkCyan
 $bunExe = Install-XmaBunRuntime
 
 Write-Host ''

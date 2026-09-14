@@ -63,9 +63,11 @@ cd xma
 .\xma-dev.bat
 ```
 
-如果当前目录已经存在非空 `xma` 文件夹，Git 自己会拒绝覆盖并提示 `destination path 'xma' already exists`。这不是 XMA 路径绑定：已有仓库直接进入该目录 `git pull`，不需要的残留目录先删除，或者在 clone 命令最后写任意目标目录名，例如 `git clone https://github.com/yubboo/xma.git D:\Dev\xma-work`。
+标准源码流程固定就是上面三条命令。要让 `git clone https://github.com/yubboo/xma.git` 原样成功，当前父目录中不能已经存在非空的 `xma/XMA`（Windows 大小写不敏感）。如果历史解压目录、旧 clone 或旧版维护脚本已经占用了这个名字，先把那个旧目录移走或确认无用后删除，然后**原样重新执行同一条 `git clone`**；不要求改成 `xma-work`、`xma-worktree` 或其他目录名。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。准备完成后会为**当前源码 checkout**生成开发态 `xiaoyu / xma` 命令并写入当前用户 `User PATH`；新开 PowerShell / Windows Terminal 后，可以在任意 Workspace 目录直接输入 `xiaoyu` 或 `xma` 启动这份源码。菜单 `[4]` 仍保留用于从开发控制台启动 CLI。
+XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
+
+首次进入菜单选择 `[1] 一键准备开发环境`。准备完成后会为**当前源码 checkout**生成开发态 `xiaoyu / xma` 命令并写入当前用户 `User PATH`；新开 PowerShell / Windows Terminal 后，可以在任意 Workspace 目录直接输入 `xiaoyu` 或 `xma` 启动这份源码。菜单 `[4]` 仍保留用于从开发控制台启动 CLI。 Windows `[1]` 中 Bun 1.3.14 与 Rust/Cargo 都会做真实 Runtime 探测；Bun 首次缺失时会像 Rust 一样让用户选择安装位置，并通过 `XMA_BUN_HOME` + 项目恢复状态记录该位置，后续 `[4]`、`[7]`、CLI build 统一复用，不再把 Bun 固定在仓库 `.xma\tools\bun`。
 
 开发态命令使用仓库内被忽略的 `.xma\dev-bin` shim，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后重新运行 `xma-dev.bat → [1]` 即会刷新。
 
@@ -79,7 +81,7 @@ cd xma
 
 Unix 源码控制台支持 `prepare / web / desktop / cli / check`，也可以直接运行例如 `./xma-dev cli`。普通用户安装不走这套源码开发工具链。
 
-> **Git clone 用户不需要运行 `XMA-Sync.bat`。** `XMA-Sync.bat` / `XMA-GitHub.bat` 是维护者 Source Manifest 工作流；`XMA-Sync.bat` 默认按源码包所在位置自动识别/创建同级长期 Git 工作目录，不绑定 H:/D:/C:；需要固定位置时再通过 `XMA_TARGET_ROOT` 覆盖。
+> **Git clone 用户不需要运行 `XMA-Sync.bat`。** `XMA-Sync.bat` / `XMA-GitHub.bat` 是维护者 Source Manifest 工作流；`XMA-Sync.bat` 默认只识别并复用已存在的正确 XMA Git 工作目录，不再自动创建同级 `xma`，避免占用标准 clone 的默认目标名；需要新维护目录时由维护者显式设置 `XMA_TARGET_ROOT`。
 
 ## 目录
 
@@ -124,14 +126,14 @@ Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context 
 
 ## 维护者源码包同步流程（Windows）
 
-下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。
+下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。长期 Git 工作目录只保留 `.git/.xma/.cache` 等真实本地状态；源码包专用 `.xma-package` 若由旧流程遗留在工作目录，会在 Sync 后自动清理。
 
 开发源码包解压后：
 
 ```text
 XMA-Sync.bat
    ↓
-自动识别/创建同级 xma Git 工作目录（任意盘符）
+自动识别已有的正确 XMA Git 工作目录；未找到或存在多个时由维护者选择
    ↓
 XMA-GitHub.bat
    ↓

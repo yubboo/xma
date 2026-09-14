@@ -16,16 +16,21 @@ cd xma
 
 Git clone 工作区**不需要** `XMA-Sync.bat`。如需提交自己的改动，使用常规 Git 流程；`XMA-GitHub.bat` 是维护者辅助工具，不是运行项目的前置条件。
 
+
+### Git clone 已有目录冲突
+
+`git clone https://github.com/yubboo/xma.git` 的默认目标名固定是 `xma`。标准 XMA 源码流程不改命令、不要求追加其他目录名。若当前父目录已经存在非空 `xma/XMA`（Windows 大小写不敏感），Git 会在任何 XMA 代码运行前拒绝覆盖；要继续使用标准命令，必须先把历史解压目录/旧仓库移走，或确认无用后删除，然后原样重新执行 `git clone https://github.com/yubboo/xma.git`。XMA 的维护脚本不得自动创建同级 `xma` 来制造这种冲突。
+
 ## 维护者 Source Manifest 同步工作流
 
 维护者源码包可以解压到任意目录，例如：`D:\Downloads\xma-0.1.0`、`E:\Dev\xma-0.1.0`。
 
 GitHub：`https://github.com/yubboo/xma.git`
 
-`XMA-Sync.bat` **不再绑定任何固定盘符**。未设置 `XMA_TARGET_ROOT` 时，它会根据源码包所在位置自动识别/创建同级长期 Git 工作目录：优先复用同级已有 XMA worktree；默认建议名为 `xma`，若与源码包自身或非 XMA 目录冲突则使用 `xma-worktree`。只有你明确希望固定到某个目录时才设置：
+`XMA-Sync.bat` **不绑定任何固定盘符，也不自动创建 `xma/xma-worktree-*`**。未设置 `XMA_TARGET_ROOT` 时，它先扫描源码包同级目录中已经存在、origin 属于 `yubboo/xma` 的长期 Git 工作目录：只找到一个就直接复用；找到多个就显示编号列表让维护者选择；一个都没找到就要求维护者输入已经 clone 好的 XMA 仓库路径。输入路径必须真实存在且 origin 正确，Sync 不会 `git init`、不会改写别的仓库 origin、不会替 Git 预占默认 `xma` 目录。需要固定位置时可设置：
 
 ```powershell
-$env:XMA_TARGET_ROOT = 'E:\Dev\xma-worktree'
+$env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 ```
 
 `XMA-GitHub.bat` 始终以**脚本实际所在仓库根**为准，不再假定 `H:\一键部署\xma`。公共源码开发入口 `xma-dev.bat` 同样从自身位置解析仓库根。
@@ -37,7 +42,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-worktree'
         ↓
 运行 XMA-Sync.bat
         ↓
-自动识别/创建同级 XMA Git 工作目录（任意盘符）
+识别 / 选择已存在且 origin 正确的 XMA Git 工作目录（任意盘符）
         ↓
 运行 XMA-GitHub.bat
         ↓
@@ -46,7 +51,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-worktree'
 
 ## Windows 入口的职责边界
 
-- `XMA-Sync.bat`：只负责源码包同步到固定 Git 工作目录；正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 `.xma/source-sync-last.txt`，避免只显示 Manifest 总文件数造成“是否真的同步成功”不明确。
+- `XMA-Sync.bat`：只负责把源码包同步到**已经存在且 origin 正确**的 Git 工作目录；不 `git init`、不改 origin、不创建替代 worktree。正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 `.xma/source-sync-last.txt`。源码包专用 `.xma-package` 不属于长期 Git 工作目录，旧版遗留会在确认目标身份后清理。
 - `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。由于 Windows 文件系统没有 Unix executable bit，暂存后必须用纯 Git `update-index --chmod=+x` 保证 `xma-dev`、`scripts/unix/xma-console.sh`、`scripts/install/xma-install.sh` 在 Linux/macOS clone 后可执行。
 - `xma-dev.bat`：负责本地基础环境、项目运行、检查和构建。
 
@@ -54,7 +59,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-worktree'
 
 `[1] 一键准备开发环境` 是首次运行的推荐入口，必须一次完成：
 
-- Git、Node.js、pnpm、Rust/Cargo、MSVC 系统工具检查/安装；Rust 必须执行真实 `rustc --version` / `cargo --version` 探针，不能因为 rustup shim 文件存在就误判为可用。缺少 stable toolchain 时由用户选择安装根目录：系统盘用户默认位置（推荐）、`D:\XMA\Rust`、或自定义目录；XMA 使用 `RUSTUP_HOME/CARGO_HOME` 保存选择并把对应 `cargo\bin` 写入 User PATH，已有可用 Rust 时不重复下载；
+- Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC 系统工具检查/安装；Bun 1.3.14 首次缺失时提供“当前用户工具目录 / D 盘 / 自定义目录”选择，选择结果写入 User `XMA_BUN_HOME` 并保存项目恢复状态，后续 `[4]`、`[7]`、`build:cli` 必须真实执行该位置的 `bun.exe --version` 后才允许继续，不再固定使用仓库 `.xma\tools\bun`；Rust 同样必须执行真实 `rustc --version` / `cargo --version` 探针，不能因为 rustup shim 文件存在就误判为可用。缺少 stable toolchain 时由用户选择安装根目录：系统盘用户默认位置、`D:\XMA\Rust`、或自定义目录；XMA 使用 `RUSTUP_HOME/CARGO_HOME` 保存选择并把对应 `cargo\bin` 写入 User PATH，已有可用 Rust 时不重复下载；
 - 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
 - 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
@@ -127,12 +132,12 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## GitHub 助手目录保护
 
-正式源码包目录（例如 `D:\Downloads\xma-0.1.0`，任意盘符）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 `XMA-Sync.bat` 自动识别/创建或 `XMA_TARGET_ROOT` 显式指定的长期 Git 工作目录。
+正式源码包目录（例如 `D:\Downloads\xma-0.1.0`，任意盘符）只负责 Source Sync。`XMA-GitHub.bat` 检测到 `.xma-package/source-manifest.json` 必须立即拒绝执行；即使该目录因为旧版脚本误操作已经出现 `.git/`，也不能继续 fetch/pull/push。正确推送位置始终是 `XMA-Sync.bat` 自动识别或由维护者明确选择的现有 XMA Git 工作目录；也可以由 `XMA_TARGET_ROOT` 显式指定。Sync 不负责创建新的 Git 仓库。
 
 如果旧版助手曾在源码包目录误执行 `git init`，只清理源码包目录自己的 `.git/`；长期工作目录实际路径下的 `.git/` 必须保留。
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 除 pnpm Workspace 依赖外，会准备固定 `Bun 1.3.14`，并在 `apps/cli/opentui-runtime/` 独立安装 `@opentui/core@0.1.101`、`@opentui/solid@0.1.101`、`solid-js@1.9.11`、`@types/bun@1.3.11`。这些依赖不进入 pnpm Workspace lock，避免把整个 XMA Runtime 改成 Bun；`[4]` 只把交互式 Terminal Host 交给 Bun/OpenTUI，Server/Web 仍使用 Node。Bun 只在 `.xma/tools/bun/1.3.14/bun.exe` 缺失或版本错误时下载；ZIP/临时解压目录完成校验后立即删除。OpenTUI 依赖放在 `apps/cli/opentui-runtime/node_modules`，四个固定版本完全匹配时后续 `[1]` 直接复用并跳过 `bun install`。`[4]`/`[7]` 通过 `scripts/cli/bun.ts` 从该 Runtime 目录启动，并强制 `--no-install`，运行和检查阶段不得偷偷联网补包。
+`xma-dev.bat → [1]` 除 pnpm Workspace 依赖外，会准备固定版本 `Bun 1.3.14`，并在 `apps/cli/opentui-runtime/` 独立安装 `@opentui/core@0.1.101`、`@opentui/solid@0.1.101`、`solid-js@1.9.11`、`@types/bun@1.3.11`。这些依赖不进入 pnpm Workspace lock，避免把整个 XMA Runtime 改成 Bun；`[4]` 只把交互式 Terminal Host 交给 Bun/OpenTUI，Server/Web 仍使用 Node。Bun Runtime 本身不再固定在 checkout `.xma/tools/bun`：首次缺失时 `[4/9]` 会让用户选择当前用户工具目录、`D:\XMA\Bun` 或自定义目录，并把选择保存到 User `XMA_BUN_HOME` + `.xma/state/bun-environment.json`。后续 `[4]`/`[7]`/`build:cli` 必须从该配置恢复并真实校验 `bun.exe --version`；项目移动、U 盘盘符变化或新电脑没有该 Runtime 时会明确要求重新运行 `[1]`，不会误报“已准备”。OpenTUI 依赖仍放在 `apps/cli/opentui-runtime/node_modules`，四个固定版本完全匹配时后续 `[1]` 直接复用并跳过 `bun install`。运行/检查阶段强制 `--no-install`，不得偷偷联网补包。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。

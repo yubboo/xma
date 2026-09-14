@@ -33,7 +33,7 @@ function Assert-GitWorkDirectory {
     if ($ExpectedWorkRoot) {
       Write-Host "  Git 工作目录（XMA_TARGET_ROOT）：$ExpectedWorkRoot" -ForegroundColor Green
     } else {
-      Write-Host '  Git 工作目录：由 XMA-Sync.bat 根据源码包位置自动识别/创建，不绑定盘符。' -ForegroundColor Green
+      Write-Host '  Git 工作目录：由 XMA-Sync.bat 识别或由维护者选择已有的正确 XMA 仓库，不绑定盘符、不自动创建。' -ForegroundColor Green
     }
     Write-Host '  正确流程：XMA-Sync.bat → 进入 Git 工作目录 → XMA-GitHub.bat → [1] 一键推送。' -ForegroundColor Cyan
     if (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container) {
@@ -73,8 +73,7 @@ function Ensure-GitRepo {
     return
   }
   if ($origin -ne $RepoUrl) {
-    Write-Host "[修正] origin 当前为 $origin，将切换到 XMA 正式仓库。" -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('remote','set-url','origin',$RepoUrl)
+    throw "当前目录的 Git origin 不是 XMA 正式仓库：$origin。为避免误改其他仓库，XMA 不会自动重写 origin；请进入正确的 XMA 工作目录。"
   }
 }
 

@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；Web 直接启动；CLI 支持从任意当前目录直达 Workspace，并在独立 Cargo target 离线增量构建 Native；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
+当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；CLI 运行/检查会恢复 `[1]` 选择的 Bun Home 与 Rust/Cargo Home，再执行真实版本/offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
 职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -23,6 +23,7 @@ $OpenTuiVersion = '0.1.101'
 $SolidJsVersion = '1.9.11'
 $BunTypesVersion = '1.3.11'
 $BunVersion = '1.3.14'
+[void](Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion)
 
 function Write-Header {
   Clear-Host
@@ -80,12 +81,17 @@ function Assert-XmaCargoOfflineReady {
   if ($CargoRuntime.RustupHome) { Write-Host "[位置] RUSTUP_HOME=$($CargoRuntime.RustupHome)" -ForegroundColor DarkGray }
 }
 
+function Resolve-XmaBunRuntime {
+  $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  if (-not $bunRuntime) {
+    throw "未检测到 `[1]` 已配置的 Bun $BunVersion Runtime。请先运行 [1] 一键准备开发环境并选择 Bun 安装位置。"
+  }
+  return $bunRuntime
+}
+
 function Assert-CliJsDependencies {
   Assert-CoreDependencies
-  $bunExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
-  if (-not (Test-Path $bunExe)) { throw 'Xiaoyu Bun/OpenTUI Runtime 尚未准备。请先运行 [1] 一键准备开发环境。' }
-  $installedBun = (& $bunExe --version).Trim()
-  if ($installedBun -ne $BunVersion) { throw "Bun 版本不一致：期望 $BunVersion，实际 $installedBun。" }
+  $bunRuntime = Resolve-XmaBunRuntime
   $packages = @{
     (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\core\package.json') = $OpenTuiVersion
     (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\solid\package.json') = $OpenTuiVersion
@@ -99,6 +105,8 @@ function Assert-CliJsDependencies {
     if ($installed -ne $expected) { throw "Xiaoyu OpenTUI 依赖版本不一致：$packageFile · 期望 $expected，实际 $installed。" }
   }
   Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $BunVersion + OpenTUI $OpenTuiVersion）。" -ForegroundColor Green
+  Write-Host "[位置] XMA_BUN_HOME=$($bunRuntime.BunHome)" -ForegroundColor DarkGray
+  Write-Host "[运行时] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
 }
 
 function Assert-DesktopJsDependencies {

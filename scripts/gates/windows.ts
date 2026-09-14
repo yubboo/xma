@@ -55,6 +55,11 @@ if (existsSync('XMA.bat') || existsSync('xma.bat')) {
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   'function Invoke-XmaProbe',
+  'function Select-XmaBunInstallRoot',
+  'function Save-XmaBunHome',
+  "SetEnvironmentVariable('XMA_BUN_HOME'",
+  "$driveD = 'D:\\XMA\\Bun'",
+  'Save-XmaBunEnvironmentState -ProjectRoot $Root',
   'function Select-XmaRustInstallRoot',
   'function Install-XmaRustStable',
   "Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('override','set','stable')",
@@ -123,9 +128,11 @@ for (const forbidden of ['scripts/release/cli.ts', "@('run','build')", 'build:cl
 const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
   'function Assert-CliJsDependencies',
+  'function Resolve-XmaBunRuntime',
+  'XMA_BUN_HOME=',
   'opentui-runtime\\node_modules\\@opentui\\core\\package.json',
   'opentui-runtime\\node_modules\\@opentui\\solid\\package.json',
-  'Bun/OpenTUI Runtime',
+  'Xiaoyu OpenTUI Runtime 已就绪',
   'Assert-CliJsDependencies\r\n  Assert-DesktopJsDependencies',
   "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]",
   "'cli' { Start-Cli -WorkspacePath $Workspace }",
@@ -142,16 +149,28 @@ for (const marker of [
 
 const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
 for (const marker of [
+  'process.env.XMA_BUN_HOME',
+  'bun-environment.json',
+  'fileURLToPath(import.meta.url)',
   "path.join(root, '.cache', 'bun-compile', BUN_VERSION)",
-  'childEnv.BUN_TMPDIR = compileCache',
-  'childEnv.TEMP = compileCache',
-  'childEnv.TMP = compileCache',
+  'function createWindowsCompileAlias',
+  'containsNonAscii(realCache)',
+  'spawnSync(subst, [drive, realCache]',
+  "spawnSync(subst, [drive, '/D']",
+  "const compileTemp = path.join(alias.root, 'tmp')",
+  "const compileRuntime = path.join(alias.root, 'runtime')",
+  'childEnv.BUN_TMPDIR = compileTemp',
+  'childEnv.TEMP = compileTemp',
+  'childEnv.TMP = compileTemp',
+  'disposeCompileAlias()',
 ]) {
-  if (!bunRunnerSource.includes(marker)) throw new Error(`Bun project-cache contract regression: missing ${marker}`)
+  if (!bunRunnerSource.includes(marker)) throw new Error(`Bun project-cache/Unicode-path contract regression: missing ${marker}`)
 }
-for (const forbidden of ['process.env.LOCALAPPDATA', "process.env.TEMP ? path.join", "process.env.TMP ? path.join"]) {
-  if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun compile must not fall back to Windows user temp storage: ${forbidden}`)
+for (const forbidden of ['process.env.LOCALAPPDATA', "process.env.TEMP ? path.join", "process.env.TMP ? path.join", "'C:\\\\", "'D:\\\\", "'H:\\\\"]) {
+  if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun compile must not bind Windows user temp storage or a fixed drive: ${forbidden}`)
 }
+
+if (bunRunnerSource.includes("path.join(root, '.xma', 'tools', 'bun'")) throw new Error('Bun runner must restore [1] configured XMA_BUN_HOME instead of fixed checkout .xma/tools/bun')
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
 // 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
@@ -162,6 +181,8 @@ for (const marker of [
   '& $FilePath @ArgumentList',
   'function Get-XmaProjectVersion',
   'function Test-XmaElectronRuntime',
+  'function Import-XmaBunEnvironment',
+  'function Save-XmaBunEnvironmentState',
   'function Import-XmaRustEnvironment',
   'function Save-XmaRustEnvironmentState',
   'function Test-XmaCargoOfflineDependencies',
@@ -241,7 +262,11 @@ for (const marker of [
   '新增目录无需配置',
   'scripts/release 正式源码',
   'Resolve-XmaSyncTarget',
-  '自动从源码包位置识别同级 XMA Git 工作目录；不绑定盘符',
+  '[选择] 检测到多个 origin 正确的 XMA Git 工作目录',
+  '请输入已经 clone 好的 XMA Git 仓库目录',
+  'XMA 不会自动创建替代 worktree 目录',
+  '删除 Git 工作目录中无用的源码包元数据',
+  'Git 工作目录与 origin 仍指向 yubboo/xma',
 ]) {
   if (!syncMigrationSource.includes(marker)) throw new Error(`XMA sync manifest contract regression: missing ${marker}`)
 }
@@ -252,6 +277,8 @@ if (/H:\\一键部署\\xma/i.test(syncMigrationSource)) {
 if (/H:\\一键部署\\xma/i.test(githubSource)) {
   throw new Error('XMA GitHub helper must not hardcode the maintainer H: worktree path.')
 }
+if (syncMigrationSource.includes('xma-worktree')) throw new Error('XMA Sync must not invent xma-worktree clone target names; canonical git clone keeps the default xma directory.')
+if (/git\.exe\s+init|remote\s+set-url/i.test(syncMigrationSource)) throw new Error('XMA Sync must never initialize a Git repository or rewrite an existing origin.')
 if (syncMigrationSource.includes("'.git','node_modules','.cache','dist','build','.xma','target','release'")) {
   throw new Error('XMA sync must not globally exclude every directory named release/build/dist; path ownership must be explicit.')
 }
@@ -262,6 +289,8 @@ for (const marker of [
   "parts[0] === 'scripts'",
   "project: 'xma'",
   'formatVersion: 1',
+  'allowedRootHiddenDirectories',
+  "'.agents', '.cargo', '.claude', '.codex', '.github'",
 ]) {
   if (!sourceManifestGenerator.includes(marker)) throw new Error(`XMA source manifest generator regression: missing ${marker}`)
 }
@@ -465,7 +494,9 @@ for (const marker of ['https://github.com/yubboo/xma.git', '[1] 一键推送', '
 const syncSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 for (const marker of [
   'Resolve-XmaSyncTarget',
-  '自动从源码包位置识别同级 XMA Git 工作目录；不绑定盘符',
+  '[选择] 检测到多个 origin 正确的 XMA Git 工作目录',
+  '请输入已经 clone 好的 XMA Git 仓库目录',
+  'XMA 不会自动创建替代 worktree 目录',
   ".xma-package\\source-manifest.json",
   ".xma\\source-sync.json",
   ".xma\\source-sync-last.txt",

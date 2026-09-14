@@ -394,3 +394,35 @@
 - 路径合同：`XMA-Sync.bat` 未设置 `XMA_TARGET_ROOT` 时根据**源码包自身位置**自动选择同级 `xma` / `xma-worktree`，复用已有 `.git` 或 `.xma/source-sync.json` worktree；不再默认 H:/D:/C:。`XMA-GitHub.bat` 只认脚本实际所在仓库根。普通 `git clone` 的“目标目录已存在且非空”仍是 Git 自己的覆盖保护，可选择其他目标名或进入已有仓库更新。
 - 回归：Windows Gate 锁定 Rust 环境恢复、Cargo offline 真值校验、Tauri 复用 Cargo Home，以及 Sync/GitHub Helper 禁止重新出现维护者 H: 硬编码。版本保持 `0.1.0`。
 
+
+
+##33 · Windows 中文路径 Bun compile 与 Git worktree 冲突收口
+
+- 日期：2026-09-14
+- 目的：修复 `[7]` 在 `H:\一键部署\xma` 等中文源码路径下执行 Bun 1.3.14 单文件 compile 时出现 `failed to copy bun executable into temporary file: ENOENT / Failed to get temp file path: FileNotFound`；同时继续收紧维护者工作目录选择，避免同名非 XMA 目录造成“路径绑死/覆盖”体验。
+- Bun 根因：上一版已经把 `TEMP/TMP/BUN_TMPDIR` 从用户 C 盘迁移到项目 `.cache/bun-compile`，但 Bun 1.3.14 Windows 内部复制自身可执行文件时仍会经过对 Unicode 临时路径兼容不完整的底层逻辑。目录真实存在不代表 Bun 的内部临时文件 API 能正确处理中文路径。
+- Bun 修复：真实缓存仍固定在当前 checkout 的 `.cache/bun-compile/1.3.14`。仅当 Windows 编译缓存路径含非 ASCII 字符时，runner 动态扫描一个空闲盘符，用系统 `subst.exe` 将该 `.cache` 临时映射为 ASCII 路径；`bun.exe` staging、`BUN_TMPDIR/TMPDIR/TEMP/TMP` 与 compile outfile 都通过该别名访问。build 子进程退出后在 `finally` 中立即 `subst /D` 解除映射。没有固定 C:/D:/H:，没有把真实文件搬到系统 TEMP，最终 `dist/cli/xiaoyu.exe` 不依赖映射或 `.cache`。
+- Git/同步：`XMA-Sync.bat` 默认仍从源码包自身位置解析，不绑定盘符；目标名从固定两项扩展为 `xma`、`xma-worktree`、`xma-worktree-2..99` 自动选择。已有 `.git` 只有 origin 属于 `yubboo/xma`（或已有 Source Sync 状态）才视为可复用 XMA worktree；其他 Git/普通目录绝不覆盖。`XMA-GitHub.bat` 遇到错误 origin 改为拒绝执行，不再自动篡改其他仓库的 remote。
+- clone 边界：用户直接执行 `git clone ...` 时，如果当前目录已经有非空 `xma/XMA`，Git 会在任何 XMA 代码运行前拒绝覆盖；仓库本身无法改变 Git 这个安全规则。README/Windows Workflow 改为明确“已有正确仓库就 fetch/pull；冲突就指定任意新目录名；维护者源码包直接 XMA-Sync 动态选择 worktree”。
+- 回归：OpenTUI 定向测试锁定 `SUBST` Unicode alias、项目 `.cache` 真值与 `finally` 解除映射；Windows Gate 禁止 Bun runner 重新出现用户 TEMP fallback 或固定 C:/D:/H:。
+
+##34 · 标准 Git clone 恢复与 Bun Home 可选安装
+
+- 日期：2026-09-14
+- 目的：纠正上一批把 Git 目录冲突引导成 `xma-work/xma-worktree` 的错误方向，并让 Windows `[4/9] Bun 1.3.14 / OpenTUI Runtime` 与 Rust/Cargo 一样拥有真实、可持久化的安装位置选择；后续 `[4]`、`[7]` 与 CLI build 必须统一复用用户选择的 Runtime。
+- 标准 clone：公共源码流程重新锁死为 `git clone https://github.com/yubboo/xma.git` → `cd xma` → `.\xma-dev.bat`，不要求用户改 clone 目标名。Git 在父目录已有非空 `xma/XMA` 时会在任何仓库代码运行前拒绝覆盖；XMA 不能改写 Git 这个保护规则，但维护者脚本不再自动创建同级 `xma` 或 `xma-worktree-*` 制造冲突。`XMA-Sync.bat` 默认只复用已存在、origin 正确的 XMA Git 工作目录；没有目标时提示先执行标准 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
+- Bun 安装位置：Windows `[1]` 首次没有有效 Bun 配置时提供“当前用户工具目录 / D 盘 / 自定义目录”三种选择。成功后写入 User `XMA_BUN_HOME`，并保存 `.xma/state/bun-environment.json` 作为旧终端尚未继承 User 环境时的恢复备份；Bun 版本仍固定 1.3.14。
+- 真实恢复：`xma-console.ps1` 的 `[4]` / `[7]` 不再拼接 checkout `.xma/tools/bun/1.3.14/bun.exe`，而是通过 `xma-common.ps1` 从 User 环境/项目状态恢复 `XMA_BUN_HOME`，真实执行目标 `bun.exe --version` 后才继续。`scripts/cli/bun.ts` 同样读取 `XMA_BUN_HOME` / 项目状态，Windows 禁止因为 PATH 中碰巧存在另一个 Bun 而绕过用户选择；脚本根目录改由 `import.meta.url` 推导，不依赖调用者 cwd。
+- 旧状态迁移：若 0.1.0 早期项目内 `.xma/tools/bun/1.3.14/bun.exe` 仍完整，`[1]` 会先让用户选择新位置，再把旧 Runtime 迁移过去，不重复下载；迁移成功后清理旧项目内版本目录。若用户选择位置本身已有正确 Bun，则直接接管并记录。
+- 中文路径编译：上一批的项目 `.cache/bun-compile` + 单次动态 `SUBST` ASCII 别名继续保留，只解决 Bun 1.3.14 Windows `--compile` 对中文临时路径的 ENOENT；它不再承担 Bun 安装位置职责，真实 Runtime 来自 `XMA_BUN_HOME`，最终 `dist/cli/xiaoyu.exe` 不依赖 `.cache` 或 SUBST。
+- 回归：Windows Gate 增加 Bun Home 选择/持久化/恢复合同，OpenTUI runner 测试锁定 `XMA_BUN_HOME`、项目状态和脚本位置解析，同时禁止 runner 回退到固定 checkout `.xma/tools/bun`；版本继续保持 0.1.0。
+
+##35 · Source Sync 只复用真实仓库与根隐藏目录收口
+
+- 日期：2026-09-14
+- 目的：把维护者 Source Sync 最终收口到“识别/选择已有正确仓库”，不再把任何目录名、盘符或自动 worktree 创建当成流程；同时审计根目录 `.xxx` 条目，阻止无职责隐藏目录进入正式源码包。
+- Sync 目标：`XMA-Sync.bat` 未设置 `XMA_TARGET_ROOT` 时先扫描源码包同级目录。唯一一个 `origin` 属于 `yubboo/xma` 的仓库可直接复用；存在多个时显示编号列表让维护者选择；没有时要求输入一个已经通过标准 `git clone https://github.com/yubboo/xma.git` 建立的仓库路径。输入路径必须存在且 origin 正确；Sync 禁止 `git init`、禁止创建 `xma/xma-worktree-*`、禁止改写其他仓库 origin。
+- 显式目标：`XMA_TARGET_ROOT` 不再代表“允许 XMA 创建目标目录”，只允许指向一个已经存在、origin 正确的 XMA Git 仓库；错误路径或错误仓库直接 fail loud。
+- 根隐藏目录：当前源码架构需要的根隐藏目录只有 `.agents/.cargo/.claude/.codex/.github`；`.cargo` 控制 Cargo target 收敛，`.github` 承载 CI/Release，三套 AI 目录是项目开发适配层，均不是垃圾目录。正式源码包额外保留 `.xma-package/source-manifest.json` 作为同步元数据；长期 Git 工作目录不需要 `.xma-package`，旧版若遗留会在 Sync 后清理；`.xma/.cache/.pnpm-store/.npm/.yarn/.turbo` 等本地状态不得进入源码包。
+- Manifest：`source-manifest.ts` 新增根隐藏目录 allowlist，未知 `.xxx` 根目录即使本机存在也不会进入正式源码包；Architecture Gate 继续拒绝未知根源码条目。
+- 文档/Gate：README、Windows Workflow、AGENTS、Development Rules、XMA Development Skill 与 Windows Gate 同步新合同，禁止再次出现“自动识别/创建 worktree”或用 `xma-work*` 代替标准 clone 的流程。

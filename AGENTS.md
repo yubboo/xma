@@ -197,9 +197,9 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 
 ## 10. Windows 开发与源码引导流程（锁死）
 
-公共 Git clone / 源码开发入口必须与机器路径无关：Windows 使用根 `xma-dev.bat`，Linux/macOS 使用根 `xma-dev`；二者只能从自身位置解析仓库根，禁止硬编码 `H:`、用户目录或任意开发者机器绝对路径。源码开发入口必须带 `-dev`，不得占用安装后正式产品命令 `xma`。
+公共 Git clone / 源码开发入口必须与机器路径无关：Windows 标准流程固定为 `git clone https://github.com/yubboo/xma.git` → `cd xma` → `.\xma-dev.bat`，Linux/macOS 使用同一 clone 后 `./xma-dev`；入口只能从自身位置解析仓库根，禁止硬编码 `H:`、用户目录或任意开发者机器绝对路径。仓库/维护脚本不得要求用户把 clone 目标改名成 `xma-work`/`xma-worktree`。源码开发入口必须带 `-dev`，不得占用安装后正式产品命令 `xma`。
 
-维护者 Source Manifest 工作流也必须与盘符无关：`XMA-Sync.bat` 默认根据源码包所在位置自动识别/创建同级长期 Git 工作目录；`XMA_TARGET_ROOT` 仅用于显式覆盖。Git clone 用户不需要运行 `XMA-Sync.bat`。
+维护者 Source Manifest 工作流也必须与盘符无关：`XMA-Sync.bat` 只能复用**已经存在且 origin 正确**的 XMA Git 工作目录。默认先扫描源码包同级目录：唯一匹配直接复用，多匹配必须让维护者选择，零匹配必须要求手动输入已 clone 仓库路径；禁止自动创建同级 `xma` / `xma-worktree-*`、禁止 `git init`、禁止改写其他仓库 origin。`XMA_TARGET_ROOT` 仅用于显式指定一个已存在的正确仓库。Git clone 用户不需要运行 `XMA-Sync.bat`。
 
 源码包解压示例：
 
@@ -207,7 +207,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 
 固定流程：
 
-`XMA-Sync.bat` → 自动识别/创建同级长期 Git 工作目录 → `XMA-GitHub.bat` → `1. 一键推送`
+`git clone https://github.com/yubboo/xma.git`（准备长期 Git 工作目录）→ `XMA-Sync.bat` → `XMA-GitHub.bat` → `1. 一键推送`
 
 源码开发/构建：Windows 使用 `xma-dev.bat`；Linux/macOS 使用 `./xma-dev`。正式安装后的产品命令仍是 `xiaoyu` 主命令与 `xma` 兼容别名。
 
@@ -282,7 +282,8 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `esbuild` 是 Vite/tsx/tsup 的内部依赖，不要求根目录存在 `node_modules/.bin/esbuild`；禁止用 `pnpm exec esbuild` 作为通用环境验证。应通过 `tsx`/Vite/tsup 的真实调用验证其 Native Binary。
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
 - XMA 自己控制的开发/编译中间产物统一进入 `.cache/`：根 Rust 使用 `.cache/cargo-target/`，Tauri Rust 使用 `.cache/tauri-target/`，Desktop staging 使用 `.cache/desktop/`。正式可交付产物统一进入根 `dist/`。仓库根 `build/` / `target/` 与 `apps/desktop/dist|web|release|native` 只视为旧版遗留目录并应清理，禁止重新成为正常输出。
-- Bun/OpenTUI 单文件编译 staging 同样必须位于项目 `.cache/bun-compile/`；禁止默认使用 `%LOCALAPPDATA%\Temp`、`%TEMP%`、`%TMP%` 或其他用户系统临时目录承载 XMA 自己控制的编译状态。`.cache/` 可以随时删除并由后续构建重建；正式 `dist/cli/xiaoyu[.exe]` 不得依赖 `.cache` 或系统临时目录才能启动。
+- Bun/OpenTUI 单文件编译的**真实 staging 数据**必须位于项目 `.cache/bun-compile/`；禁止默认使用 `%LOCALAPPDATA%\Temp`、`%TEMP%`、`%TMP%` 或其他用户系统临时目录承载 XMA 自己控制的编译状态。Windows + 中文/特殊字符源码路径下，若 Bun 1.3.x 内部临时文件 API 无法处理 Unicode 路径，可以在单次 build 生命周期内用动态 `SUBST` 空闲盘符为该项目 `.cache` 建立 ASCII 路径别名；别名必须构建结束即解除、不得固定任何盘符、不得把真实文件复制到系统盘。`.cache/` 可以随时删除并由后续构建重建；正式 `dist/cli/xiaoyu[.exe]` 不得依赖 `.cache`、SUBST 或系统临时目录才能启动。
+- Windows `[1]` 的 Bun 1.3.14 必须与 Rust/Cargo 一样支持真实安装位置选择与恢复：首次缺失时提供当前用户工具目录、D 盘和自定义目录选项，成功后保存 User `XMA_BUN_HOME` 与项目本地恢复状态；`[4]`、`[7]`、`build:cli` 必须真实执行该位置的 `bun.exe --version` 后再运行。禁止再把仓库 `.xma/tools/bun` 当成固定 Runtime Home；旧项目内 Bun 只允许在 `[1]` 中作为一次迁移源。
 - `[1]` 的 Rust 准备必须包含 `[7]` 实际需要的 `rustfmt` 组件；`[7]` 必须在开始重型检查前离线预检 `cargo fmt --version`，缺失时立即提示重新运行 `[1]`，禁止在 `[7]` 临时联网安装组件。
 - `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
 

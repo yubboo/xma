@@ -22,6 +22,7 @@ const outputFile = join(outputDir, 'source-manifest.json')
 const ignoredAny = new Set(['.git', 'node_modules', '.cache', 'target', '__pycache__', '.turbo'])
 const ignoredRoot = new Set(['runtime', 'dist', 'build', 'release', '.xma', '.xma-package', 'coverage', 'tmp', 'temp'])
 const ignoredSuffixes = ['.log', '.tmp', '.bak', '.tsbuildinfo']
+const allowedRootHiddenDirectories = new Set(['.agents', '.cargo', '.claude', '.codex', '.github'])
 
 function normalize(path: string): string {
   return path.split(sep).join('/')
@@ -33,6 +34,7 @@ function shouldIgnore(relativePath: string, directory: boolean): boolean {
   if (parts.length === 0) return false
 
   if (ignoredRoot.has(parts[0]!)) return true
+  if (directory && parts.length === 1 && parts[0]!.startsWith('.') && !allowedRootHiddenDirectories.has(parts[0]!)) return true
   if (parts.some(part => ignoredAny.has(part))) return true
   if (parts.slice(0, 4).join('/') === 'apps/desktop/src-tauri/gen') return true
   if (directory && parts.some(part => part === 'dist' || part === 'build')) return true

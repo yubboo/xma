@@ -29,7 +29,7 @@
 - Terminal 主命令固定为 `xiaoyu`，`xma` 仅兼容；普通用户只安装预构建资产，installer 不得 clone 源码或要求 pnpm/cargo/MSVC。
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
-- 公共源码开发和维护者 Source Sync 都必须支持任意本地目录/盘符：Windows 使用 `xma-dev.bat`，Linux/macOS 使用 `./xma-dev`；`XMA-Sync.bat` 默认按源码包位置自动识别同级 Git 工作目录，`XMA_TARGET_ROOT` 只用于显式覆盖；源码开发入口与安装后的正式 `xma` 产品命令必须严格区分。
+- 公共源码开发和维护者 Source Sync 都必须支持任意本地目录/盘符：Windows canonical 流程固定 `git clone https://github.com/yubboo/xma.git` → `cd xma` → `.\xma-dev.bat`，Linux/macOS 同一 clone 后使用 `./xma-dev`；`XMA-Sync.bat` 只复用已存在、origin 正确的 XMA Git 工作目录；唯一候选可自动复用，多候选/无候选必须让维护者选择或输入已 clone 仓库路径，禁止自动创建 `xma/xma-worktree-*`，`XMA_TARGET_ROOT` 只用于显式指定现有仓库；源码开发入口与安装后的正式 `xma` 产品命令必须严格区分。
 - 命名遵循 XMA 统一规则：目录/TS 用小写 kebab-case，Rust 用 snake_case，`.` 只用于 test/config/d 等语义角色；普通名字 1～3 个核心词，父目录去重，同逻辑不碎拆，完成前运行 `pnpm gate:naming`。
 - 目录遵循 Feature Cluster / Predictable Location / Plugin Cohesion：适度分层、按真实功能聚合；能力 ownership 变化同步 `CODEMAP.md`。
 - 跨 `apps/agents/packages/plugins/core` ownership 只走稳定公共 package 入口，禁止 `../../` 及更深路径穿越，也禁止 `xma-*/src/...` 内部导入；workspace 依赖显式写 `workspace:*`。
@@ -41,5 +41,6 @@
 - 修改架构时同步文档和 Gate；目录/公共 package/Stable Import/阶段变化还必须追加 `UPDATE-LOG.md` 下一个 `##NN` 编号并更新 `CODEMAP.md`。
 - 未冻结 0.1.0 修正仍交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix/final/v2/new。
 
+- Windows `[1]` 的 Bun 1.3.14 必须支持用户选择安装位置并保存 `XMA_BUN_HOME`；`[4]/[7]/build:cli` 统一真实恢复并校验该 Runtime，禁止重新固定到 checkout `.xma/tools/bun`。
 - Windows `xma-dev.bat → [1]` 会把当前 checkout 的 `.xma/dev-bin` 注册到 User PATH；之后可在任意 Workspace 用 `xiaoyu` / `xma` 启动开发态 CLI。不得把整个仓库加入 PATH。
 - Terminal 没有已配置 Brain/Profile 时只在首次进入时自动打开 Provider 配置；已有 Profile 后不重复弹出，`Ctrl+P → Brain / Provider` 始终保留。
