@@ -5,6 +5,11 @@
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
+param(
+  [ValidateSet('all','bun','rust')]
+  [string]$Component = 'all'
+)
+
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
@@ -15,7 +20,7 @@ $BunVersion = '1.3.14'
 $OpenTuiVersion = '0.1.101'
 $SolidJsVersion = '1.9.11'
 $BunTypesVersion = '1.3.11'
-$PrepareStateRoot = Join-Path $Root '.xma\state\prepare'
+$PrepareStateRoot = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'prepare'
 
 function Get-XmaFingerprint([string[]]$Paths, [string]$Salt = '') {
   $lines = New-Object System.Collections.Generic.List[string]
@@ -132,23 +137,21 @@ function Ensure-XmaWinget {
 }
 
 
-function Select-XmaBunInstallRoot {
-  $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-  if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = Join-Path $env:USERPROFILE 'AppData\Local' }
-  $defaultRoot = Join-Path $localAppData 'XMA\Bun'
-  $driveD = 'D:\XMA\Bun'
+function Select-XmaDependencyRoot([string]$ComponentLabel) {
+  $defaultRoot = Get-XmaLocalPathRoot -ProjectRoot $Root
+  $driveDRoot = 'D:\xma-path'
 
   while ($true) {
     Write-Host ''
-    Write-Host '[Bun 安装位置] 未检测到已配置的 Bun Runtime，请选择安装位置：' -ForegroundColor Cyan
-    Write-Host "  [1] 当前用户工具目录        $defaultRoot" -ForegroundColor Green
-    Write-Host "  [2] D 盘                    $driveD" -ForegroundColor Gray
-    Write-Host '  [3] 自定义安装位置' -ForegroundColor Gray
+    Write-Host "[$ComponentLabel 安装位置] 请选择 XMA 依赖根目录：" -ForegroundColor Cyan
+    Write-Host "  [1] 跟随当前项目（推荐）  $defaultRoot" -ForegroundColor Green
+    Write-Host "  [2] D 盘                    $driveDRoot" -ForegroundColor Gray
+    Write-Host '  [3] 自定义盘符              输入 E / F / G 等真实盘符' -ForegroundColor Gray
     $choice = (Read-Host '请选择 [1]').Trim()
     if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
 
     if ($choice -eq '1') {
-      if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 当前用户工具目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 当前项目目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
       return $defaultRoot
     }
     if ($choice -eq '2') {
@@ -156,33 +159,27 @@ function Select-XmaBunInstallRoot {
         Write-Host '[不可用] 当前电脑没有 D: 盘，请选择 [1] 或 [3]。' -ForegroundColor Yellow
         continue
       }
-      if (-not (Test-XmaWritableDirectory $driveD)) { Write-Host '[不可用] D 盘目标目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
-      Write-Host "[提示] 已准备 $driveD，将在其中保存 Bun $BunVersion。" -ForegroundColor DarkCyan
-      return $driveD
+      if (-not (Test-XmaWritableDirectory $driveDRoot)) { Write-Host '[不可用] D 盘 xma-path 不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
+      return $driveDRoot
     }
     if ($choice -eq '3') {
-      $custom = (Read-Host '请输入 Bun 安装根目录，例如 E:\DevTools\XMA-Bun').Trim().Trim('"')
-      if ([string]::IsNullOrWhiteSpace($custom)) {
-        Write-Host '[提示] 自定义路径不能为空。' -ForegroundColor Yellow
+      $rawDrive = (Read-Host '请输入真实盘符，例如 E').Trim().Trim('"')
+      if ($rawDrive -notmatch '^[A-Za-z](?::)?(?:\\)?$') {
+        Write-Host '[提示] 这里只需要输入盘符，例如 E 或 E:。' -ForegroundColor Yellow
         continue
       }
-      try { $resolved = [IO.Path]::GetFullPath($custom) } catch {
-        Write-Host '[提示] 路径格式无效，请重新输入。' -ForegroundColor Yellow
+      $driveLetter = $rawDrive.Substring(0,1).ToUpperInvariant()
+      $driveRoot = "${driveLetter}:\\"
+      if (-not (Test-Path -LiteralPath $driveRoot -PathType Container)) {
+        Write-Host "[不可用] 没有检测到 $driveRoot，请输入这台电脑真实存在的盘符。" -ForegroundColor Yellow
         continue
       }
-      if (-not (Test-XmaWritableDirectory $resolved)) { Write-Host '[不可用] 自定义目标目录不可写，请重新选择。' -ForegroundColor Yellow; continue }
-      Write-Host "[提示] 已准备 $resolved，将在其中保存 Bun $BunVersion。" -ForegroundColor DarkCyan
-      return $resolved
+      $customRoot = Join-Path $driveRoot 'xma-path'
+      if (-not (Test-XmaWritableDirectory $customRoot)) { Write-Host "[不可用] $customRoot 不可写，请重新选择。" -ForegroundColor Yellow; continue }
+      return $customRoot
     }
     Write-Host '请输入 1、2 或 3。' -ForegroundColor Yellow
   }
-}
-
-function Save-XmaBunHome([string]$BunHome) {
-  $normalized = [IO.Path]::GetFullPath($BunHome)
-  $env:XMA_BUN_HOME = $normalized
-  [Environment]::SetEnvironmentVariable('XMA_BUN_HOME', $normalized, 'User')
-  Save-XmaBunEnvironmentState -ProjectRoot $Root -BunHome $normalized -Version $BunVersion
 }
 
 function Test-XmaBunExecutable([string]$Executable) {
@@ -191,52 +188,88 @@ function Test-XmaBunExecutable([string]$Executable) {
   return ($probe.ExitCode -eq 0) -and (($probe.Output -join ' ').Trim() -eq $BunVersion)
 }
 
-function Install-XmaBunRuntime {
-  # 中文说明：Bun 与 Rust 一样由 `[1]` 记录真实安装位置。以后 `[4]/[7]/build:cli` 都只复用这个配置，
-  # 不再把仓库 `.xma/tools/bun` 当成固定 Runtime Home，避免移动 U 盘/仓库后把旧盘符误当依赖真值。
+function Save-XmaBunHome([string]$BunHome) {
+  $normalized = [IO.Path]::GetFullPath($BunHome)
+  $env:XMA_BUN_HOME = $normalized
+  Save-XmaBunEnvironmentState -ProjectRoot $Root -BunHome $normalized -Version $BunVersion
+  # 中文说明：0.1.0 早期曾把 Bun Home 写入 User 环境。现在 checkout 自己的 xma-path/state 才是权威，
+  # 避免移动 U 盘/切换仓库后旧绝对路径继续污染新终端。
+  [Environment]::SetEnvironmentVariable('XMA_BUN_HOME', $null, 'User')
+}
+
+function Move-XmaLegacyBunToProjectDefault {
+  $legacyExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
+  if (-not (Test-XmaBunExecutable $legacyExe)) { return $null }
+
+  $bunHome = Get-XmaDefaultBunHome -ProjectRoot $Root
+  $targetRoot = Join-Path $bunHome $BunVersion
+  $bunExe = Join-Path $targetRoot 'bun.exe'
+  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
+  Write-Host "[迁移] 检测到旧版项目内 Bun $BunVersion；正在迁移到 $bunHome，不重复下载。" -ForegroundColor Yellow
+  Copy-Item -LiteralPath $legacyExe -Destination $bunExe -Force
+  if (-not (Test-XmaBunExecutable $bunExe)) { throw "旧 Bun 迁移后校验失败：$bunExe" }
+  Save-XmaBunHome -BunHome $bunHome
+  Remove-Item -LiteralPath (Join-Path $Root '.xma\tools\bun') -Recurse -Force -ErrorAction SilentlyContinue
+  return [pscustomobject]@{ BunHome = $bunHome; BunExe = $bunExe; Version = $BunVersion; Source = 'legacy-checkout-migration' }
+}
+
+function Install-XmaBunRuntime([switch]$PromptIfMissing) {
+  # 先恢复已经配置的 Runtime；只要真实 `bun.exe --version` 通过，就绝不重复安装。
   $existing = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
   if ($existing) {
+    # 旧 state/User env 可能仍把 Bun 指回当前 checkout 的 `.xma/tools/bun`。即使真实可执行，也必须先迁移，不能把旧目录重新保存成 external Home。
+    $legacyBunHome = [IO.Path]::GetFullPath((Join-Path $Root '.xma\tools\bun'))
+    $existingHome = [IO.Path]::GetFullPath($existing.BunHome)
+    if ($existingHome -ieq $legacyBunHome) {
+      $migratedExisting = Move-XmaLegacyBunToProjectDefault
+      if (-not $migratedExisting) { throw '检测到旧 .xma Bun 状态，但迁移校验失败。' }
+      Write-Host "[通过] Bun $BunVersion 已从旧 .xma 自动迁移到项目 xma-path。" -ForegroundColor Green
+      return $migratedExisting.BunExe
+    }
+
+    Save-XmaBunHome -BunHome $existing.BunHome
     Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "[缓存] Bun $($existing.Version) · 已按 `[1]` 配置位置恢复，跳过重复下载。" -ForegroundColor DarkCyan
-    Write-Host "[位置] XMA_BUN_HOME=$($existing.BunHome)" -ForegroundColor DarkGray
+    Write-Host "[缓存] Bun $($existing.Version) 已安装并通过真实校验，跳过重复安装。" -ForegroundColor DarkCyan
+    Write-Host "[位置] $($existing.BunHome)" -ForegroundColor DarkGray
     Write-Host "[运行时] $($existing.BunExe)" -ForegroundColor DarkGray
     return $existing.BunExe
   }
 
-  $installRoot = Select-XmaBunInstallRoot
-  $targetRoot = Join-Path $installRoot $BunVersion
+  # 旧 `.xma/tools/bun` 是 0.1.0 早期设计。存在时自动迁移到项目默认 xma-path，不让用户再次选位置/下载。
+  $migrated = Move-XmaLegacyBunToProjectDefault
+  if ($migrated) {
+    Write-Host "[通过] Bun $BunVersion 已迁移到项目 xma-path。" -ForegroundColor Green
+    return $migrated.BunExe
+  }
+
+  if ($PromptIfMissing) {
+    Write-Host '[缺少] 当前没有可用 Bun/OpenTUI Runtime。' -ForegroundColor Yellow
+    if (-not (Confirm-XmaAction "是否安装 Bun $BunVersion / OpenTUI Runtime？选择 N 会跳过，可稍后在主菜单 [8] 单独安装。")) {
+      Write-Host '[跳过] Bun/OpenTUI Runtime 未安装；Web/Desktop 的通用 JS 依赖仍会继续准备。' -ForegroundColor Yellow
+      return $null
+    }
+  }
+
+  $dependencyRoot = Select-XmaDependencyRoot -ComponentLabel 'Bun / OpenTUI Runtime'
+  $bunHome = Join-Path $dependencyRoot 'bun'
+  $targetRoot = Join-Path $bunHome $BunVersion
   $bunExe = Join-Path $targetRoot 'bun.exe'
   New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
 
-  # 0.1.0 早期把 Bun 固定放在 checkout `.xma/tools`。升级后如果旧 Runtime 仍完整，直接迁移到用户新选位置，避免重复下载。
-  $legacyExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
-  $migrated = $false
-  $runtimeReady = Test-XmaBunExecutable $bunExe
-  if ($runtimeReady) {
-    Write-Host "[发现] 你选择的位置已经存在可用 Bun $BunVersion，将直接接管并记录该 Runtime。" -ForegroundColor DarkCyan
-  } elseif (Test-XmaBunExecutable $legacyExe) {
-    $legacyFull = [IO.Path]::GetFullPath($legacyExe)
-    $targetFull = [IO.Path]::GetFullPath($bunExe)
-    if ($legacyFull -ine $targetFull) {
-      Write-Host "[迁移] 检测到旧项目内 Bun $BunVersion，正在复制到你选择的位置；不会重新下载。" -ForegroundColor Yellow
-      Copy-Item -LiteralPath $legacyExe -Destination $bunExe -Force
-    }
-    $migrated = $true
-    $runtimeReady = $true
-  }
-
-  $cacheRoot = Join-Path $Root '.cache\bun'
-  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-  $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
-  $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
-  $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
-
-  if (-not $runtimeReady) {
+  if (Test-XmaBunExecutable $bunExe) {
+    Write-Host "[发现] 目标位置已经存在可用 Bun $BunVersion，直接接管，不重复下载。" -ForegroundColor DarkCyan
+  } else {
+    $cacheRoot = Join-Path $Root '.cache\bun'
+    $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+    $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
+    $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
+    $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
     if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
     $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
-    Write-Host "[下载] 正在准备固定 Bun $BunVersion（OpenTUI Runtime）..." -ForegroundColor Yellow
-    Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
+    Write-Host "[下载] 正在准备固定 Bun $BunVersion（Xiaoyu OpenTUI Runtime）..." -ForegroundColor Yellow
+    Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
+    Write-Host "[安装位置] $bunHome" -ForegroundColor Cyan
     Write-Host "[来源] $url" -ForegroundColor DarkGray
     try {
       Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
@@ -245,29 +278,19 @@ function Install-XmaBunRuntime {
       if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
       Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
     } finally {
-      # Bun ZIP/解压目录只是一次性安装介质；真实 Runtime 已进入用户选定的 XMA_BUN_HOME 后立即清理项目下载缓存。
       Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
 
-  if (-not (Test-XmaBunExecutable $bunExe)) { throw "Bun $BunVersion 安装/迁移后真实执行校验失败：$bunExe" }
-  Save-XmaBunHome -BunHome $installRoot
-
-  if ($migrated) {
-    $legacyRoot = [IO.Path]::GetFullPath((Join-Path $Root ".xma\tools\bun\$BunVersion"))
-    $selectedRoot = [IO.Path]::GetFullPath($targetRoot)
-    if ($legacyRoot -ine $selectedRoot) {
-      Remove-Item -LiteralPath $legacyRoot -Recurse -Force -ErrorAction SilentlyContinue
-    }
-  }
-  Remove-Item -LiteralPath $cacheRoot -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not (Test-XmaBunExecutable $bunExe)) { throw "Bun $BunVersion 安装后真实执行校验失败：$bunExe" }
+  Save-XmaBunHome -BunHome $bunHome
+  Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
   Write-Host "[通过] Bun $BunVersion · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
-  Write-Host "[位置] XMA_BUN_HOME=$installRoot" -ForegroundColor DarkGray
+  Write-Host "[位置] $bunHome" -ForegroundColor DarkGray
   Write-Host "[运行时] $bunExe" -ForegroundColor DarkGray
   return $bunExe
 }
-
 
 function Test-XmaOpenTuiDependencies([string]$RuntimeRoot) {
   $expected = @{
@@ -335,74 +358,21 @@ function Test-XmaWritableDirectory([string]$Path) {
   }
 }
 
-function Select-XmaRustInstallRoot {
-  $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
-  if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = Join-Path $env:USERPROFILE 'AppData\Local' }
-  $defaultRoot = Join-Path $localAppData 'XMA\Rust'
-  $driveD = 'D:\XMA\Rust'
-
-  while ($true) {
-    Write-Host ''
-    Write-Host '[Rust 安装位置] 未检测到可用的 stable toolchain，请选择安装位置：' -ForegroundColor Cyan
-    Write-Host "  [1] 系统盘默认位置（推荐）  $defaultRoot" -ForegroundColor Green
-    Write-Host "  [2] D 盘                    $driveD" -ForegroundColor Gray
-    Write-Host '  [3] 自定义安装位置' -ForegroundColor Gray
-    $choice = (Read-Host '请选择 [1]').Trim()
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
-
-    if ($choice -eq '1') {
-      if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 系统盘默认目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
-      return $defaultRoot
-    }
-    if ($choice -eq '2') {
-      if (-not (Test-Path -LiteralPath 'D:\' -PathType Container)) {
-        Write-Host '[不可用] 当前电脑没有 D: 盘，请选择 [1] 或 [3]。' -ForegroundColor Yellow
-        continue
-      }
-      if (-not (Test-XmaWritableDirectory $driveD)) { Write-Host '[不可用] D 盘目标目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
-      Write-Host "[提示] 已准备 $driveD，将在其中保存 rustup / cargo。" -ForegroundColor DarkCyan
-      return $driveD
-    }
-    if ($choice -eq '3') {
-      $custom = (Read-Host '请输入 Rust 安装根目录，例如 E:\DevTools\XMA-Rust').Trim().Trim('"')
-      if ([string]::IsNullOrWhiteSpace($custom)) {
-        Write-Host '[提示] 自定义路径不能为空。' -ForegroundColor Yellow
-        continue
-      }
-      try { $resolved = [IO.Path]::GetFullPath($custom) } catch {
-        Write-Host '[提示] 路径格式无效，请重新输入。' -ForegroundColor Yellow
-        continue
-      }
-      if (-not (Test-XmaWritableDirectory $resolved)) { Write-Host '[不可用] 自定义目标目录不可写，请重新选择。' -ForegroundColor Yellow; continue }
-      Write-Host "[提示] 已准备 $resolved，将在其中保存 rustup / cargo。" -ForegroundColor DarkCyan
-      return $resolved
-    }
-    Write-Host '请输入 1、2 或 3。' -ForegroundColor Yellow
-  }
-}
-
 function Set-XmaRustHomes([string]$InstallRoot) {
   $rustupHome = Join-Path $InstallRoot 'rustup'
   $cargoHome = Join-Path $InstallRoot 'cargo'
   New-Item -ItemType Directory -Force -Path $rustupHome | Out-Null
   New-Item -ItemType Directory -Force -Path $cargoHome | Out-Null
-
-  # 先只作用于当前安装进程；只有 rustup-init + 校验真正成功后，才持久化 User 环境，避免失败安装污染后续终端。
   $env:RUSTUP_HOME = $rustupHome
   $env:CARGO_HOME = $cargoHome
   $cargoBin = Join-Path $cargoHome 'bin'
+  Add-XmaProcessPathFront -Directory $cargoBin
   return [pscustomobject]@{ Root = $InstallRoot; RustupHome = $rustupHome; CargoHome = $cargoHome; CargoBin = $cargoBin }
 }
 
-function Save-XmaRustHomes($Homes) {
-  [Environment]::SetEnvironmentVariable('RUSTUP_HOME', $Homes.RustupHome, 'User')
-  [Environment]::SetEnvironmentVariable('CARGO_HOME', $Homes.CargoHome, 'User')
-  [void](Add-XmaUserPathEntry $Homes.CargoBin)
-  Refresh-XmaPath
-}
-
 function Install-XmaRustStable {
-  $installRoot = Select-XmaRustInstallRoot
+  $dependencyRoot = Select-XmaDependencyRoot -ComponentLabel 'Rust / Cargo'
+  $installRoot = Join-Path $dependencyRoot 'rust'
   $homes = Set-XmaRustHomes $installRoot
   $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
   $triple = if ($arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
@@ -413,7 +383,8 @@ function Install-XmaRustStable {
   $checksumUrl = "$url.sha256"
   New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
-  Write-Host "[安装位置] $($homes.Root)" -ForegroundColor Cyan
+  Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
+  Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
   Write-Host "[下载] 正在下载 Rust 官方 rustup-init（$triple）..." -ForegroundColor Yellow
   Write-Host "[来源] $url" -ForegroundColor DarkGray
   try {
@@ -431,20 +402,125 @@ function Install-XmaRustStable {
 
   $rustupExe = Join-Path $homes.CargoBin 'rustup.exe'
   if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw "Rust 安装完成但未找到 rustup：$rustupExe" }
-  Save-XmaRustHomes $homes
+  Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
   Push-Location $Root
-  try {
-    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable')
-  } finally {
-    Pop-Location
+  try { Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable') } finally { Pop-Location }
+  Write-Host "[完成] Rust stable 已安装：$installRoot" -ForegroundColor Green
+  return (Import-XmaRustEnvironment -ProjectRoot $Root)
+}
+
+function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
+  $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
+  $rustReady = $false
+  if ($runtime) {
+    $rustProbe = Invoke-XmaProbe -FilePath $runtime.RustcExe -ArgumentList @('--version')
+    $cargoProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('--version')
+    $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
   }
-  Write-Host "[完成] Rust stable 已安装：$($homes.Root)" -ForegroundColor Green
+
+  # 兼容用户电脑上已经存在但尚未写入 xma-path/state 的 Rust。只要真实探针通过，就接管并保存位置，不重复安装。
+  if (-not $rustReady) {
+    $rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
+    $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
+    if ($rustcCommand -and $cargoCommand) {
+      $rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
+      $cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
+      if ($rustProbe.ExitCode -eq 0 -and $cargoProbe.ExitCode -eq 0) {
+        $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
+        $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User') }
+        Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $cargoHome -RustupHome $rustupHome
+        $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
+        $rustReady = $null -ne $runtime
+      }
+    }
+  }
+
+  if (-not $rustReady) {
+    if ($PromptIfMissing) {
+      Write-Host '[缺少] 当前没有可实际运行的 Rust stable / Cargo。' -ForegroundColor Yellow
+      if (-not (Confirm-XmaAction '是否安装 Rust / Cargo？选择 N 会跳过，可稍后在主菜单 [9] 单独安装。')) {
+        Write-Host '[跳过] Rust/Cargo 未安装；与 Rust 无关的 JavaScript 环境会继续准备。' -ForegroundColor Yellow
+        return $null
+      }
+    }
+    $runtime = Install-XmaRustStable
+    if (-not $runtime) { throw 'Rust 安装完成后仍无法恢复运行环境。' }
+  }
+
+  $rustProbe = Invoke-XmaProbe -FilePath $runtime.RustcExe -ArgumentList @('--version')
+  $cargoProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('--version')
+  if ($rustProbe.ExitCode -ne 0) { throw "rustc toolchain 仍不可用：$($rustProbe.Output -join ' ')" }
+  if ($cargoProbe.ExitCode -ne 0) { throw "cargo toolchain 仍不可用：$($cargoProbe.Output -join ' ')" }
+  Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $runtime.CargoHome -RustupHome $runtime.RustupHome
+  Write-Host "[通过] $((($rustProbe.Output -join ' ').Trim()))" -ForegroundColor Green
+  Write-Host "[通过] $((($cargoProbe.Output -join ' ').Trim()))" -ForegroundColor Green
+
+  $rustupExe = Join-Path (Join-Path $runtime.CargoHome 'bin') 'rustup.exe'
+  $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
+  if ($rustfmtProbe.ExitCode -ne 0) {
+    if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且当前 Rust Home 没有 rustup.exe。' }
+    Write-Host '[缺少] 未检测到 rustfmt；正在为当前 XMA Rust Home 安装 rustfmt 组件...' -ForegroundColor Yellow
+    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable')
+    $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
+    if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
+  }
+  Write-Host "[通过] $((($rustfmtProbe.Output -join ' ').Trim()))" -ForegroundColor Green
+  Write-Host "[位置] RUSTUP_HOME=$($runtime.RustupHome) · CARGO_HOME=$($runtime.CargoHome)" -ForegroundColor DarkGray
+  return $runtime
+}
+
+function Ensure-XmaMsvc {
+  Write-Host '[检查] 正在检查 Windows C++ 编译与链接工具...' -ForegroundColor DarkCyan
+  $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+  $msvcReady = $false
+  if (Test-Path $vswhere) {
+    $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    $msvcReady = [bool]$install
+  }
+  if ($msvcReady) { Write-Host '[通过] Visual Studio C++ Build Tools 已安装。' -ForegroundColor Green; return }
+
+  Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools（Rust MSVC 链接器需要）。' -ForegroundColor Yellow
+  if (-not (Confirm-XmaAction '是否自动安装 Visual Studio 2022 Build Tools + C++ Toolchain？')) {
+    throw 'Windows Rust Native 构建需要 MSVC C++ Build Tools。可稍后在主菜单 [9] 重新准备 Rust/Cargo。'
+  }
+  Ensure-XmaWinget
+  Write-Host '[安装] 正在安装 Visual Studio 2022 Build Tools + C++ Toolchain，这一步可能需要几分钟...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @(
+    'install','--id','Microsoft.VisualStudio.2022.BuildTools','--exact',
+    '--accept-source-agreements','--accept-package-agreements',
+    '--override','--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+  )
+  Write-Host '[完成] Visual Studio C++ Build Tools 安装命令已完成。' -ForegroundColor Green
+}
+
+function Ensure-XmaCargoCrates($RustRuntime) {
+  Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
+  $cargoFingerprint = Get-XmaCargoDependencyFingerprint
+  $cargoHome = $RustRuntime.CargoHome
+  $cargoStampReady = Test-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  if ($cargoStampReady) {
+    Write-Host '[校验] Cargo 指纹未变化；仍验证实际 crate 缓存，防止 Cargo Home 被清理后产生假命中。' -ForegroundColor DarkCyan
+  } else {
+    Write-Host '[校验] Cargo 配置或依赖指纹发生变化，正在离线验证当前 crate 缓存...' -ForegroundColor DarkCyan
+  }
+  if (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $RustRuntime.CargoExe) {
+    Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+    Write-Host "[缓存] 当前 Rust crates 已完整并通过 offline 验证：CARGO_HOME=$cargoHome" -ForegroundColor DarkCyan
+    return
+  }
+  Write-Host "[同步] 当前 CARGO_HOME 缺少 Cargo.lock 所需 crates：$cargoHome" -ForegroundColor Yellow
+  Write-Host '[同步] 准备入口允许联网，现在开始 cargo fetch --locked...' -ForegroundColor Yellow
+  Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')
+  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $RustRuntime.CargoExe)) {
+    throw "Rust crates 下载后仍无法离线解析。请检查 CARGO_HOME/网络/代理：$cargoHome"
+  }
+  Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
+  Write-Host '[验证] cargo fetch 完成后 offline 复检通过。' -ForegroundColor DarkCyan
 }
 
 function Install-XmaDevelopmentCommands {
-  # 中文说明：不把整个 Git 仓库加入 PATH，避免把维护脚本/其他文件都暴露为全局命令。
-  # 只生成忽略提交的 .xma\dev-bin shim；它们始终回到当前 checkout 的 xma-dev.bat，并保留用户调用命令时的 Workspace。
-  $devBin = Join-Path $Root '.xma\dev-bin'
+  # 开发 shim 也收敛到 xma-path，不再创建 `.xma`。这里只把 dev-bin 写入 User PATH，不把整个仓库加入 PATH。
+  $devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'
   New-Item -ItemType Directory -Force -Path $devBin | Out-Null
   $launcher = @'
 @echo off
@@ -466,8 +542,9 @@ exit /b %ERRORLEVEL%
   foreach ($entry in $userEntries) {
     $normalized = Get-XmaNormalizedPath $entry
     if ($normalized -ieq $normalizedDevBin) { continue }
-    # 一个开发账号只激活一个 XMA checkout 的 xiaoyu/xma 开发 shim；旧 checkout 的 dev-bin 自动退出 PATH，避免命令指向错误仓库。
+    # 同一用户只激活一个 XMA checkout；同时清掉 0.1.0 早期 `.xma/dev-bin` 与旧 checkout 的 xma-path/dev-bin。
     if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
+    if ($normalized -match '(?i)[\\/]xma-path[\\/]dev-bin$') { continue }
     $nextUserEntries += $entry
   }
   $nextUserPath = ($nextUserEntries -join ';')
@@ -475,37 +552,116 @@ exit /b %ERRORLEVEL%
   if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }
 
   $processEntries = @(Get-XmaPathEntries $env:Path)
-  if (-not ($processEntries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedDevBin })) {
-    $env:Path = "$devBin;$env:Path"
-  }
-  if ($pathChanged -or $shimChanged) {
-    Write-Host "[更新] 开发态 xiaoyu / xma shim 或 User PATH 已同步。" -ForegroundColor Green
-  } else {
-    Write-Host "[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。" -ForegroundColor DarkCyan
-  }
+  if (-not ($processEntries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedDevBin })) { $env:Path = "$devBin;$env:Path" }
+  if ($pathChanged -or $shimChanged) { Write-Host '[更新] 开发态 xiaoyu / xma shim 或 User PATH 已同步。' -ForegroundColor Green }
+  else { Write-Host '[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。' -ForegroundColor DarkCyan }
   Write-Host "[位置] $devBin" -ForegroundColor DarkGray
-  Write-Host '[说明] 这是当前源码 checkout 的开发 shim；移动仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
+  Write-Host '[说明] 移动/重命名仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
 }
+
+function Remove-XmaLegacyLocalDirectory {
+  $legacyRoot = Join-Path $Root '.xma'
+  if (-not (Test-Path -LiteralPath $legacyRoot -PathType Container)) { return }
+  # Source Sync 旧状态由 XMA-Sync.bat 自己迁移，准备器只清理开发环境旧目录，避免误删维护者同步记录。
+  foreach ($legacy in @(
+    (Join-Path $legacyRoot 'tools'),
+    (Join-Path $legacyRoot 'dev-bin'),
+    (Join-Path $legacyRoot 'state\prepare'),
+    (Join-Path $legacyRoot 'state\bun-environment.json'),
+    (Join-Path $legacyRoot 'state\rust-environment.json')
+  )) { Remove-Item -LiteralPath $legacy -Recurse -Force -ErrorAction SilentlyContinue }
+  try {
+    $children = @(Get-ChildItem -LiteralPath $legacyRoot -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) { Remove-Item -LiteralPath $legacyRoot -Force -ErrorAction SilentlyContinue }
+  } catch {}
+}
+
+function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
+  $sourceRuntimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
+  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($BunExecutable))
+  $bunHome = Split-Path -Parent $bunVersionDir
+  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
+  $targetNodeModules = Join-Path $openTuiHome 'node_modules'
+  $sourceNodeModules = Join-Path $sourceRuntimeRoot 'node_modules'
+  $sourcePackage = Join-Path $sourceRuntimeRoot 'package.json'
+  $sourceBunfig = Join-Path $sourceRuntimeRoot 'bunfig.toml'
+
+  New-Item -ItemType Directory -Force -Path $openTuiHome | Out-Null
+  # 依赖实体目录保留固定 package/bunfig 元数据，便于后续版本校验和独立补装；源码仍是 canonical source。
+  Copy-Item -LiteralPath $sourcePackage -Destination (Join-Path $openTuiHome 'package.json') -Force
+  if (Test-Path -LiteralPath $sourceBunfig -PathType Leaf) { Copy-Item -LiteralPath $sourceBunfig -Destination (Join-Path $openTuiHome 'bunfig.toml') -Force }
+
+  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
+    # 0.1.0 早期把 OpenTUI dependency island 实体放在源码目录 node_modules；如果它已经完整，先复制到新的 xma-path，避免重复联网安装。
+    $sourceItem = Get-Item -LiteralPath $sourceNodeModules -Force -ErrorAction SilentlyContinue
+    $sourceIsPhysical = $sourceItem -and (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
+    if ($sourceIsPhysical -and (Test-XmaOpenTuiDependencies $sourceRuntimeRoot)) {
+      Write-Host "[迁移] 检测到旧版 OpenTUI 本地依赖；正在迁移到 $openTuiHome，不重复下载。" -ForegroundColor Yellow
+      if (Test-Path -LiteralPath $targetNodeModules -PathType Container) { Remove-Item -LiteralPath $targetNodeModules -Recurse -Force }
+      Copy-Item -LiteralPath $sourceNodeModules -Destination $targetNodeModules -Recurse -Force
+    }
+  }
+
+  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
+    Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
+    Write-Host "[安装位置] $openTuiHome" -ForegroundColor Cyan
+    Push-Location $openTuiHome
+    try { Invoke-XmaExternal -FilePath $BunExecutable -ArgumentList @('install','--no-save') } finally { Pop-Location }
+  }
+
+  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) { throw "Xiaoyu OpenTUI 依赖准备后版本仍不完整：$openTuiHome" }
+  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
+    throw "OpenTUI 依赖已准备，但无法把源码 Runtime 连接到 xma-path：$openTuiHome"
+  }
+  if (-not (Test-XmaOpenTuiDependencies $sourceRuntimeRoot)) { throw 'OpenTUI 依赖链接建立后仍无法从源码 Runtime 解析。' }
+
+  Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Solid $SolidJsVersion + Bun $BunVersion。" -ForegroundColor Green
+  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
+}
+
+function Prepare-XmaBunOnly {
+  Write-Host '====================================================================' -ForegroundColor DarkCyan
+  Write-Host '  XMA · 单独安装 Bun / OpenTUI Runtime' -ForegroundColor Cyan
+  Write-Host '====================================================================' -ForegroundColor DarkCyan
+  $bunExe = Install-XmaBunRuntime
+  Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe
+  Remove-XmaLegacyLocalDirectory
+  Write-Host '[完成] Bun / OpenTUI Runtime 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
+}
+
+function Prepare-XmaRustOnly {
+  Write-Host '====================================================================' -ForegroundColor DarkCyan
+  Write-Host '  XMA · 单独安装 Rust / Cargo' -ForegroundColor Cyan
+  Write-Host '====================================================================' -ForegroundColor DarkCyan
+  $rustRuntime = Ensure-XmaRustToolchain
+  Write-Host '[MSVC] 正在准备 Rust Native 构建所需 Windows C++ Toolchain...' -ForegroundColor Cyan
+  Ensure-XmaMsvc
+  Write-Host '[Crates] 正在准备 XMA Native Rust crates...' -ForegroundColor Cyan
+  Ensure-XmaCargoCrates -RustRuntime $rustRuntime
+  Remove-XmaLegacyLocalDirectory
+  Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
+}
+
+if ($Component -eq 'bun') { Prepare-XmaBunOnly; exit 0 }
+if ($Component -eq 'rust') { Prepare-XmaRustOnly; exit 0 }
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：会安装 Workspace JavaScript 依赖、可选择安装位置的固定 Bun/OpenTUI Runtime、esbuild Native Binary 与 XMA Native Rust crates。' -ForegroundColor DarkGray
+Write-Host '说明：Bun/OpenTUI 与 Rust/Cargo 如果尚未安装，会先询问 Y/N；选择 N 只跳过对应组件，不中断其余准备。' -ForegroundColor DarkGray
+Write-Host '说明：默认依赖根跟随当前项目的 xma-path；不会主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。' -ForegroundColor DarkGray
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
-# 中文说明：先刷新当前进程 PATH，确保新电脑刚安装到 User/Machine PATH 的工具无需重开终端即可被发现。
 Refresh-XmaPath
 
 Write-Host '[1/9] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
-if (Get-Command git.exe -ErrorAction SilentlyContinue) {
-  Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green
-} else {
+if (Get-Command git.exe -ErrorAction SilentlyContinue) { Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green }
+else {
   Write-Host '[缺少] 当前没有检测到 Git。' -ForegroundColor Yellow
   if (-not (Confirm-XmaAction '是否自动下载并安装 Git？')) { throw 'Git 是 XMA 开发与推送流程的必要依赖。' }
   Ensure-XmaWinget
-  Write-Host '[安装] 正在通过 winget 下载并安装 Git...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
   if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw 'Git 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
@@ -519,7 +675,6 @@ if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js。' -ForegroundColor Yellow
   if (-not (Confirm-XmaAction '是否自动下载并安装 Node.js LTS？')) { throw 'Node.js 22+ 是 XMA TypeScript Runtime 的必要依赖。' }
   Ensure-XmaWinget
-  Write-Host '[安装] 正在通过 winget 下载并安装 Node.js LTS...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
 }
@@ -530,23 +685,18 @@ if ($major -lt 22) {
   Write-Host "[过旧] 当前 $nodeVersion，XMA 要求 Node.js 22+。" -ForegroundColor Yellow
   if (-not (Confirm-XmaAction '是否通过 winget 自动升级 Node.js LTS？')) { throw 'Node.js 版本不足。' }
   Ensure-XmaWinget
-  Write-Host '[升级] 正在升级 Node.js LTS...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
-  $nodeVersion = (& node.exe --version).Trim()
-  $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
-  if ($major -lt 22) { throw "Node.js 升级后仍低于 22：$nodeVersion。请重新打开终端后重试。" }
+  $nodeVersion = (& node.exe --version).Trim(); $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
+  if ($major -lt 22) { throw "Node.js 升级后仍低于 22：$nodeVersion。" }
 }
 Write-Host "[通过] Node.js $nodeVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[3/9] pnpm 11.17.0' -ForegroundColor Cyan
-Write-Host '[检查] 正在检查 pnpm 版本...' -ForegroundColor DarkCyan
 $pnpmVersion = if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) { (& pnpm.cmd --version).Trim() } else { '' }
 if ($pnpmVersion -ne '11.17.0') {
-  if ($pnpmVersion) { Write-Host "[调整] 当前 pnpm $pnpmVersion，项目固定使用 11.17.0。" -ForegroundColor Yellow }
-  else { Write-Host '[缺少] 当前没有检测到 pnpm。' -ForegroundColor Yellow }
-  Write-Host '[安装] 正在通过 npm 安装 pnpm 11.17.0...' -ForegroundColor Yellow
+  if ($pnpmVersion) { Write-Host "[调整] 当前 pnpm $pnpmVersion，项目固定使用 11.17.0。" -ForegroundColor Yellow } else { Write-Host '[缺少] 当前没有检测到 pnpm。' -ForegroundColor Yellow }
   Invoke-XmaExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
   Refresh-XmaPath
 }
@@ -556,120 +706,17 @@ Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[4/9] Bun 1.3.14 / OpenTUI Runtime' -ForegroundColor Cyan
-Write-Host '[检查] 正在恢复或准备 Xiaoyu OpenTUI 使用的 Bun Runtime（安装位置由用户选择）...' -ForegroundColor DarkCyan
-$bunExe = Install-XmaBunRuntime
+Write-Host '[检查] 正在真实恢复已安装 Bun；不存在时才询问是否安装。' -ForegroundColor DarkCyan
+$bunExe = Install-XmaBunRuntime -PromptIfMissing
 
 Write-Host ''
 Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
-Write-Host '[检查] 正在真实验证 Rust stable toolchain、rustc 与 Cargo...' -ForegroundColor DarkCyan
-Refresh-XmaPath
+Write-Host '[检查] 正在真实恢复 Rust stable / Cargo；不存在时才询问是否安装。' -ForegroundColor DarkCyan
+$rustRuntime = Ensure-XmaRustToolchain -PromptIfMissing
 
-# 中文说明：先验证 rustc/cargo 是否真的能执行，不能再用“cargo.exe 文件存在”冒充 toolchain 已就绪。
-$rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
-$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-$rustReady = $false
-if ($rustcCommand -and $cargoCommand) {
-  $rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
-  $cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
-  $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
-}
-
-$rustupCommand = Get-Command rustup.exe -ErrorAction SilentlyContinue
-if (-not $rustReady -and $rustupCommand) {
-  # rustup shim 已存在但没有 default/toolchain 时，stderr 会输出 warn；Probe 必须把它当“未准备”而不是整个脚本失败。
-  $toolchainProbe = Invoke-XmaProbe -FilePath $rustupCommand.Source -ArgumentList @('toolchain','list')
-  $stableInstalled = ($toolchainProbe.ExitCode -eq 0) -and [bool]($toolchainProbe.Output | Where-Object { $_.ToString() -match '^stable(?:-|\s|$)' })
-  if ($stableInstalled) {
-    Write-Host '[修复] 已检测到 stable toolchain，但当前 XMA 目录没有激活它；正在绑定项目级 stable override...' -ForegroundColor Yellow
-    Push-Location $Root
-    try {
-      Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('override','set','stable')
-    } finally {
-      Pop-Location
-    }
-    Refresh-XmaPath
-    $rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
-    $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-    if ($rustcCommand -and $cargoCommand) {
-      $rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
-      $cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
-      $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
-    }
-  }
-}
-
-if (-not $rustReady) {
-  Write-Host '[缺少] 没有检测到可实际运行的 Rust stable toolchain。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否由 XMA 下载并安装 Rust stable？')) { throw 'Rust stable 是 XMA Native Runtime 的必要依赖。' }
-  Install-XmaRustStable
-  Refresh-XmaPath
-}
-
-$rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
-$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-if (-not $rustcCommand) { throw 'Rust 安装/修复后仍未检测到 rustc。' }
-if (-not $cargoCommand) { throw 'Rust 安装/修复后仍未检测到 cargo。' }
-$rustProbe = Invoke-XmaProbe -FilePath $rustcCommand.Source -ArgumentList @('--version')
-$cargoProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('--version')
-if ($rustProbe.ExitCode -ne 0) { throw "rustc toolchain 仍不可用：$($rustProbe.Output -join ' ')" }
-if ($cargoProbe.ExitCode -ne 0) { throw "cargo toolchain 仍不可用：$($cargoProbe.Output -join ' ')" }
-$rustcVersion = ($rustProbe.Output -join ' ').Trim()
-$cargoVersion = ($cargoProbe.Output -join ' ').Trim()
-Write-Host "[通过] $rustcVersion" -ForegroundColor Green
-Write-Host "[通过] $cargoVersion" -ForegroundColor Green
-
-# 中文说明：把 `[1]` 最终确认的 Rust/Cargo 位置记录在项目本地状态中。
-# 后续 `[4]/[7]` 会优先恢复这一位置，确保用户选择 D:/E:/自定义目录后不会因为新终端未继承 User 环境而退回其他 Cargo Home。
-$effectiveCargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
-$effectiveRustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User') }
-if (-not [string]::IsNullOrWhiteSpace($effectiveCargoHome)) {
-  Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $effectiveCargoHome -RustupHome $effectiveRustupHome
-}
-
-# 中文说明：`[7] 全量检查` 固定执行 `cargo fmt --check`，minimal stable 默认可能不包含 rustfmt。
-# rustfmt 因此属于 `[1]` 必须准备的开发工具，而不是让 `[7]` 在离线检查阶段临时下载。
-$rustfmtProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('fmt','--version')
-if ($rustfmtProbe.ExitCode -ne 0) {
-  $rustupCommand = Get-Command rustup.exe -ErrorAction SilentlyContinue
-  if (-not $rustupCommand) {
-    throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且未检测到 rustup。请安装 rustfmt 后重新运行 [1]。'
-  }
-  Write-Host '[缺少] 未检测到 rustfmt；XMA 全量检查需要 cargo fmt --check。' -ForegroundColor Yellow
-  Write-Host '[安装] 正在为 XMA stable toolchain 安装 rustfmt 组件...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath $rustupCommand.Source -ArgumentList @('component','add','rustfmt','--toolchain','stable')
-  $rustfmtProbe = Invoke-XmaProbe -FilePath $cargoCommand.Source -ArgumentList @('fmt','--version')
-  if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
-}
-Write-Host "[通过] $((($rustfmtProbe.Output -join ' ').Trim()))" -ForegroundColor Green
-
-if (-not [string]::IsNullOrWhiteSpace($env:RUSTUP_HOME) -or -not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) {
-  Write-Host "[位置] RUSTUP_HOME=$env:RUSTUP_HOME · CARGO_HOME=$env:CARGO_HOME" -ForegroundColor DarkGray
-} else {
-  Write-Host "[位置] rustc=$($rustcCommand.Source) · cargo=$($cargoCommand.Source)" -ForegroundColor DarkGray
-}
-
+Write-Host ''
 Write-Host '[6/9] MSVC C++ Build Tools' -ForegroundColor Cyan
-Write-Host '[检查] 正在检查 Windows C++ 编译与链接工具...' -ForegroundColor DarkCyan
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-$msvcReady = $false
-if (Test-Path $vswhere) {
-  $install = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-  $msvcReady = [bool]$install
-}
-if ($msvcReady) {
-  Write-Host '[通过] Visual Studio C++ Build Tools 已安装。' -ForegroundColor Green
-} else {
-  Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools（Rust MSVC 链接器需要）。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否自动安装 Visual Studio 2022 Build Tools + C++ Toolchain？')) { throw 'Windows Rust Native 构建需要 MSVC C++ Build Tools。' }
-  Ensure-XmaWinget
-  Write-Host '[安装] 正在安装 Visual Studio 2022 Build Tools + C++ Toolchain，这一步可能需要几分钟...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @(
-    'install','--id','Microsoft.VisualStudio.2022.BuildTools','--exact',
-    '--accept-source-agreements','--accept-package-agreements',
-    '--override','--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
-  )
-  Write-Host '[完成] Visual Studio C++ Build Tools 安装命令已完成。' -ForegroundColor Green
-}
+if ($rustRuntime) { Ensure-XmaMsvc } else { Write-Host '[跳过] Rust/Cargo 未安装，因此本轮不准备 MSVC；可稍后主菜单 [9] 单独安装 Rust/Cargo。' -ForegroundColor Yellow }
 
 Write-Host ''
 Write-Host '[7/9] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
@@ -678,115 +725,56 @@ $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
 $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
 $tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
 $tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
-$openTuiRuntimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
-$cliOpenTuiCore = Join-Path $openTuiRuntimeRoot 'node_modules\@opentui\core\package.json'
-$cliOpenTuiSolid = Join-Path $openTuiRuntimeRoot 'node_modules\@opentui\solid\package.json'
 $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
 $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
-
 $workspaceJsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
 $workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
 $workspaceStampReady = Test-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 if ($workspaceJsReady -and -not $workspaceStampReady) {
-  # 中文说明：升级到新的准备器时本地还没有指纹 stamp，但 node_modules 可能已经完全可用。
-  # 先用 frozen+offline 做一次无下载验证，并执行最小 tsx/esbuild 探针；通过后直接认领当前缓存，避免为了生成 stamp 再联网/重建。
-  Write-Host '[校验] 检测到现有 Workspace 依赖，正在离线确认 lockfile/node_modules 可直接复用...' -ForegroundColor DarkCyan
+  Write-Host '[校验] 检测到现有 Workspace 依赖，正在离线确认可直接复用...' -ForegroundColor DarkCyan
   & pnpm.cmd install --ignore-scripts --offline --frozen-lockfile *> $null
   $offlineInstallOk = $LASTEXITCODE -eq 0
-  if ($offlineInstallOk) {
-    & pnpm.cmd exec tsx -e 'const value: number = 1; if (value !== 1) process.exit(1)' *> $null
-    $offlineInstallOk = $LASTEXITCODE -eq 0
-  }
-  if ($offlineInstallOk) {
-    Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
-    $workspaceStampReady = $true
-    Write-Host '[缓存] 现有 Workspace 依赖离线校验通过，直接复用；不下载、不 rebuild。' -ForegroundColor DarkCyan
-  }
+  if ($offlineInstallOk) { & pnpm.cmd exec tsx -e 'const value: number = 1; if (value !== 1) process.exit(1)' *> $null; $offlineInstallOk = $LASTEXITCODE -eq 0 }
+  if ($offlineInstallOk) { Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint; $workspaceStampReady = $true; Write-Host '[缓存] 现有 Workspace 依赖离线校验通过，直接复用。' -ForegroundColor DarkCyan }
 }
-if ($workspaceJsReady -and $workspaceStampReady) {
-  Write-Host '[缓存] Workspace package/lockfile/node_modules 指纹未变化，跳过重复 pnpm install 与 esbuild rebuild。' -ForegroundColor DarkCyan
-} else {
-  Write-Host '[安装] Workspace 依赖状态发生变化或本地缓存不完整，正在同步 JavaScript 依赖元数据...' -ForegroundColor Yellow
-  Write-Host '[安全] 本步骤使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
-  Write-Host '[依赖] pnpm-workspace.yaml 已固定 yauzl >= 3.3.1 override；Electron Chromium Runtime 仍不会在这里下载。' -ForegroundColor DarkYellow
+if ($workspaceJsReady -and $workspaceStampReady) { Write-Host '[缓存] Workspace package/lockfile/node_modules 指纹未变化，跳过重复 pnpm install 与 esbuild rebuild。' -ForegroundColor DarkCyan }
+else {
+  Write-Host '[安装] Workspace 依赖状态变化或缓存不完整，正在同步 JavaScript 依赖...' -ForegroundColor Yellow
+  Write-Host '[安全] 使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
-  Write-Host '[安装] 正在准备 esbuild 当前平台 Native Binary...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
   Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 }
-
-if (Test-XmaOpenTuiDependencies $openTuiRuntimeRoot) {
-  Write-Host '[缓存] Xiaoyu Bun/OpenTUI 前端依赖版本已匹配，跳过重复 bun install。' -ForegroundColor DarkCyan
-} else {
-  Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
-  Push-Location $openTuiRuntimeRoot
-  try {
-    # 中文说明：OpenTUI 前端依赖由固定 Bun 独立管理，不进入 pnpm workspace lock；--no-save 避免准备环境污染源码锁文件。
-    Invoke-XmaExternal -FilePath $bunExe -ArgumentList @('install','--no-save')
-  } finally {
-    Pop-Location
-  }
-}
-
+if ($bunExe) { Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe }
+else { Write-Host '[跳过] Bun 未安装，因此暂不准备 OpenTUI 独立依赖；主菜单 [8] 会一次补齐 Bun + OpenTUI。' -ForegroundColor Yellow }
 Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
-# 中文说明：esbuild 是 Vite/tsx/tsup 的内部依赖，不要求根目录暴露 `esbuild` 可执行文件。
-# 使用 tsx 执行一段最小 TypeScript 来验证 esbuild Native Binary 真正可用，避免 pnpm strict linker 下 `pnpm exec esbuild` 误报找不到命令。
 Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
-
-if (-not (Test-XmaOpenTuiDependencies $openTuiRuntimeRoot)) {
-  throw 'Xiaoyu OpenTUI 依赖准备后版本仍不完整，请重新运行 [1] 或检查网络/缓存。'
-}
-Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Solid $SolidJsVersion + Bun $BunVersion。" -ForegroundColor Green
-
 if (-not (Test-Path $desktopElectronPackage)) { throw 'Desktop Electron package 元数据缺失。' }
 $installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
 if ($installedElectron -ne $ElectronVersion) { throw "Electron package 版本不一致：期望 $ElectronVersion，实际 $installedElectron。" }
 if (-not (Test-Path $desktopTauriCmd)) { throw 'Tauri 2 CLI package 未安装完整。' }
-Write-Host "[通过] Workspace JavaScript 依赖已准备完成；Electron package 锁定 $ElectronVersion，未要求下载 Chromium Runtime。" -ForegroundColor Green
+Write-Host '[通过] Workspace JavaScript 依赖已准备完成。' -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[8/9] XMA Native Rust crates' -ForegroundColor Cyan
-Write-Host '[缓存] Rust 编译/测试产物统一写入 XMA 项目 .cache\cargo-target\；仓库根不再生成 target\。' -ForegroundColor DarkGray
-$cargoFingerprint = Get-XmaCargoDependencyFingerprint
-$cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-if (-not $cargoCommand) { throw '未检测到 Cargo。请重新运行 [1] 的 Rust/Cargo 准备步骤。' }
-$cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
-$cargoStampReady = Test-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
-if ($cargoStampReady) {
-  Write-Host '[校验] Cargo 指纹未变化；仍验证实际 crate 缓存，防止 CARGO_HOME 移动/清理后产生假命中。' -ForegroundColor DarkCyan
-} else {
-  Write-Host '[校验] Cargo 配置或依赖指纹发生变化，正在离线验证当前 crate 缓存...' -ForegroundColor DarkCyan
-}
-
-if (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $cargoCommand.Source) {
-  Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
-  Write-Host "[缓存] 当前 Rust crates 已完整并通过 offline 验证：CARGO_HOME=$cargoHome" -ForegroundColor DarkCyan
-} else {
-  Write-Host "[同步] 当前 CARGO_HOME 缺少 Cargo.lock 所需 crates：$cargoHome" -ForegroundColor Yellow
-  Write-Host '[同步] `[1]` 是允许联网准备 Rust crates 的入口，现在开始 cargo fetch --locked...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath $cargoCommand.Source -ArgumentList @('fetch','--locked')
-  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $cargoCommand.Source)) {
-    throw "Rust crates 下载后仍无法离线解析。请检查 CARGO_HOME/网络/代理：$cargoHome"
-  }
-  Set-XmaPrepareStamp -Name 'cargo-fetch' -Fingerprint $cargoFingerprint
-  Write-Host '[验证] cargo fetch 完成后 offline 复检通过。' -ForegroundColor DarkCyan
-}
-Write-Host '[通过] XMA Native Rust crates 已准备完成。' -ForegroundColor Green
+if ($rustRuntime) { Ensure-XmaCargoCrates -RustRuntime $rustRuntime }
+else { Write-Host '[跳过] Rust/Cargo 未安装，因此不预取 Native crates；主菜单 [9] 会一次补齐 Rust/Cargo + crates。' -ForegroundColor Yellow }
 
 Write-Host ''
 Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
+Remove-XmaLegacyLocalDirectory
 
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
-Write-Host '[完成] XMA 开发环境与通用项目依赖已准备完成。' -ForegroundColor Green
-Write-Host '[可直接运行] Web / Xiaoyu CLI / 全量检查不再重复安装依赖。' -ForegroundColor Cyan
-Write-Host '[Rust 复用] Xiaoyu CLI / 全量检查会恢复 `[1]` 确认的 CARGO_HOME/RUSTUP_HOME，并只做 offline 构建/检查。' -ForegroundColor Cyan
-Write-Host '[开发命令] 新开 PowerShell / Windows Terminal 后，可在任意 Workspace 直接输入 xiaoyu 或 xma 启动当前源码 CLI。' -ForegroundColor Cyan
-Write-Host "[Desktop] Electron $ElectronVersion Chromium Runtime 仍只在你明确选择 Electron 时下载；Tauri 2 Rust crates 仍只在选择 Tauri 时预取。" -ForegroundColor Cyan
+Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
+Write-Host "[依赖根] 默认位置：$(Get-XmaLocalPathRoot -ProjectRoot $Root)" -ForegroundColor Cyan
+if ($bunExe) { Write-Host '[Bun] 已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan } else { Write-Host '[Bun] 本轮跳过；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
+if ($rustRuntime) { Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan } else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
+Write-Host '[开发命令] 新开终端后，可在任意 Workspace 输入 xiaoyu / xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan

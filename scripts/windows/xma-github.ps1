@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA GitHub 纯 Git 推送助手，只负责仓库安全检查、远端同步、提交和 Push。
 关联模块：XMA-GitHub.bat、.gitignore、yubboo/xma、GitHub Actions。
-当前实现：拒绝源码包目录 Git 操作、初始化/校正长期工作目录远端、Git 可提交文件安全扫描、禁止文件二次拦截、fetch/pull、commit、push。
+当前实现：拒绝源码包目录和错误仓库；只在已经 clone 且 origin 正确的长期工作目录执行安全扫描、fetch/pull、commit、push。
 职责边界：本脚本严禁安装依赖、下载运行时、执行 pnpm install/cargo fetch 或修改开发环境；代码编译测试由开发控制台和 GitHub Actions 负责。
 #>
 
@@ -10,7 +10,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RepoUrl = 'https://github.com/yubboo/xma.git'
 $ExpectedWorkRoot = if ($env:XMA_TARGET_ROOT) { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:XMA_TARGET_ROOT)) } else { '' }
 $PackageManifest = Join-Path $Root '.xma-package\source-manifest.json'
-$SyncState = Join-Path $Root '.xma\source-sync.json'
+$SyncState = Join-Path $Root 'xma-path\state\source-sync.json'
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
@@ -43,9 +43,9 @@ function Assert-GitWorkDirectory {
     throw 'XMA-GitHub 只能在长期 Git 工作目录运行；源码包目录只负责 Source Sync。'
   }
 
-  # 新工作目录首次初始化必须来自 XMA-Sync；禁止在任意一份源码副本里因为没有 .git 就静默创建仓库。
-  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container) -and -not (Test-Path -LiteralPath $SyncState -PathType Leaf)) {
-    throw "当前目录既不是现有 Git 仓库，也没有 XMA Source Sync 状态：$Root。请先从正式源码包运行 XMA-Sync.bat。"
+  # Source Sync 只同步到已存在的正确仓库，因此 GitHub Helper 也绝不再 git init。
+  if (-not (Test-Path -LiteralPath (Join-Path $Root '.git') -PathType Container)) {
+    throw "当前目录不是已经 clone 的 XMA Git 仓库：$Root。请先运行标准 git clone，或从源码包执行 XMA-Sync.bat 选择已有仓库。"
   }
 }
 
@@ -60,18 +60,8 @@ function Assert-GitAvailable {
 function Ensure-GitRepo {
   Assert-GitWorkDirectory
   Assert-GitAvailable
-  if (-not (Test-Path '.git')) {
-    Write-Host '[首次] 正在初始化 XMA Git 仓库...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('init')
-    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('branch','-M','main')
-    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('remote','add','origin',$RepoUrl)
-    return
-  }
   $origin = (& git.exe remote get-url origin 2>$null)
-  if (-not $origin) {
-    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('remote','add','origin',$RepoUrl)
-    return
-  }
+  if (-not $origin) { throw '当前 Git 仓库没有 origin；XMA 不会自动补写远端，请进入正确的 yubboo/xma clone。' }
   if ($origin -ne $RepoUrl) {
     throw "当前目录的 Git origin 不是 XMA 正式仓库：$origin。为避免误改其他仓库，XMA 不会自动重写 origin；请进入正确的 XMA 工作目录。"
   }
@@ -81,7 +71,7 @@ function Test-ForbiddenGitPath([string]$Path) {
   $normalized = $Path.Replace('\','/').TrimStart('./')
   $directoryRules = @(
     'node_modules/', '.pnpm-store/', '.cache/', '.turbo/',
-    'dist/', 'build/', 'coverage/', '.xma/', '.xma-package/',
+    'dist/', 'build/', 'coverage/', '.xma/', '.xma-package/', 'xma-path/',
     'native/target/', 'target/', 'apps/desktop/release/',
     'apps/desktop/dist/', 'apps/desktop/web/', 'apps/desktop/native/',
     'tmp/', 'temp/', '.idea/'

@@ -19,6 +19,7 @@ const IGNORED_DIR_NAMES = new Set([
   '.pnpm-store',
   '.turbo',
   '.xma',
+  'xma-path',
   '.xma-package',
   'node_modules',
   'dist',

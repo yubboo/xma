@@ -426,3 +426,24 @@
 - 根隐藏目录：当前源码架构需要的根隐藏目录只有 `.agents/.cargo/.claude/.codex/.github`；`.cargo` 控制 Cargo target 收敛，`.github` 承载 CI/Release，三套 AI 目录是项目开发适配层，均不是垃圾目录。正式源码包额外保留 `.xma-package/source-manifest.json` 作为同步元数据；长期 Git 工作目录不需要 `.xma-package`，旧版若遗留会在 Sync 后清理；`.xma/.cache/.pnpm-store/.npm/.yarn/.turbo` 等本地状态不得进入源码包。
 - Manifest：`source-manifest.ts` 新增根隐藏目录 allowlist，未知 `.xxx` 根目录即使本机存在也不会进入正式源码包；Architecture Gate 继续拒绝未知根源码条目。
 - 文档/Gate：README、Windows Workflow、AGENTS、Development Rules、XMA Development Skill 与 Windows Gate 同步新合同，禁止再次出现“自动识别/创建 worktree”或用 `xma-work*` 代替标准 clone 的流程。
+
+##36 · xma-path 统一依赖根、可跳过准备与 Bun/OpenTUI/Rust 真值恢复
+
+- 日期：2026-09-15
+- 目的：修复 Windows `[1]` 已存在旧 `.xma/tools/bun`，但新版又提示重新选择 Bun 安装位置的重复设计；同时按源码开发可移动/可换盘符要求，把 XMA 自管 Bun/OpenTUI/Rust、状态与开发 shim 收敛到明确的 `xma-path` 依赖根，并允许 Bun/Rust 在 `[1]` 中独立跳过、稍后单独补装。
+- 依赖根：默认 `[1]` 使用 `<当前 checkout>/xma-path`，项目 clone 在 D:/E:/U 盘时依赖随项目位置解析，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘；`[2]` 使用 `D:/xma-path`，`[3]` 只接受用户输入的真实盘符并使用 `<盘符>:/xma-path`。目录内部固定为 `bun/`、`opentui/`、`rust/`，项目状态与开发命令使用 `state/`、`dev-bin/`。
+- 准备流程：`[4/9] Bun/OpenTUI` 与 `[5/9] Rust/Cargo` 都先做真实探测；只有缺失时才询问 Y/N。选择 N 只跳过对应组件，Workspace JS 等其余步骤继续。主菜单新增 `[8] 单独安装 · Bun / OpenTUI` 与 `[9] 单独安装 · Rust / Cargo`，使用相同位置选择与校验逻辑。
+- Bun/OpenTUI：旧 `.xma/tools/bun/1.3.14/bun.exe` 若真实版本正确，自动迁移到项目默认 `xma-path/bun`，不重复下载。OpenTUI 实体依赖迁移/安装到同一依赖根的 `opentui/node_modules`；源码 `apps/cli/opentui-runtime/node_modules` 只建立本地链接供模块解析，避免保存第二份真实依赖。`[4]/[7]/build:cli` 从 `xma-path/state/bun-environment.json` 恢复位置、重建必要链接并重新校验。
+- Rust/Cargo：默认新安装到 `xma-path/rust/{rustup,cargo}`；如果用户原本已在 D:/E:/自定义位置安装且 `rustc/cargo` 真实探针通过，则直接采用并写回新的 `xma-path/state/rust-environment.json`，不重复安装。Cargo crates 继续用 offline 真值检查，避免 stamp 命中但 registry 实际缺失。
+- 旧状态：`.xma` 不再是当前 XMA 本地状态根，只作为 0.1.0 旧数据迁移来源；prepare/source-sync 迁移完成后清理可识别旧内容。正式源码包继续排除 `xma-path/.xma/.cache` 等本地状态。
+- 回归：Windows Gate 锁定默认 `xma-path`、D 盘/真实盘符选择、Y/N 跳过、`[8]/[9]`、OpenTUI 依赖实体位置与旧 `.xma` 仅迁移合同；OpenTUI 定向测试锁定 Bun runner 从 `xma-path/state` 恢复并连接 `xma-path/opentui/node_modules`。版本仍为 `0.1.0`，继续覆盖生成正式同名源码包与 SHA-256。
+
+##37 · Windows PowerShell 路径字符数组回归修复
+
+- 日期：2026-09-15
+- 目的：修复 `xma-dev.bat` 启动时 `Add-XmaProcessPathFront` 因 `System.Char` 转换失败直接退出，恢复原有 `git clone → cd xma → .\xma-dev.bat` 开发流程。
+- 根因：`xma-common.ps1` 在路径规范化中写成 `[char[]]@('\\','/')`。PowerShell 单引号字符串不会把反斜杠当转义符，因此 `'\\'` 实际包含两个字符，无法转换成单个 `System.Char`；正确字面量是 `'\'`。
+- 修复：`Add-XmaProcessPathFront` 的目标路径、PATH 候选路径及 fallback 三处统一改为 `[char[]]@('\','/')`。不改变 `xma-path`、Bun/OpenTUI、Rust/Cargo 的依赖位置设计，只修复启动阶段路径标准化回归。
+- 回归：Windows Gate 新增静态检查，禁止任何受管 PowerShell 脚本重新出现双反斜杠 `System.Char` 数组；继续保留 UTF-8 BOM + CRLF 合同。
+- 交付：版本仍为 `0.1.0`，继续覆盖正式 `xma-0.1.0.zip` 与 `xma-0.1.0.sha256.txt`。
+

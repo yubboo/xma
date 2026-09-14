@@ -35,7 +35,7 @@ ensure_pnpm() {
 }
 
 ensure_bun() {
-  target="$ROOT/.xma/tools/bun/$BUN_VERSION/bun"
+  target="$ROOT/xma-path/bun/$BUN_VERSION/bun"
   if [ -x "$target" ] && [ "$($target --version 2>/dev/null || true)" = "$BUN_VERSION" ]; then
     rm -rf "$ROOT/.cache/bun"
     printf '[通过] Bun %s · Xiaoyu OpenTUI Runtime\n' "$BUN_VERSION"
@@ -55,7 +55,7 @@ ensure_bun() {
   cache="$ROOT/.cache/bun"
   zip="$cache/$asset-$BUN_VERSION.zip"
   extract="$cache/extract-$BUN_VERSION-$asset"
-  mkdir -p "$cache" "$ROOT/.xma/tools/bun/$BUN_VERSION"
+  mkdir -p "$cache" "$ROOT/xma-path/bun/$BUN_VERSION"
   rm -rf "$extract"
   mkdir -p "$extract"
   printf '[下载] Bun %s · %s\n' "$BUN_VERSION" "$asset"
@@ -69,6 +69,43 @@ ensure_bun() {
   rm -f "$zip"
   rm -rf "$extract"
   printf '[通过] Bun %s · Xiaoyu OpenTUI Runtime\n' "$BUN_VERSION"
+}
+
+ensure_opentui() {
+  bun="$ROOT/xma-path/bun/$BUN_VERSION/bun"
+  home="$ROOT/xma-path/opentui"
+  target_modules="$home/node_modules"
+  source_runtime="$ROOT/apps/cli/opentui-runtime"
+  source_modules="$source_runtime/node_modules"
+  mkdir -p "$home"
+  cp "$source_runtime/package.json" "$home/package.json"
+  cp "$source_runtime/bunfig.toml" "$home/bunfig.toml"
+
+  core_pkg="$target_modules/@opentui/core/package.json"
+  solid_pkg="$target_modules/@opentui/solid/package.json"
+  solidjs_pkg="$target_modules/solid-js/package.json"
+  if ! { [ -f "$core_pkg" ] && [ -f "$solid_pkg" ] && [ -f "$solidjs_pkg" ] \
+    && [ "$(node -p "require('$core_pkg').version")" = "$OPENTUI_VERSION" ] \
+    && [ "$(node -p "require('$solid_pkg').version")" = "$OPENTUI_VERSION" ] \
+    && [ "$(node -p "require('$solidjs_pkg').version")" = '1.9.11' ]; }; then
+    # 0.1.0 早期实体依赖在源码 node_modules；完整时迁移到 xma-path，避免重复下载。
+    old_core="$source_modules/@opentui/core/package.json"
+    if [ ! -L "$source_modules" ] && [ -f "$old_core" ] && [ "$(node -p "require('$old_core').version")" = "$OPENTUI_VERSION" ]; then
+      rm -rf "$target_modules"
+      cp -R "$source_modules" "$target_modules"
+    fi
+  fi
+
+  if ! { [ -f "$core_pkg" ] && [ -f "$solid_pkg" ] && [ -f "$solidjs_pkg" ]; }; then
+    (cd "$home" && "$bun" install --no-save)
+  fi
+  [ "$(node -p "require('$core_pkg').version")" = "$OPENTUI_VERSION" ] || { printf '%s\n' '[ERROR] @opentui/core version mismatch.' >&2; return 1; }
+  [ "$(node -p "require('$solid_pkg').version")" = "$OPENTUI_VERSION" ] || { printf '%s\n' '[ERROR] @opentui/solid version mismatch.' >&2; return 1; }
+  [ "$(node -p "require('$solidjs_pkg').version")" = '1.9.11' ] || { printf '%s\n' '[ERROR] solid-js version mismatch.' >&2; return 1; }
+
+  rm -rf "$source_modules"
+  ln -s "$target_modules" "$source_modules"
+  printf '[通过] OpenTUI dependencies · %s\n' "$home"
 }
 
 ensure_rust() {
@@ -120,15 +157,7 @@ prepare_environment() {
   printf '%s\n' '[5/6] Workspace JavaScript dependencies + OpenTUI frontend'
   pnpm install --ignore-scripts
   pnpm rebuild esbuild
-  core_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/core/package.json"
-  solid_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/solid/package.json"
-  solidjs_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/solid-js/package.json"
-  if [ -f "$core_pkg" ] && [ -f "$solid_pkg" ] && [ -f "$solidjs_pkg" ]     && [ "$(node -p "require('$core_pkg').version")" = "$OPENTUI_VERSION" ]     && [ "$(node -p "require('$solid_pkg').version")" = "$OPENTUI_VERSION" ]     && [ "$(node -p "require('$solidjs_pkg').version")" = '1.9.11' ]; then
-    printf '%s
-' '[缓存] Xiaoyu Bun/OpenTUI frontend dependencies already match; skip bun install.'
-  else
-    (cd "$ROOT/apps/cli/opentui-runtime" && "$ROOT/.xma/tools/bun/$BUN_VERSION/bun" install --no-save)
-  fi
+  ensure_opentui
 
   printf '%s\n' '[6/6] XMA Native Rust crates'
   cargo fetch
@@ -143,18 +172,25 @@ assert_core_dependencies() {
 
 assert_cli_dependencies() {
   assert_core_dependencies
-  bun="$ROOT/.xma/tools/bun/$BUN_VERSION/bun"
+  bun="$ROOT/xma-path/bun/$BUN_VERSION/bun"
   [ -x "$bun" ] || { printf '%s\n' '[ERROR] Bun/OpenTUI runtime is not ready. Run ./xma-dev and choose [1].' >&2; exit 1; }
   [ "$($bun --version)" = "$BUN_VERSION" ] || { printf '%s\n' '[ERROR] Bun version mismatch.' >&2; exit 1; }
-  core_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/core/package.json"
-  solid_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/@opentui/solid/package.json"
-  solidjs_pkg="$ROOT/apps/cli/opentui-runtime/node_modules/solid-js/package.json"
+  home="$ROOT/xma-path/opentui"
+  target_modules="$home/node_modules"
+  core_pkg="$target_modules/@opentui/core/package.json"
+  solid_pkg="$target_modules/@opentui/solid/package.json"
+  solidjs_pkg="$target_modules/solid-js/package.json"
   for package in "$core_pkg" "$solid_pkg" "$solidjs_pkg"; do
     [ -f "$package" ] || { printf '[ERROR] Missing OpenTUI package: %s\n' "$package" >&2; exit 1; }
   done
   [ "$(node -p "require('$core_pkg').version")" = "$OPENTUI_VERSION" ] || { printf '%s\n' '[ERROR] @opentui/core version mismatch.' >&2; exit 1; }
   [ "$(node -p "require('$solid_pkg').version")" = "$OPENTUI_VERSION" ] || { printf '%s\n' '[ERROR] @opentui/solid version mismatch.' >&2; exit 1; }
   [ "$(node -p "require('$solidjs_pkg').version")" = '1.9.11' ] || { printf '%s\n' '[ERROR] solid-js version mismatch.' >&2; exit 1; }
+  source_modules="$ROOT/apps/cli/opentui-runtime/node_modules"
+  if [ ! -L "$source_modules" ] || [ "$(readlink "$source_modules" 2>/dev/null || true)" != "$target_modules" ]; then
+    rm -rf "$source_modules"
+    ln -s "$target_modules" "$source_modules"
+  fi
 }
 
 start_web() {

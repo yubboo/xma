@@ -94,7 +94,7 @@ const rootAllowedFiles = new Set([
   'xma-dev', 'xma-dev.bat', 'XMA-GitHub.bat', 'XMA-Sync.bat',
   'LICENSE', 'LICENSE.md', 'SECURITY.md', 'CONTRIBUTING.md',
 ])
-const rootLocalState = new Set(['.git', '.cache', '.xma', '.xma-package', 'node_modules', 'dist', 'target'])
+const rootLocalState = new Set(['.git', '.cache', '.xma', 'xma-path', '.xma-package', 'node_modules', 'dist', 'target'])
 for (const name of readdirSync('.')) {
   if (rootLocalState.has(name)) continue
   const stat = statSync(name)

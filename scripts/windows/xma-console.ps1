@@ -2,11 +2,11 @@
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
 当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；CLI 运行/检查会恢复 `[1]` 选择的 Bun Home 与 Rust/Cargo Home，再执行真实版本/offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
-职责边界：GitHub 推送不经过本文件；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
+职责边界：GitHub 推送不经过本文件；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
 param(
-  [ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows')]
+  [ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','bun','rust')]
   [string]$Command = 'menu',
   [string]$Workspace = ''
 )
@@ -34,9 +34,20 @@ function Write-Header {
 }
 
 function Prepare-Environment {
-  & (Join-Path $PSScriptRoot 'xma-prepare.ps1')
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component all
   if ($LASTEXITCODE -ne 0) { throw 'XMA 开发环境准备失败。' }
 }
+
+function Prepare-BunRuntime {
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component bun
+  if ($LASTEXITCODE -ne 0) { throw 'Bun / OpenTUI Runtime 准备失败。' }
+}
+
+function Prepare-RustRuntime {
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component rust
+  if ($LASTEXITCODE -ne 0) { throw 'Rust / Cargo 准备失败。' }
+}
+
 
 function Assert-BasicRuntime {
   foreach ($command in @('node.exe','pnpm.cmd')) {
@@ -60,7 +71,7 @@ function Resolve-XmaCargoRuntime {
   [void](Import-XmaRustEnvironment -ProjectRoot $Root)
   $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
   if (-not $cargoCommand) {
-    throw '未检测到 Cargo。请先运行 [1] 一键准备开发环境。'
+    throw '未检测到 Rust/Cargo。请运行主菜单 [9] 单独安装 Rust/Cargo，或重新运行 [1]。'
   }
   $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
   $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { '' }
@@ -75,7 +86,7 @@ function Assert-XmaCargoOfflineReady {
   param([Parameter(Mandatory = $true)]$CargoRuntime, [string]$Purpose = '当前操作')
   if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $CargoRuntime.Cargo)) {
     $location = if ($CargoRuntime.CargoHome) { $CargoRuntime.CargoHome } else { '(未解析)' }
-    throw "$Purpose 需要的 Rust crates 尚未完整准备（CARGO_HOME=$location）。请先运行 [1] 一键准备开发环境；运行/检查阶段不会偷偷联网下载。"
+    throw "$Purpose 需要的 Rust crates 尚未完整准备（CARGO_HOME=$location）。请运行主菜单 [9] 补齐 Rust/Cargo crates，或重新运行 [1]；运行/检查阶段不会偷偷联网下载。"
   }
   Write-Host "[通过] Rust/Cargo 环境已恢复：CARGO_HOME=$($CargoRuntime.CargoHome)" -ForegroundColor Green
   if ($CargoRuntime.RustupHome) { Write-Host "[位置] RUSTUP_HOME=$($CargoRuntime.RustupHome)" -ForegroundColor DarkGray }
@@ -84,7 +95,7 @@ function Assert-XmaCargoOfflineReady {
 function Resolve-XmaBunRuntime {
   $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
   if (-not $bunRuntime) {
-    throw "未检测到 `[1]` 已配置的 Bun $BunVersion Runtime。请先运行 [1] 一键准备开发环境并选择 Bun 安装位置。"
+    throw "未检测到 Bun $BunVersion Runtime。请运行主菜单 [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。"
   }
   return $bunRuntime
 }
@@ -92,21 +103,25 @@ function Resolve-XmaBunRuntime {
 function Assert-CliJsDependencies {
   Assert-CoreDependencies
   $bunRuntime = Resolve-XmaBunRuntime
+  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunRuntime.BunHome
   $packages = @{
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\core\package.json') = $OpenTuiVersion
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@opentui\solid\package.json') = $OpenTuiVersion
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\solid-js\package.json') = $SolidJsVersion
-    (Join-Path $Root 'apps\cli\opentui-runtime\node_modules\@types\bun\package.json') = $BunTypesVersion
+    (Join-Path $openTuiHome 'node_modules\@opentui\core\package.json') = $OpenTuiVersion
+    (Join-Path $openTuiHome 'node_modules\@opentui\solid\package.json') = $OpenTuiVersion
+    (Join-Path $openTuiHome 'node_modules\solid-js\package.json') = $SolidJsVersion
+    (Join-Path $openTuiHome 'node_modules\@types\bun\package.json') = $BunTypesVersion
   }
   foreach ($packageFile in $packages.Keys) {
-    if (-not (Test-Path $packageFile)) { throw "Xiaoyu OpenTUI 依赖尚未准备：$packageFile" }
+    if (-not (Test-Path $packageFile)) { throw "Xiaoyu OpenTUI 依赖尚未准备：$packageFile。请运行主菜单 [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。" }
     $installed = (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
     $expected = $packages[$packageFile]
-    if ($installed -ne $expected) { throw "Xiaoyu OpenTUI 依赖版本不一致：$packageFile · 期望 $expected，实际 $installed。" }
+    if ($installed -ne $expected) { throw "Xiaoyu OpenTUI 依赖版本不一致：$packageFile · 期望 $expected，实际 $installed。请运行主菜单 [8] 重新准备。" }
+  }
+  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunRuntime.BunHome)) {
+    throw "OpenTUI 依赖存在，但无法连接到源码 Runtime：$openTuiHome。请运行主菜单 [8] 重新准备。"
   }
   Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $BunVersion + OpenTUI $OpenTuiVersion）。" -ForegroundColor Green
-  Write-Host "[位置] XMA_BUN_HOME=$($bunRuntime.BunHome)" -ForegroundColor DarkGray
-  Write-Host "[运行时] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
+  Write-Host "[Bun] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
+  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
 }
 
 function Assert-DesktopJsDependencies {
@@ -281,7 +296,7 @@ function Invoke-FullCheck {
   Assert-XmaCargoOfflineReady -CargoRuntime $cargoRuntime -Purpose 'XMA 全量检查'
   & $cargoRuntime.Cargo fmt --version *> $null
   if ($LASTEXITCODE -ne 0) {
-    throw '未检测到 rustfmt/cargo-fmt。请先运行 [1] 一键准备开发环境；[7] 不会联网补装 Rust 组件。'
+    throw '未检测到 rustfmt/cargo-fmt。请运行主菜单 [9] 补齐 Rust/rustfmt，或重新运行 [1]；[7] 不会联网补装 Rust 组件。'
   }
   Write-Host '[通过] Rust rustfmt 已就绪；[7] 将保持 offline。' -ForegroundColor Green
   Write-Host '[检查] 正在运行 TypeScript / Tests / Architecture Gates...' -ForegroundColor Cyan
@@ -304,6 +319,8 @@ if ($Command -ne 'menu') {
     'desktop' { Start-Desktop }
     'cli' { Start-Cli -WorkspacePath $Workspace }
     'check' { Invoke-FullCheck }
+    'bun' { Prepare-BunRuntime }
+    'rust' { Prepare-RustRuntime }
     'release' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1'); if ($LASTEXITCODE -ne 0) { throw '构建失败' } }
     'release-windows' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1') -WindowsPackages; if ($LASTEXITCODE -ne 0) { throw 'Windows 发布构建失败' } }
   }
@@ -313,13 +330,15 @@ if ($Command -ne 'menu') {
 while ($true) {
   Write-Header
   Write-Host '  [1] 一键准备开发环境                   ← 推荐首次运行' -ForegroundColor Green
-  Write-Host '      系统工具 + Workspace JS 依赖 + XMA Native Rust crates' -ForegroundColor DarkGray
+  Write-Host '      系统工具 + Workspace JS；Bun/Rust 缺失时可跳过后由 [8]/[9] 补齐' -ForegroundColor DarkGray
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
   Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'
   Write-Host '  [5] 构建发布 · Desktop 当前平台        默认 Electron 主桌面端'
   Write-Host '  [6] 构建发布 · Desktop Windows         Electron Setup + Portable'
-  Write-Host '  [7] 全量检查                          使用 [1] 已准备的依赖，不偷偷下载'
+  Write-Host '  [7] 全量检查                          使用已准备依赖，不偷偷下载'
+  Write-Host '  [8] 单独安装 · Bun / OpenTUI          缺失时单独补齐'
+  Write-Host '  [9] 单独安装 · Rust / Cargo           缺失时单独补齐'
   Write-Host '  [0] 退出'
   Write-Host ''
   $choice = (Read-Host '请选择').Trim()
@@ -332,6 +351,8 @@ while ($true) {
       '5' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1'); if ($LASTEXITCODE -ne 0) { throw '构建失败' } }
       '6' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1') -WindowsPackages; if ($LASTEXITCODE -ne 0) { throw 'Windows 发布构建失败' } }
       '7' { Invoke-FullCheck }
+      '8' { Prepare-BunRuntime }
+      '9' { Prepare-RustRuntime }
       '0' { exit 0 }
       default { Write-Host '无效选项。' -ForegroundColor Yellow }
     }

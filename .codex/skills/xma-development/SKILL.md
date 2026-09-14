@@ -41,6 +41,6 @@
 - 修改架构时同步文档和 Gate；目录/公共 package/Stable Import/阶段变化还必须追加 `UPDATE-LOG.md` 下一个 `##NN` 编号并更新 `CODEMAP.md`。
 - 未冻结 0.1.0 修正仍交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix/final/v2/new。
 
-- Windows `[1]` 的 Bun 1.3.14 必须支持用户选择安装位置并保存 `XMA_BUN_HOME`；`[4]/[7]/build:cli` 统一真实恢复并校验该 Runtime，禁止重新固定到 checkout `.xma/tools/bun`。
-- Windows `xma-dev.bat → [1]` 会把当前 checkout 的 `.xma/dev-bin` 注册到 User PATH；之后可在任意 Workspace 用 `xiaoyu` / `xma` 启动开发态 CLI。不得把整个仓库加入 PATH。
+- Windows `[1]` 的 Bun/OpenTUI 与 Rust/Cargo 必须先真实探测；缺失时允许分别 Y/N 跳过，并由 `[8]` / `[9]` 单独补装。默认依赖根是当前 checkout 的 `xma-path`，D 盘使用 `D:/xma-path`，自定义只接受真实盘符并使用 `<盘符>:/xma-path`；`[4]/[7]/build:cli` 统一恢复并真实校验同一 Runtime。旧 `.xma` 只能迁移，不能继续写新状态。
+- Windows `xma-dev.bat → [1]` 会把当前 checkout 的 `xma-path/dev-bin` 注册到 User PATH；之后可在任意 Workspace 用 `xiaoyu` / `xma` 启动开发态 CLI。不得把整个仓库加入 PATH。
 - Terminal 没有已配置 Brain/Profile 时只在首次进入时自动打开 Provider 配置；已有 Profile 后不重复弹出，`Ctrl+P → Brain / Provider` 始终保留。

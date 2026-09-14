@@ -120,7 +120,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
 - 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
 - 顶层源码开发入口 `xma-dev.bat`（Windows）/ `xma-dev`（Linux/macOS）、维护者入口 `XMA-GitHub.bat` / `XMA-Sync.bat` 以及平台脚本属于稳定外部入口；命名必须明确区分源码开发与正式产品命令。
-- Windows `xma-dev.bat → [1]` 可以注册开发态 `xiaoyu / xma`，但只允许把仓库内本地状态 `.xma/dev-bin` 加到当前用户 User PATH；禁止把整个仓库或维护脚本目录加入 PATH，禁止写 Machine PATH。
+- Windows `xma-dev.bat → [1]` 可以注册开发态 `xiaoyu / xma`，但只允许把仓库内本地状态 `xma-path/dev-bin` 加到当前用户 User PATH；禁止把整个仓库或维护脚本目录加入 PATH，禁止写 Machine PATH。
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
 当前平台主要 ownership 已迁到：`packages/xma-agent-loop/`、`packages/xma-ai/`、`packages/xma-plugin/`、`packages/xma-tools/`、`packages/xma-session/`、`packages/xma-context/`、`packages/xma-native/`；插件按本体聚合在 `plugins/deepseek/`、`plugins/native-tools/`、`plugins/dsh-compat/`。`core/` 只允许 Compatibility Facade 与尚未迁出的薄层。
@@ -217,7 +217,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - `xma-dev` → `scripts/unix/xma-console.sh`
 - `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1`
 - `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1`
-- 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。同步结果必须区分本次“新增 / 更新 / 删除 / 未变化”，Manifest 总文件数不得冒充本次实际变更数；完整变更清单保存到目标工作目录 `.xma/source-sync-last.txt`。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。
+- 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。同步结果必须区分本次“新增 / 更新 / 删除 / 未变化”，Manifest 总文件数不得冒充本次实际变更数；完整变更清单保存到目标工作目录 `xma-path/state/source-sync-last.txt`。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。
 
 BAT/PS1 必须在成功和失败后保留窗口，并有明显颜色状态提示。
 
@@ -230,7 +230,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ### GitHub 推送职责边界（锁死）
 
 - `XMA-GitHub.bat` / `xma-github.ps1` 是**纯 Git 工具**，只允许执行 Git 仓库初始化/状态、安全扫描、远端同步、暂存、提交、Push。
-- `XMA-GitHub.bat` / `xma-github.ps1` 必须拒绝包含 `.xma-package/source-manifest.json` 的正式源码包/解压目录；首次 `git init` 只允许发生在已经由 `XMA-Sync.bat` 建立 `.xma/source-sync.json` 的长期工作目录。禁止在 `xma-<version>` 源码包目录静默创建第二个 Git 仓库。
+- `XMA-GitHub.bat` / `xma-github.ps1` 必须拒绝包含 `.xma-package/source-manifest.json` 的正式源码包/解压目录；GitHub Helper 只允许在已经存在 `.git` 且 origin 正确的长期 `yubboo/xma` 仓库运行，禁止 `git init`、禁止新增/改写 origin、禁止在 `xma-<version>` 源码包目录创建第二个仓库。Source Sync 状态统一放在 `xma-path/state/source-sync.json`。
 - GitHub 推送流程严禁调用 `xma-prepare.ps1`，严禁执行 `pnpm install`、`pnpm rebuild`、`cargo fetch`、Electron/Tauri 依赖准备、winget 安装或任何环境准备。
 - 依赖下载和环境安装只允许由显式源码开发准备入口（Windows `xma-dev.bat → [1]`、Linux/macOS `./xma-dev prepare`）、开发运行或构建发布流程触发；普通用户 `xma-install.*` 只允许安装预构建发行资产，不得转成源码构建。
 - GitHub Helper 若发现 Git 本身不存在，只能提示用户先运行 `xma-dev.bat → [1] 一键准备开发环境`，不得擅自安装。
@@ -283,7 +283,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - 构建发布可以补齐用户明确选择的 Desktop Runtime，但应复用 `[1]` 已准备的通用依赖，不重复安装 Workspace。
 - XMA 自己控制的开发/编译中间产物统一进入 `.cache/`：根 Rust 使用 `.cache/cargo-target/`，Tauri Rust 使用 `.cache/tauri-target/`，Desktop staging 使用 `.cache/desktop/`。正式可交付产物统一进入根 `dist/`。仓库根 `build/` / `target/` 与 `apps/desktop/dist|web|release|native` 只视为旧版遗留目录并应清理，禁止重新成为正常输出。
 - Bun/OpenTUI 单文件编译的**真实 staging 数据**必须位于项目 `.cache/bun-compile/`；禁止默认使用 `%LOCALAPPDATA%\Temp`、`%TEMP%`、`%TMP%` 或其他用户系统临时目录承载 XMA 自己控制的编译状态。Windows + 中文/特殊字符源码路径下，若 Bun 1.3.x 内部临时文件 API 无法处理 Unicode 路径，可以在单次 build 生命周期内用动态 `SUBST` 空闲盘符为该项目 `.cache` 建立 ASCII 路径别名；别名必须构建结束即解除、不得固定任何盘符、不得把真实文件复制到系统盘。`.cache/` 可以随时删除并由后续构建重建；正式 `dist/cli/xiaoyu[.exe]` 不得依赖 `.cache`、SUBST 或系统临时目录才能启动。
-- Windows `[1]` 的 Bun 1.3.14 必须与 Rust/Cargo 一样支持真实安装位置选择与恢复：首次缺失时提供当前用户工具目录、D 盘和自定义目录选项，成功后保存 User `XMA_BUN_HOME` 与项目本地恢复状态；`[4]`、`[7]`、`build:cli` 必须真实执行该位置的 `bun.exe --version` 后再运行。禁止再把仓库 `.xma/tools/bun` 当成固定 Runtime Home；旧项目内 Bun 只允许在 `[1]` 中作为一次迁移源。
+- Windows `[1]` 的 Bun/OpenTUI 与 Rust/Cargo 必须先真实检测后再决定是否安装：缺失时分别询问 Y/N，选择 N 只跳过对应组件并继续；主菜单 `[8]` / `[9]` 提供单独补装。安装位置统一按依赖根选择：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实盘符后使用 <盘符>:/xma-path`。项目默认 Bun/OpenTUI/Rust 分别位于 `xma-path/bun`、`xma-path/opentui`、`xma-path/rust`，状态与开发 shim 位于 `xma-path/state`、`xma-path/dev-bin`；`[4]`、`[7]`、`build:cli` 必须恢复同一真实位置并重新校验。旧 `.xma` 只允许作为一次迁移源，不得继续成为现役状态目录。
 - `[1]` 的 Rust 准备必须包含 `[7]` 实际需要的 `rustfmt` 组件；`[7]` 必须在开始重型检查前离线预检 `cargo fmt --version`，缺失时立即提示重新运行 `[1]`，禁止在 `[7]` 临时联网安装组件。
 - `[7] 全量检查` 不自动下载依赖；缺失时提示先运行 `[1]`，Rust 使用 offline 检查。
 

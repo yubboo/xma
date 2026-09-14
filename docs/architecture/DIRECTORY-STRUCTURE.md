@@ -57,7 +57,7 @@ xma/
 3. **项目导航文档**：`README.md`、`AGENTS.md`、`CLAUDE.md`、`CODEMAP.md` 等固定入口；
 4. **极少量顶级 Launcher**：`xma-dev.bat`、`xma-dev` 与当前维护者专用 `XMA-Sync.bat / XMA-GitHub.bat`。
 
-普通实现文件、临时脚本、业务模块不得直接堆到仓库根；应进入其真实 ownership 目录。`.git/`、`.cache/`、`.xma/`、`node_modules/`、`dist/` 等本机状态不属于源码架构，也不作为“根目录太多”的理由去破坏工具默认位置。Root Hygiene 由 Architecture Gate 静态检查。
+普通实现文件、临时脚本、业务模块不得直接堆到仓库根；应进入其真实 ownership 目录。`.git/`、`.cache/`、`xma-path/`、`node_modules/`、`dist/` 等本机状态不属于源码架构，也不作为“根目录太多”的理由去破坏工具默认位置；`.xma/` 仅作为 0.1.0 旧状态迁移兼容，不再是当前目录。Root Hygiene 由 Architecture Gate 静态检查。
 
 ## 3. 稳定 Platform Package
 

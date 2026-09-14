@@ -268,9 +268,12 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 ## 14. 源码开发项目依赖准备规则
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
-- Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.xma/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
+- Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `xma-path/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
 - `[1]` 首次或依赖声明变化时使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime；已准备且 package/lockfile/平台指纹一致时必须跳过重复 install/esbuild rebuild；首次接管没有 stamp 的旧缓存必须优先做 offline/frozen 校验，验证通过直接复用，不得为了生成 stamp 再联网。OpenTUI 固定版本已匹配时同样跳过重复 `bun install`，Rust Cargo 声明未变化时跳过重复 `cargo fetch`。
-- `[1]` 写入开发态 `.xma/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量。
+- `[1]` 写入开发态 `xma-path/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量；旧 `.xma/dev-bin` 只允许作为迁移清理对象。
+- Windows `[1]` 必须把 Bun/OpenTUI 与 Rust/Cargo 当成两个可独立跳过/补装的组件：先真实检测；缺失时分别询问 Y/N；选择 N 只跳过该组件并继续。主菜单 `[8]` / `[9]` 分别单独准备 Bun/OpenTUI 与 Rust/Cargo。
+- XMA 自管依赖根固定为三种选择：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实存在的盘符后使用 `<盘符>:/xma-path`。禁止把 `%LOCALAPPDATA%/XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定使用 `bun/`、`opentui/`、`rust/`；项目本地状态和开发 shim 使用当前 checkout 的 `xma-path/state/`、`xma-path/dev-bin/`。
+- `[4]`、`[7]`、`build:cli` 必须从 `xma-path/state` 恢复 `[1]/[8]/[9]` 已确认的位置并真实验证 executable/version/offline crates；不得因为源码移动、U 盘盘符变化或旧绝对路径而误报依赖缺失。旧 `.xma/tools|state|dev-bin` 只作为一次迁移来源，迁移后不得继续写入。
 - Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式联网补包。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。
 - `electron` 不进入 `allowBuilds`；`pnpm-workspace.yaml -> allowBuilds` 只显式白名单确有构建需求的依赖。
@@ -294,9 +297,9 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 ### XMA-GitHub 是纯 Git 工具
 
-`XMA-GitHub.bat` / `xma-github.ps1` 只允许 Git 初始化/状态、安全扫描、远端同步、暂存、提交、Push。
+`XMA-GitHub.bat` / `xma-github.ps1` 只允许对**已经存在且 origin 正确**的仓库执行状态、安全扫描、远端同步、暂存、提交、Push；禁止初始化新仓库或改写 origin。
 
-`XMA-GitHub.bat` / `xma-github.ps1` 必须区分“正式源码包目录”和“长期 Git 工作目录”：检测到 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化、fetch/pull、commit、push；首次 `git init` 只允许在已有 `.xma/source-sync.json` 的 Source Sync 目标目录执行。禁止在 `xma-<version>` 解压目录创建第二个仓库。
+`XMA-GitHub.bat` / `xma-github.ps1` 必须区分“正式源码包目录”和“长期 Git 工作目录”：检测到 `.xma-package/source-manifest.json` 时必须直接拒绝 fetch/pull、commit、push；长期工作目录必须已经存在 `.git` 且 origin 指向 `yubboo/xma`。GitHub Helper 和 Source Sync 都禁止 `git init`、禁止新增/改写 origin、禁止自动创建替代 worktree。Source Sync 状态统一保存到 `xma-path/state/source-sync.json`。
 
 严禁在 GitHub Helper 中调用：
 
@@ -312,7 +315,7 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 
 应提交：源码、文档、测试、AI 开发上下文、脚本、配置模板、CI、`pnpm-lock.yaml`、`Cargo.lock`。
 
-禁止提交：`node_modules/`、`.cache/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。XMA-controlled 中间产物必须统一进入 `.cache/`，正式构建产物必须统一进入 `dist/`；根 `build/target` 与 app-local Desktop 输出只作为旧版遗留/防误提交路径处理。
+禁止提交：`node_modules/`、`.cache/`、`xma-path/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。`xma-path/` 是当前本机依赖/状态根；`.xma/` 仅保留旧版迁移保护，不得产生新的现役状态。XMA-controlled 中间产物必须统一进入 `.cache/`，正式构建产物必须统一进入 `dist/`；根 `build/target` 与 app-local Desktop 输出只作为旧版遗留/防误提交路径处理。
 
 `.gitignore` 是第一层，GitHub Safety 是第二层。Safety 必须扫描 Git 真正可能提交的文件，不能把已忽略二进制缓存误判 Secret。
 
@@ -336,7 +339,7 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 ### Root Hygiene Rule
 
 - 仓库根只允许一级领域目录、标准工具链根配置、项目导航文档与极少量顶级 Launcher；普通实现文件、临时脚本、业务模块必须进入真实 ownership 目录。
-- `.git / .cache / .xma / node_modules / dist` 是本机状态，不属于源码架构；不得为了视觉上“目录更少”把生态工具要求的根配置搬进自造目录。
+- `.git / .cache / xma-path / node_modules / dist` 是本机状态，不属于源码架构；`.xma` 仅是旧版迁移兼容。不得为了视觉上“目录更少”把生态工具要求的根配置搬进自造目录。
 - 新增根级源码条目必须同时更新 `DIRECTORY-STRUCTURE.md` / `CODEMAP.md`（需要时）并通过 Architecture Gate 的 Root Hygiene 检查。
 
 ### 源码开发入口与路径可移植性

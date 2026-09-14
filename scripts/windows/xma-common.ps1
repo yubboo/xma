@@ -1,8 +1,8 @@
 ﻿<#
-文件作用：XMA Windows 脚本公共基础函数，统一版本读取与外部命令执行，避免不同入口重复实现造成参数丢失。
-关联模块：xma-prepare.ps1、xma-github.ps1、xma-console.ps1、xma-build-release.ps1；所有外部命令包装必须复用本文件。
-当前实现：UTF-8 读取 package.json；使用 FilePath + ArgumentList 安全转发外部命令；统一恢复 `[1]` 选择的 XMA_BUN_HOME 与 CARGO_HOME/RUSTUP_HOME，并提供 Bun/Cargo 真实探针。
-职责边界：这里只提供跨 Windows 入口共享的环境/命令基础能力，不负责联网安装、Git 提交流程或产品构建策略。
+文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Bun/Rust 环境恢复、版本读取与外部命令执行。
+关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1。
+当前实现：把 XMA 自管依赖/状态统一收敛到 `xma-path`；默认跟随当前 checkout，也支持 D 盘或用户选择的其他真实盘符；后续入口统一从保存状态恢复 Bun 与 Rust/Cargo 并做真实可执行探针。
+职责边界：这里只提供跨 Windows 入口共享的路径、环境与命令基础能力，不负责联网安装、Git 提交流程或产品构建策略。
 #>
 
 function Get-XmaProjectVersion {
@@ -11,100 +11,93 @@ function Get-XmaProjectVersion {
   return (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
 }
 
+function Get-XmaLocalPathRoot {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path $ProjectRoot 'xma-path')
+}
+
+function Get-XmaStateRoot {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state')
+}
+
+function Get-XmaDefaultBunHome {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'bun')
+}
+
+function Get-XmaDefaultRustRoot {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'rust')
+}
+
+function Get-XmaOpenTuiHomeFromBunHome {
+  param([Parameter(Mandatory = $true)][string]$BunHome)
+  $dependencyRoot = Split-Path -Parent ([IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($BunHome)))
+  return (Join-Path $dependencyRoot 'opentui')
+}
+
+function Remove-XmaDirectoryEntry {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+    try {
+      $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) { return }
+    } catch { return }
+  }
+  $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if ($item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+    # 中文说明：Directory.Delete 对目录链接只删除链接本身，不递归删除链接目标；禁止用递归删除误伤 xma-path 中的真实依赖。
+    [IO.Directory]::Delete($Path)
+    return
+  }
+  Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+}
+
+function Connect-XmaOpenTuiNodeModules {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [Parameter(Mandatory = $true)][string]$BunHome
+  )
+  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $BunHome
+  $target = Join-Path $openTuiHome 'node_modules'
+  if (-not (Test-Path -LiteralPath $target -PathType Container)) { return $false }
+
+  $runtimeRoot = Join-Path $ProjectRoot 'apps\cli\opentui-runtime'
+  $link = Join-Path $runtimeRoot 'node_modules'
+  if (Test-Path -LiteralPath $link -PathType Container) {
+    try {
+      $resolvedLink = [IO.Path]::GetFullPath((Get-Item -LiteralPath $link -Force).FullName)
+      $resolvedTarget = [IO.Path]::GetFullPath($target)
+      $item = Get-Item -LiteralPath $link -Force
+      if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        try {
+          $actualTarget = [IO.Path]::GetFullPath([string]$item.Target)
+          if ($actualTarget -ieq $resolvedTarget) { return $true }
+        } catch {}
+      }
+    } catch {}
+    Remove-XmaDirectoryEntry -Path $link
+  } else {
+    # 断开的 junction 可能让 Test-Path 返回 false，但目录项仍存在；先安全清掉再重建。
+    try {
+      $stale = Get-Item -LiteralPath $link -Force -ErrorAction Stop
+      if (($stale.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { [IO.Directory]::Delete($link) }
+    } catch {}
+  }
+
+  New-Item -ItemType Junction -Path $link -Target $target -Force | Out-Null
+  return (Test-Path -LiteralPath $link -PathType Container)
+}
+
 function Get-XmaRustEnvironmentStatePath {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path $ProjectRoot '.xma\state\rust-environment.json')
+  return (Join-Path (Get-XmaStateRoot -ProjectRoot $ProjectRoot) 'rust-environment.json')
 }
 
 function Get-XmaBunEnvironmentStatePath {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path $ProjectRoot '.xma\state\bun-environment.json')
-}
-
-function Get-XmaBunExecutableFromHome {
-  param(
-    [Parameter(Mandatory = $true)][string]$BunHome,
-    [Parameter(Mandatory = $true)][string]$ExpectedVersion
-  )
-  $expanded = [Environment]::ExpandEnvironmentVariables($BunHome)
-  $normalized = [IO.Path]::GetFullPath($expanded)
-  return (Join-Path (Join-Path $normalized $ExpectedVersion) 'bun.exe')
-}
-
-function Save-XmaBunEnvironmentState {
-  param(
-    [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [Parameter(Mandatory = $true)][string]$BunHome,
-    [Parameter(Mandatory = $true)][string]$Version
-  )
-  if ([string]::IsNullOrWhiteSpace($BunHome)) { return }
-  $stateFile = Get-XmaBunEnvironmentStatePath -ProjectRoot $ProjectRoot
-  $stateDir = Split-Path -Parent $stateFile
-  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
-  $state = [ordered]@{
-    formatVersion = 1
-    bunHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($BunHome))
-    version = $Version
-  }
-  $json = $state | ConvertTo-Json -Depth 3
-  [IO.File]::WriteAllText($stateFile, "$json`r`n", ([Text.UTF8Encoding]::new($false)))
-}
-
-function Import-XmaBunEnvironment {
-  param(
-    [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [Parameter(Mandatory = $true)][string]$ExpectedVersion
-  )
-
-  # 中文说明：Bun 的安装位置由 `[1]` 用户选择并持久化到 User XMA_BUN_HOME；项目状态只作为旧终端/环境变量尚未刷新时的恢复备份。
-  # 所有候选都必须真实执行 bun.exe --version，不能只因为目录存在就当成 Runtime 已准备。
-  $candidates = New-Object System.Collections.Generic.List[object]
-  $userBunHome = [Environment]::GetEnvironmentVariable('XMA_BUN_HOME','User')
-  if (-not [string]::IsNullOrWhiteSpace($userBunHome)) {
-    [void]$candidates.Add([pscustomobject]@{ Source = 'user-env'; BunHome = $userBunHome })
-  }
-
-  $stateFile = Get-XmaBunEnvironmentStatePath -ProjectRoot $ProjectRoot
-  if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
-    try {
-      $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($state.formatVersion -eq 1 -and $state.bunHome -and [string]$state.version -eq $ExpectedVersion) {
-        [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; BunHome = [string]$state.bunHome })
-      }
-    } catch {
-      # 本地状态损坏时继续尝试 Process 环境；状态文件本身不能阻断源码开发入口。
-    }
-  }
-
-  if (-not [string]::IsNullOrWhiteSpace($env:XMA_BUN_HOME)) {
-    [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; BunHome = $env:XMA_BUN_HOME })
-  }
-
-  foreach ($candidate in $candidates) {
-    try {
-      $bunHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.BunHome))
-      $bunExe = Get-XmaBunExecutableFromHome -BunHome $bunHome -ExpectedVersion $ExpectedVersion
-    } catch { continue }
-    if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) { continue }
-
-    $previousPreference = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-      $actual = @(& $bunExe --version 2>$null)
-      $exitCode = $LASTEXITCODE
-    } catch {
-      $actual = @()
-      $exitCode = -1
-    } finally {
-      $ErrorActionPreference = $previousPreference
-    }
-    $version = ($actual -join ' ').Trim()
-    if ($exitCode -ne 0 -or $version -ne $ExpectedVersion) { continue }
-
-    $env:XMA_BUN_HOME = $bunHome
-    return [pscustomobject]@{ Source = $candidate.Source; BunHome = $bunHome; BunExe = $bunExe; Version = $version }
-  }
-  return $null
+  return (Join-Path (Get-XmaStateRoot -ProjectRoot $ProjectRoot) 'bun-environment.json')
 }
 
 function Add-XmaProcessPathFront {
@@ -124,6 +117,104 @@ function Add-XmaProcessPathFront {
   $env:Path = ($entries -join ';')
 }
 
+function Get-XmaBunExecutableFromHome {
+  param(
+    [Parameter(Mandatory = $true)][string]$BunHome,
+    [Parameter(Mandatory = $true)][string]$ExpectedVersion
+  )
+  $normalized = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($BunHome))
+  return (Join-Path (Join-Path $normalized $ExpectedVersion) 'bun.exe')
+}
+
+function Save-XmaBunEnvironmentState {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [Parameter(Mandatory = $true)][string]$BunHome,
+    [Parameter(Mandatory = $true)][string]$Version
+  )
+  $normalized = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($BunHome))
+  $defaultHome = [IO.Path]::GetFullPath((Get-XmaDefaultBunHome -ProjectRoot $ProjectRoot))
+  $stateFile = Get-XmaBunEnvironmentStatePath -ProjectRoot $ProjectRoot
+  $stateDir = Split-Path -Parent $stateFile
+  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+  $isProject = $normalized -ieq $defaultHome
+  $state = [ordered]@{
+    formatVersion = 2
+    location = if ($isProject) { 'project' } else { 'external' }
+    bunHome = if ($isProject) { '' } else { $normalized }
+    version = $Version
+  }
+  $json = $state | ConvertTo-Json -Depth 3
+  [IO.File]::WriteAllText($stateFile, "$json`r`n", ([Text.UTF8Encoding]::new($false)))
+}
+
+function Import-XmaBunEnvironment {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [Parameter(Mandatory = $true)][string]$ExpectedVersion
+  )
+
+  # 中文说明：当前 checkout 的 `xma-path/state` 是 XMA 自己的依赖位置真值；项目默认 Bun 位于 `xma-path/bun`，
+  # 保存为相对“project”位置，因此整个仓库移动盘符后仍能自动恢复。User/Process 环境与旧 `.xma` 状态只作为 0.1.0 迁移兼容来源。
+  $candidates = New-Object System.Collections.Generic.List[object]
+  $stateFile = Get-XmaBunEnvironmentStatePath -ProjectRoot $ProjectRoot
+  if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
+    try {
+      $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($state.formatVersion -eq 2 -and [string]$state.version -eq $ExpectedVersion) {
+        if ([string]$state.location -eq 'project') {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; BunHome = (Get-XmaDefaultBunHome -ProjectRoot $ProjectRoot) })
+        } elseif ($state.bunHome) {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; BunHome = [string]$state.bunHome })
+        }
+      }
+    } catch {}
+  }
+
+  [void]$candidates.Add([pscustomobject]@{ Source = 'project-default'; BunHome = (Get-XmaDefaultBunHome -ProjectRoot $ProjectRoot) })
+
+  $legacyStateFile = Join-Path $ProjectRoot '.xma\state\bun-environment.json'
+  if (Test-Path -LiteralPath $legacyStateFile -PathType Leaf) {
+    try {
+      $legacy = Get-Content -LiteralPath $legacyStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($legacy.bunHome -and [string]$legacy.version -eq $ExpectedVersion) {
+        [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-state'; BunHome = [string]$legacy.bunHome })
+      }
+    } catch {}
+  }
+
+  $userBunHome = [Environment]::GetEnvironmentVariable('XMA_BUN_HOME','User')
+  if (-not [string]::IsNullOrWhiteSpace($userBunHome)) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-user-env'; BunHome = $userBunHome }) }
+  if (-not [string]::IsNullOrWhiteSpace($env:XMA_BUN_HOME)) { [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; BunHome = $env:XMA_BUN_HOME }) }
+
+  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  foreach ($candidate in $candidates) {
+    try {
+      $bunHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.BunHome))
+      if (-not $seen.Add($bunHome)) { continue }
+      $bunExe = Get-XmaBunExecutableFromHome -BunHome $bunHome -ExpectedVersion $ExpectedVersion
+    } catch { continue }
+    if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) { continue }
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      $actual = @(& $bunExe --version 2>$null)
+      $exitCode = $LASTEXITCODE
+    } catch {
+      $actual = @(); $exitCode = -1
+    } finally {
+      $ErrorActionPreference = $previousPreference
+    }
+    $version = ($actual -join ' ').Trim()
+    if ($exitCode -ne 0 -or $version -ne $ExpectedVersion) { continue }
+
+    $env:XMA_BUN_HOME = $bunHome
+    return [pscustomobject]@{ Source = $candidate.Source; BunHome = $bunHome; BunExe = $bunExe; Version = $version }
+  }
+  return $null
+}
+
 function Save-XmaRustEnvironmentState {
   param(
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
@@ -131,15 +222,21 @@ function Save-XmaRustEnvironmentState {
     [string]$RustupHome = ''
   )
   if ([string]::IsNullOrWhiteSpace($CargoHome)) { return }
+  $cargo = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($CargoHome))
+  $rustup = if ([string]::IsNullOrWhiteSpace($RustupHome)) { '' } else { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($RustupHome)) }
+  $defaultRoot = [IO.Path]::GetFullPath((Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot))
+  $defaultCargo = Join-Path $defaultRoot 'cargo'
+  $defaultRustup = Join-Path $defaultRoot 'rustup'
+  $isProject = ($cargo -ieq $defaultCargo) -and ([string]::IsNullOrWhiteSpace($rustup) -or $rustup -ieq $defaultRustup)
+
   $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $ProjectRoot
   $stateDir = Split-Path -Parent $stateFile
   New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
-  $normalizedRustupHome = ''
-  if (-not [string]::IsNullOrWhiteSpace($RustupHome)) { $normalizedRustupHome = [IO.Path]::GetFullPath($RustupHome) }
   $state = [ordered]@{
-    formatVersion = 1
-    cargoHome = [IO.Path]::GetFullPath($CargoHome)
-    rustupHome = $normalizedRustupHome
+    formatVersion = 2
+    location = if ($isProject) { 'project' } else { 'external' }
+    cargoHome = if ($isProject) { '' } else { $cargo }
+    rustupHome = if ($isProject) { '' } else { $rustup }
   }
   $json = $state | ConvertTo-Json -Depth 3
   [IO.File]::WriteAllText($stateFile, "$json`r`n", ([Text.UTF8Encoding]::new($false)))
@@ -148,38 +245,44 @@ function Save-XmaRustEnvironmentState {
 function Import-XmaRustEnvironment {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
 
-  # 中文说明：XMA 自己安装/确认过的 Rust 位置记录在项目本地 .xma/state 中。
-  # 这样用户把 Rust 安装到 D:/E:/自定义目录后，新的 PowerShell 进程也能先恢复同一 CARGO_HOME/RUSTUP_HOME，
-  # 不依赖启动这个终端时是否已经继承了最新 User 环境变量。
+  # 中文说明：优先使用当前 checkout `xma-path/state` 记录的 Rust 位置；默认安装在 `xma-path/rust` 并按项目相对位置恢复。
+  # 旧 User 环境与 `.xma/state` 仍作为迁移兼容来源，找到可用工具链后 `[1]` 会写回新的 xma-path 状态。
   $candidates = New-Object System.Collections.Generic.List[object]
-
-  # User 环境是 `[1]` 持久化后的权威来源；直接读取注册表级 User 环境，
-  # 即使当前 Windows Terminal 是旧进程、尚未继承最新变量，也能立即恢复用户选定的 D:/E:/自定义 Rust Home。
-  $userCargoHome = [Environment]::GetEnvironmentVariable('CARGO_HOME','User')
-  $userRustupHome = [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User')
-  if (-not [string]::IsNullOrWhiteSpace($userCargoHome)) {
-    [void]$candidates.Add([pscustomobject]@{ Source = 'user-env'; CargoHome = $userCargoHome; RustupHome = $userRustupHome })
-  }
-
-  # 项目状态是第二层恢复来源，主要覆盖 User 环境尚未持久化/被外部工具暂时覆盖的情况。
   $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $ProjectRoot
   if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
     try {
       $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($state.formatVersion -eq 1 -and $state.cargoHome) {
-        [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; CargoHome = [string]$state.cargoHome; RustupHome = [string]$state.rustupHome })
+      if ($state.formatVersion -eq 2) {
+        if ([string]$state.location -eq 'project') {
+          $root = Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot
+          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; CargoHome = (Join-Path $root 'cargo'); RustupHome = (Join-Path $root 'rustup') })
+        } elseif ($state.cargoHome) {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; CargoHome = [string]$state.cargoHome; RustupHome = [string]$state.rustupHome })
+        }
       }
-    } catch {
-      # 本地状态损坏时继续尝试 Process 环境，不让辅助状态阻断开发入口。
-    }
+    } catch {}
   }
 
-  if (-not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) {
-    [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; CargoHome = $env:CARGO_HOME; RustupHome = $env:RUSTUP_HOME })
+  $defaultRustRoot = Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot
+  [void]$candidates.Add([pscustomobject]@{ Source = 'project-default'; CargoHome = (Join-Path $defaultRustRoot 'cargo'); RustupHome = (Join-Path $defaultRustRoot 'rustup') })
+
+  $legacyStateFile = Join-Path $ProjectRoot '.xma\state\rust-environment.json'
+  if (Test-Path -LiteralPath $legacyStateFile -PathType Leaf) {
+    try {
+      $legacy = Get-Content -LiteralPath $legacyStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($legacy.cargoHome) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-state'; CargoHome = [string]$legacy.cargoHome; RustupHome = [string]$legacy.rustupHome }) }
+    } catch {}
   }
 
+  $userCargoHome = [Environment]::GetEnvironmentVariable('CARGO_HOME','User')
+  $userRustupHome = [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User')
+  if (-not [string]::IsNullOrWhiteSpace($userCargoHome)) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-user-env'; CargoHome = $userCargoHome; RustupHome = $userRustupHome }) }
+  if (-not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) { [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; CargoHome = $env:CARGO_HOME; RustupHome = $env:RUSTUP_HOME }) }
+
+  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
   foreach ($candidate in $candidates) {
     try { $cargoHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.CargoHome)) } catch { continue }
+    if (-not $seen.Add($cargoHome)) { continue }
     $cargoBin = Join-Path $cargoHome 'bin'
     $cargoExe = Join-Path $cargoBin 'cargo.exe'
     $rustcExe = Join-Path $cargoBin 'rustc.exe'

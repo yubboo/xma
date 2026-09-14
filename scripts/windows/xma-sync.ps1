@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到自动识别或用户指定的 Git 工作目录。
-关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、XMA-GitHub.bat、GitHub yubboo/xma。
+关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、xma-path/state/source-sync.json、XMA-GitHub.bat、GitHub yubboo/xma。
 当前实现：优先按包内 Source Manifest 比较文件内容；默认识别同级已存在且 origin 正确的 XMA Git 工作目录，存在多个或未找到时由用户明确选择；绝不自动创建/占用标准 git clone 使用的 xma 目录。
-职责边界：不得删除目标仓库 .git、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
+职责边界：不得删除目标仓库 .git、xma-path、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -110,8 +110,8 @@ if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw 'XMA Sourc
 $Target = Resolve-XmaSyncTarget -SourceRoot $Source
 $ProjectVersion = (Get-Content (Join-Path $Source 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $PackageManifest = Join-Path $Source '.xma-package\source-manifest.json'
-$SyncState = Join-Path $Target '.xma\source-sync.json'
-$SyncReport = Join-Path $Target '.xma\source-sync-last.txt'
+$SyncState = Join-Path $Target 'xma-path\state\source-sync.json'
+$SyncReport = Join-Path $Target 'xma-path\state\source-sync-last.txt'
 $ChangePreviewLimit = 20
 $SyncSummaryText = $null
 
@@ -139,7 +139,7 @@ function Test-XmaProtectedRelativePath {
   param([Parameter(Mandatory = $true)][string]$RelativePath)
   $normalized = (Normalize-XmaRelativePath $RelativePath).ToLowerInvariant()
   $parts = $normalized.Split('/')
-  if ($parts[0] -in @('.git','.xma','.xma-package','runtime','node_modules','.cache','dist','build','target','release')) { return $true }
+  if ($parts[0] -in @('.git','.xma','.xma-package','xma-path','runtime','node_modules','.cache','dist','build','target','release')) { return $true }
   foreach ($part in $parts) {
     if ($part -in @('.git','node_modules','.cache','target')) { return $true }
   }
@@ -165,6 +165,15 @@ function Remove-XmaEmptyParents {
 }
 
 function Get-XmaPreviousManagedFiles {
+  $legacySyncState = Join-Path $Target '.xma\source-sync.json'
+  if (-not (Test-Path -LiteralPath $SyncState -PathType Leaf) -and (Test-Path -LiteralPath $legacySyncState -PathType Leaf)) {
+    try {
+      $stateDir = Split-Path -Parent $SyncState
+      New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+      Copy-Item -LiteralPath $legacySyncState -Destination $SyncState -Force
+      Write-Host '[迁移] 旧 .xma Source Sync 状态已迁移到 xma-path/state。' -ForegroundColor DarkCyan
+    } catch {}
+  }
   if (Test-Path $SyncState) {
     try {
       $state = Get-Content $SyncState -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -350,7 +359,7 @@ if (Test-Path $PackageManifest) {
 
   # 中文说明：旧包回退模式仍允许按名字排除真正不会成为源码的依赖/缓存目录；
   # release 不再做全局名字排除，避免误伤 scripts/release 正式源码。
-  $excludeDirs = @('.git','node_modules','.cache','.xma','target')
+  $excludeDirs = @('.git','node_modules','.cache','.xma','xma-path','target')
   $excludeDirs += @(
     (Join-Path $Source 'runtime'),
     (Join-Path $Source 'dist'),
@@ -388,11 +397,26 @@ foreach ($legacyBuildDir in $legacyBuildDirs) {
 }
 
 # 中文说明：.xma-package 只属于正式源码包，长期 Git 工作目录不需要这份包级元数据。
-# 旧版 Sync 若曾留下该目录，在确认目标是正确 XMA 仓库后安全清理；.xma/.cache 等真实本地状态继续保留。
+# 旧版 Sync 若曾留下该目录，在确认目标是正确 XMA 仓库后安全清理；当前本地状态统一进入 xma-path/.cache。
 $legacyPackageMetadata = Join-Path $Target '.xma-package'
 if (Test-Path -LiteralPath $legacyPackageMetadata -PathType Container) {
   Write-Host "[清理] 删除 Git 工作目录中无用的源码包元数据：$legacyPackageMetadata" -ForegroundColor DarkYellow
   Remove-Item -LiteralPath $legacyPackageMetadata -Recurse -Force -ErrorAction Stop
+}
+
+
+# 0.1.0 早期 Source Sync/开发环境使用 `.xma`。状态迁移到 xma-path 后清理旧目录，避免根目录继续出现重复本地状态容器。
+$legacyXmaRoot = Join-Path $Target '.xma'
+if (Test-Path -LiteralPath $legacyXmaRoot -PathType Container) {
+  Remove-Item -LiteralPath (Join-Path $legacyXmaRoot 'source-sync.json') -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $legacyXmaRoot 'source-sync-last.txt') -Force -ErrorAction SilentlyContinue
+  try {
+    $children = @(Get-ChildItem -LiteralPath $legacyXmaRoot -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) {
+      Remove-Item -LiteralPath $legacyXmaRoot -Force -ErrorAction SilentlyContinue
+      Write-Host '[清理] 已移除旧版 .xma 本地状态目录。' -ForegroundColor DarkYellow
+    }
+  } catch {}
 }
 
 Set-Location $Target
@@ -401,7 +425,7 @@ if (-not (Test-XmaExpectedGitOrigin $Target)) {
 }
 Write-Host '[验证] Git 工作目录与 origin 仍指向 yubboo/xma。' -ForegroundColor Green
 
-Write-Host '[完成] XMA 新源码已同步；.git / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
+Write-Host '[完成] XMA 新源码已同步；.git / xma-path / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
 if ($SyncSummaryText) {
   Write-Host "[本次同步] $SyncSummaryText" -ForegroundColor Cyan
   Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray

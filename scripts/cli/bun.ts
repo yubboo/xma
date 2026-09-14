@@ -1,11 +1,11 @@
 /**
  * 文件作用：为 XMA OpenTUI CLI 恢复 `[1]` 用户选择的固定 Bun Runtime，并统一源码运行与 CLI 构建入口。
  * 关联模块：xma-prepare.ps1、xma-common.ps1、package.json、apps/cli/opentui-runtime/build.ts。
- * 当前实现：Windows 优先读取 XMA_BUN_HOME / 项目恢复状态并真实校验 Bun 1.3.14；中文/特殊字符源码路径构建时，用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
+ * 当前实现：Windows 优先读取当前 checkout `xma-path/state` 与项目默认 `xma-path/bun`，并真实校验 Bun 1.3.14；旧环境变量只作迁移兼容；中文/特殊字符源码路径构建时，用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
  * 职责边界：只恢复并启动已经准备好的 Bun/OpenTUI 前端，不安装依赖、不下载 Bun；SUBST 只在单次 build 生命周期存在，最终 dist/cli/xiaoyu.exe 不依赖它。
  */
 
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +20,7 @@ const forwarded = process.argv.slice(3).filter(value => value !== '--')
 interface BunRuntime {
   executable: string
   home?: string
-  source: 'env' | 'project-state' | 'path'
+  source: 'project-state' | 'project-default' | 'legacy-env' | 'legacy-state' | 'path'
 }
 
 function bunExecutableFromHome(home: string): string {
@@ -33,42 +33,82 @@ function isExpectedBun(executable: string): boolean {
   return probe.status === 0 && probe.stdout.trim() === BUN_VERSION
 }
 
-function readProjectBunHome(): string | undefined {
-  const stateFile = path.join(root, '.xma', 'state', 'bun-environment.json')
-  if (!existsSync(stateFile)) return undefined
-  try {
-    const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { formatVersion?: number; bunHome?: string; version?: string }
-    if (state.formatVersion !== 1 || state.version !== BUN_VERSION || !state.bunHome) return undefined
-    return state.bunHome
-  } catch {
-    return undefined
+function projectDefaultBunHome(): string {
+  return path.join(root, 'xma-path', 'bun')
+}
+
+function readProjectBunHome(): { home: string; source: BunRuntime['source'] } | undefined {
+  const stateFile = path.join(root, 'xma-path', 'state', 'bun-environment.json')
+  if (existsSync(stateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { formatVersion?: number; location?: string; bunHome?: string; version?: string }
+      if (state.formatVersion === 2 && state.version === BUN_VERSION) {
+        if (state.location === 'project') return { home: projectDefaultBunHome(), source: 'project-state' }
+        if (state.bunHome) return { home: state.bunHome, source: 'project-state' }
+      }
+    } catch { /* 状态损坏时继续尝试默认/旧兼容来源。 */ }
   }
+
+  const legacyStateFile = path.join(root, '.xma', 'state', 'bun-environment.json')
+  if (existsSync(legacyStateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(legacyStateFile, 'utf8')) as { bunHome?: string; version?: string }
+      if (state.version === BUN_VERSION && state.bunHome) return { home: state.bunHome, source: 'legacy-state' }
+    } catch { /* 旧状态只作兼容。 */ }
+  }
+  return undefined
 }
 
 function resolveBun(): BunRuntime {
-  const homes = [process.env.XMA_BUN_HOME, readProjectBunHome()].filter((value): value is string => Boolean(value?.trim()))
+  const configured = readProjectBunHome()
+  const candidates: Array<{ home: string; source: BunRuntime['source'] }> = []
+  if (configured) candidates.push(configured)
+  candidates.push({ home: projectDefaultBunHome(), source: 'project-default' })
+  if (process.env.XMA_BUN_HOME?.trim()) candidates.push({ home: process.env.XMA_BUN_HOME, source: 'legacy-env' })
+
   const seen = new Set<string>()
-  for (const rawHome of homes) {
-    const home = path.resolve(rawHome)
+  for (const candidate of candidates) {
+    const home = path.resolve(candidate.home)
     const key = process.platform === 'win32' ? home.toLowerCase() : home
     if (seen.has(key)) continue
     seen.add(key)
     const executable = bunExecutableFromHome(home)
-    if (existsSync(executable) && isExpectedBun(executable)) {
-      return { executable, home, source: rawHome === process.env.XMA_BUN_HOME ? 'env' : 'project-state' }
-    }
+    if (existsSync(executable) && isExpectedBun(executable)) return { executable, home, source: candidate.source }
   }
 
-  // Windows 必须使用 `[1]` 记录的安装位置，不能因为 PATH 里碰巧有另一个 Bun 就绕过用户选择。
-  // 非 Windows 开发/CI 仍允许使用 PATH 中完全匹配的固定版本。
   if (process.platform !== 'win32' && isExpectedBun('bun')) return { executable: 'bun', source: 'path' }
-  throw new Error(`未找到 [1] 已配置的 Bun ${BUN_VERSION} Runtime。请运行 xma-dev → [1] 一键准备开发环境并选择 Bun 安装位置。`)
+  throw new Error(`未找到 Bun ${BUN_VERSION} Runtime。请运行 xma-dev → [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。`)
+}
+
+function openTuiHomeFromBunHome(home: string): string {
+  return path.join(path.dirname(path.resolve(home)), 'opentui')
+}
+
+function ensureOpenTuiDependencyLink(runtime: BunRuntime): void {
+  if (!runtime.home) return
+  const target = path.join(openTuiHomeFromBunHome(runtime.home), 'node_modules')
+  if (!existsSync(target)) {
+    throw new Error(`OpenTUI Runtime 依赖不存在：${target}。请运行 xma-dev → [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。`)
+  }
+
+  const link = path.join(runtimeRoot, 'node_modules')
+  if (existsSync(link)) {
+    try {
+      if (realpathSync(link) === realpathSync(target)) return
+    } catch { /* 旧链接失效时下面重建。 */ }
+  }
+
+  try {
+    lstatSync(link)
+    rmSync(link, { recursive: true, force: true })
+  } catch { /* 路径不存在。 */ }
+  symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
 function ensureWritableDirectory(candidate: string): string | undefined {
   try {
     mkdirSync(candidate, { recursive: true })
-    const probe = path.join(candidate, `.xma-probe-${process.pid}`)
+    const probe = path.join(candidate, `xma-probe-${process.pid}`)
     const fd = openSync(probe, 'w')
     closeSync(fd)
     rmSync(probe, { force: true })
@@ -175,6 +215,7 @@ function createWindowsCompileAlias(realCache: string): CompilePathAlias {
 }
 
 const bunRuntime = resolveBun()
+ensureOpenTuiDependencyLink(bunRuntime)
 const bun = bunRuntime.executable
 const devArguments = forwarded.length > 0 ? forwarded : [root]
 const args = command === 'dev'

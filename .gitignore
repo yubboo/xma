@@ -18,8 +18,10 @@ temp/
 *.swp
 *.swo
 
-# XMA 用户运行数据与本地工作区
+# XMA 用户运行数据、本地依赖/状态与工作区
 /runtime/
+xma-path/
+# 0.1.0 早期遗留目录：新版不再创建，仅保留忽略规则避免旧状态误提交。
 .xma/
 workspaces/
 

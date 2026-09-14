@@ -67,9 +67,11 @@ cd xma
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。准备完成后会为**当前源码 checkout**生成开发态 `xiaoyu / xma` 命令并写入当前用户 `User PATH`；新开 PowerShell / Windows Terminal 后，可以在任意 Workspace 目录直接输入 `xiaoyu` 或 `xma` 启动这份源码。菜单 `[4]` 仍保留用于从开发控制台启动 CLI。 Windows `[1]` 中 Bun 1.3.14 与 Rust/Cargo 都会做真实 Runtime 探测；Bun 首次缺失时会像 Rust 一样让用户选择安装位置，并通过 `XMA_BUN_HOME` + 项目恢复状态记录该位置，后续 `[4]`、`[7]`、CLI build 统一复用，不再把 Bun 固定在仓库 `.xma\tools\bun`。
+首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 `xma-path/state` 恢复同一真实位置并重新校验。
 
-开发态命令使用仓库内被忽略的 `.xma\dev-bin` shim，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后重新运行 `xma-dev.bat → [1]` 即会刷新。
+默认项目依赖布局为 `xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`、`xma-path/state/`、`xma-path/dev-bin/`。其中 OpenTUI 的真实 `node_modules` 存在 `xma-path/opentui/`，源码 Runtime 只建立本地依赖链接；旧 `.xma/` 内容只做一次迁移，不再作为当前依赖/状态目录。
+
+开发态命令使用仓库内被忽略的 `xma-path\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
 
 Linux / macOS：
 
@@ -126,7 +128,7 @@ Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context 
 
 ## 维护者源码包同步流程（Windows）
 
-下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。长期 Git 工作目录只保留 `.git/.xma/.cache` 等真实本地状态；源码包专用 `.xma-package` 若由旧流程遗留在工作目录，会在 Sync 后自动清理。
+下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。长期 Git 工作目录保留 `.git/xma-path/.cache` 等真实本地状态；旧版 `.xma` 只作为一次迁移来源，迁移完成后不再作为当前状态目录。源码包专用 `.xma-package` 若由旧流程遗留在工作目录，会在 Sync 后自动清理。
 
 开发源码包解压后：
 
@@ -146,7 +148,7 @@ XMA-GitHub.bat
 xma-dev.bat
 ```
 
-菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查。首次运行 `[1]` 会一次准备通用 Workspace 依赖；Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查，以及 `[8] Bun/OpenTUI`、`[9] Rust/Cargo` 两个独立补装入口。首次运行 `[1]` 会准备通用 Workspace 依赖；Bun/Rust 缺失时允许选择 N 跳过，之后再由 `[8]/[9]` 补齐。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
 
 
 ## Terminal / Distribution 第一批
