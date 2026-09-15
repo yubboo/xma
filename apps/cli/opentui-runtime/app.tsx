@@ -151,7 +151,7 @@ function blendHex(from: string, to: string, amount: number): string {
 
 /**
  * 中文说明：只生成“真正有像素”的 Braille 流星单元，不再绘制一张覆盖全屏的 StyledText。
- * 这样既保留 MiMo Code 的 2×4 子像素斜向光束，也不会在 OpenTUI 0.1.101 下用空格重绘覆盖主界面文字。
+ * 这样既保留 MiMo Code 的 2×4 子像素斜向光束，也不会在 OpenTUI 装饰层用空格重绘覆盖主界面文字。
  */
 function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
   if (width <= 0 || height <= 0) return []
@@ -1363,7 +1363,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     process.title = 'Xiaoyu'
     const animation = setInterval(() => {
       setPhase(value => value + 1)
-      // 中文说明：OpenTUI 0.1.101 的装饰层动画会产生独立 dirty frame；若主 textarea 本帧没有重绘，
+      // 中文说明：OpenTUI 装饰层动画会产生独立 dirty frame；若主 textarea 本帧没有重绘，
       // Windows Terminal 的真实硬件 cursor 可能停在最后写入的星点/流星 cell。强制让已聚焦 Prompt 同帧参与渲染，
       // 由 TextareaRenderable.renderCursor() 在前景层最后重新提交真实 cursor 坐标，装饰层永远不能“带走”光标。
       if (!setupFlow().active && dialog() === undefined) prompt?.requestRender()

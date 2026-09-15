@@ -1,8 +1,8 @@
 /**
  * 文件作用：回归验证 Xiaoyu OpenTUI Active Renderer 的响应式布局、原生输入依赖边界与禁止旧 ANSI 光标控制合同。
  * 关联模块：apps/cli/opentui-runtime、apps/cli/src/opentui-layout.ts、scripts/gates/distribution.ts。
- * 当前实现：纯 Node 环境检查布局函数、固定版本声明、动态加载入口与 Active Renderer 源码静态合同，不要求本机安装 OpenTUI Native Runtime。
- * 职责边界：本测试不替代 Windows Terminal 的真实光标、IME、鼠标与动画 E2E；这些仍需固定 Bun/OpenTUI 环境实机验收。
+ * 当前实现：纯 Node 环境检查布局函数、pnpm latest Runtime 声明、动态加载入口与 Active Renderer 源码静态合同，不要求本机安装 OpenTUI Native Runtime。
+ * 职责边界：本测试不替代 Windows Terminal 的真实光标、IME、鼠标与动画 E2E；这些仍需由 `[1]` 实际解析出的 Bun/OpenTUI 版本在实机验收。
  */
 
 import assert from 'node:assert/strict'
@@ -19,13 +19,22 @@ test('OpenTUI content grid uses a wide centered body with symmetric side padding
   assert.equal(openTuiSidePadding(160), 14)
 })
 
-test('OpenTUI runtime stays pinned to the MiMo-validated dependency baseline', () => {
-  const pkg = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as {
-    dependencies?: Record<string, string>
+test('Bun and OpenTUI runtime dependencies are registry-latest pnpm workspace dependencies', () => {
+  const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    devDependencies?: Record<string, string>
   }
-  assert.equal(pkg.dependencies?.['@opentui/core'], '0.1.101')
-  assert.equal(pkg.dependencies?.['@opentui/solid'], '0.1.101')
-  assert.equal(pkg.dependencies?.['solid-js'], '1.9.11')
+  const runtimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as {
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+  }
+  assert.equal(rootPackage.devDependencies?.bun, 'latest')
+  assert.equal(runtimePackage.dependencies?.['@opentui/core'], 'latest')
+  assert.equal(runtimePackage.dependencies?.['@opentui/solid'], 'latest')
+  assert.equal(runtimePackage.dependencies?.['solid-js'], 'latest')
+  assert.equal(runtimePackage.devDependencies?.['@types/bun'], 'latest')
+  const workspace = readFileSync('pnpm-workspace.yaml', 'utf8')
+  assert.match(workspace, /apps\/cli\/opentui-runtime/)
+  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /pnpm --workspace-root update --latest bun/)
 })
 
 test('Workspace Trust hides the hardware cursor during raw selection and restores it before OpenTUI starts', () => {
@@ -77,11 +86,13 @@ test('Bun CLI build keeps real staging in project .cache and uses a temporary AS
   const runner = readFileSync('scripts/cli/bun.ts', 'utf8')
   const build = readFileSync('apps/cli/opentui-runtime/build.ts', 'utf8')
   assert.match(runner, /function resolveBunCompileCache/)
-  assert.match(runner, /process\.env\.XMA_BUN_HOME/)
-  assert.match(runner, /bun-environment\.json/)
+  assert.match(runner, /path\.join\(root, 'node_modules', 'bun'\)/)
+  assert.match(runner, /path\.join\(packageRoot, 'package\.json'\)/)
   assert.match(runner, /fileURLToPath\(import\.meta\.url\)/)
-  assert.doesNotMatch(runner, /\.xma['"]?,?\s*['"]tools['"]?,?\s*['"]bun/)
-  assert.match(runner, /path\.join\(root, '\.cache', 'bun-compile', BUN_VERSION\)/)
+  assert.doesNotMatch(runner, /XMA_BUN_HOME/)
+  assert.doesNotMatch(runner, /bun-environment\.json/)
+  assert.doesNotMatch(runner, /xma-path['"]?,?\s*['"]bun/)
+  assert.match(runner, /path\.join\(root, '\.cache', 'bun-compile', version\)/)
   assert.match(runner, /function createWindowsCompileAlias/)
   assert.match(runner, /containsNonAscii\(realCache\)/)
   assert.match(runner, /spawnSync\(subst, \[drive, realCache\]/)
@@ -118,22 +129,22 @@ test('CLI loads OpenTUI only for the interactive workbench so doctor/help remain
 })
 
 
-test('Bun OpenTUI runner uses the runtime cwd and forbids implicit dependency downloads', () => {
+test('Bun OpenTUI runner consumes pnpm node_modules and forbids implicit dependency downloads', () => {
   const source = readFileSync('scripts/cli/bun.ts', 'utf8')
   assert.match(source, /const scriptDir = path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/)
   assert.match(source, /const root = path\.resolve\(scriptDir, '\.\.', '\.\.'\)/)
   assert.match(source, /const runtimeRoot = path\.join\(root, 'apps', 'cli', 'opentui-runtime'\)/)
-  assert.match(source, /function checkoutStateRoot/)
-  assert.match(source, /path\.join\(checkoutStateRoot\(\), 'bun-environment\.json'\)/)
-  assert.match(source, /xma-path', 'state', 'bun-environment\.json'/) // 0.1.0 legacy migration source only
-  assert.match(source, /xma-path', 'bun'/)
-  assert.match(source, /\[8\] 单独安装 Bun\/OpenTUI/)
+  assert.match(source, /path\.join\(root, 'node_modules', 'bun'\)/)
+  assert.match(source, /path\.join\(runtimeRoot, 'node_modules'/)
+  assert.match(source, /\[1\]\/\[8\]/)
+  assert.doesNotMatch(source, /XMA_BUN_HOME/)
+  assert.doesNotMatch(source, /bun-environment\.json/)
+  assert.doesNotMatch(source, /xma-path', 'bun'/)
   assert.match(source, /const devArguments = forwarded\.length > 0 \? forwarded : \[root\]/)
   assert.match(source, /\['run', '--no-install', '\.\.\/src\/main\.ts', \.\.\.devArguments\]/)
   assert.match(source, /cwd: runtimeRoot/)
   assert.doesNotMatch(source, /\['--cwd'/)
 })
-
 
 test('OpenTUI logo keeps five glyph rows contiguous instead of inserting a blank row between every line', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')

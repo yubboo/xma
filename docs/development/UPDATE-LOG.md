@@ -560,3 +560,26 @@
 - Schannel：Windows curl 的测速和真实下载增加 `--ssl-revoke-best-effort`。它只允许“吊销服务不可达”时继续，不关闭正常证书链验证；Bun ZIP 仍必须通过固定 SHA-256，Rust 下载仍保留既有哈希校验。
 - 行为：官方源连接重置时仍自动切 SourceForge；SourceForge 遇到 `CRYPT_E_REVOCATION_OFFLINE` 不再仅因吊销服务器离线失败。`[4]/[7]` 依旧不联网，本修改只作用于显式准备入口 `[1]/[8]/[9]`。
 - 回归：Windows Gate 要求 x64/aarch64 固定 Bun digest、`--ssl-revoke-best-effort`，并禁止重新引入 Bun `SHASUMS256.txt` 额外下载依赖。版本保持 `0.1.0`。
+
+##49 · 开发控制台项目更新与 Bun 高速稳定下载
+
+- 日期：2026-09-15
+- 目的：解决已有 `xma` clone 无法通过第二次 `git clone` 覆盖更新、以及 Bun 首次准备在 SourceForge 大文件镜像下载慢且 curl 动态进度条导致 Windows Terminal 光标高频闪烁的问题。
+- `[10] 更新项目`：`xma-dev.bat` 主菜单新增项目更新入口。只允许在 Git 顶层且 `origin` 属于 `yubboo/xma` 的真实 clone 中使用；正式源码包包含 `.xma-package/source-manifest.json` 时拒绝。`[1] 安全更新` 执行 `git fetch origin main` + `git pull --rebase --autostash origin main`；`[2] 强制恢复 GitHub main` 必须输入 `YES` 二次确认后执行 `fetch + reset --hard origin/main`。强制恢复只覆盖 Git 已跟踪源码，不自动执行 `git clean`，因此不主动删除 `xma-path/node_modules/.cache/dist/.git/xma-state` 等本地依赖/缓存。更新完成后要求退出并重新运行 `xma-dev.bat`，避免旧 PowerShell 进程继续运行已被替换的脚本代码。
+- Bun 下载源：移除 SourceForge Bun 大文件镜像。Bun 1.3.14 Windows x64/aarch64 改用 Bun 官方发布的 `@oven/bun-windows-*` npm platform binary，在 npm 官方 CDN 与 `registry.npmmirror.com` 间按短探针排序。tgz 使用对应 npm `dist.integrity` 固定 SHA-512 真值校验，解压后仍真实执行 `bun --version`；OpenTUI 继续复用 npm/npmmirror registry 选择。
+- 下载进度：文件下载不再使用 curl `--progress-bar` 同行高频重绘。curl 改为 silent 模式，XMA 每约 4 秒追加一行稳定的“来源 + 已下载 MiB + 耗时”里程碑；连接超时缩短到 6 秒，持续低于 16 KiB/s 约 12 秒即切换备用源。这样既能看出没有卡死，也避免 Windows Text Cursor Indicator/硬件光标左右闪烁。无 curl 时回退 `Invoke-WebRequest`，同样不做动态同行重绘。
+- 边界：`[10]` 不 commit/push，GitHub 推送仍只由 `XMA-GitHub.bat` 负责；`[4]/[7]` 继续保持离线，不因下载器变化偷偷联网；`XMA_DOWNLOAD_SOURCE=auto|official|mirror` 合同保持不变。
+- 回归：Windows Gate 锁定 `[10]` 的 origin 校验、安全更新/强制恢复合同、禁止自动 `git clean`；锁定 Bun npm binary + SHA-512、npmmirror、稳定里程碑下载并禁止 SourceForge/`curl --progress-bar` 回归。版本继续保持 `0.1.0`，正式包仍覆盖 `xma-0.1.0.zip` 与对应 SHA-256。
+
+##50 · pnpm Workspace Runtime 统一与 latest 刷新
+
+- 日期：2026-09-15
+- 目的：把最近多轮为 Bun 独立安装位置、镜像、状态恢复和外部盘符发现增加的复杂度收回标准包管理器。Bun/OpenTUI/Solid/@types-bun 不再作为 `xma-path` 独立组件，而是与 TypeScript/Vite/tsx 一样成为 pnpm Workspace JavaScript Runtime。
+- 依赖声明：根 `package.json` 新增 `bun: latest`；`apps/cli/opentui-runtime/package.json` 的 `@opentui/core`、`@opentui/solid`、`solid-js`、`@types/bun` 使用 registry `latest`。`pnpm-workspace.yaml` 的 lifecycle allowlist 只允许 `bun` 与 `esbuild`，Electron 继续禁止普通 `pnpm install` 触发 Chromium postinstall。
+- Workspace 收口：`apps/cli/opentui-runtime` 明确加入 `pnpm-workspace.yaml`，因此根 `pnpm install` 会同时安装 Bun 与 OpenTUI/Solid 的 node_modules；`runtime:update` 只负责在 `[1]/[8]` 主动把这组受管 Runtime 解析到 registry latest，不再存在第二套 Bun/OpenTUI 包管理器。
+- 更新边界：`[1]` 与主菜单 `[8] 刷新 · JavaScript Runtime` 主动执行受管 Runtime 的 `pnpm update --latest`，然后 `pnpm install` 并刷新 lockfile/node_modules。这样用户重新运行 `[1]` 即会检查最新稳定 tag；`[4]`、`[7]`、`build:cli` 只消费当前 lockfile/node_modules，不在运行/检查阶段偷偷联网升级。
+- 目录：Windows/Linux/macOS 源码开发统一从 Workspace `node_modules` 读取 Bun；OpenTUI/Solid 实体位于 `apps/cli/opentui-runtime/node_modules`。删除独立 Bun Home、`XMA_BUN_HOME`、`bun-environment.json`、Bun drive scan、`xma-path/bun`/`xma-path/opentui` junction 与 Bun ZIP/tgz/SourceForge/checksum 下载器。`xma-path` 从此只承担 Rust/Cargo 等非 npm Native Toolchain。
+- CLI build：`scripts/cli/bun.ts` 动态读取 `node_modules/bun/package.json` 的真实安装版本，执行 `bun --version` 校验，并以该版本命名 `.cache/bun-compile/<version>`；Windows 中文路径的单次 SUBST ASCII alias 与最终 dist 独立性继续保留。
+- Unix：`scripts/unix/xma-console.sh` 同步改为 pnpm latest + node_modules，不再自己 curl GitHub Bun ZIP 或维护第二套 OpenTUI node_modules。
+- 发行边界：该改变只简化源码开发依赖。普通用户最终仍应通过 `install.ps1/install.sh` 下载 CI/Release 已预构建的 `xiaoyu`，不要求用户安装 pnpm/Node/Bun/Rust。
+- 验证：OpenTUI 定向测试改为锁定 `latest` 声明、node_modules Bun resolver 与 `--no-install` 运行边界；Windows/Distribution Gate 禁止独立 Bun 安装器回归。历史 ##31–##49 保留作为 0.1.0 调试演进记录，本条为当前有效 Runtime 规则。

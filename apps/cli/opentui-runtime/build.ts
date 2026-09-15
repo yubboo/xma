@@ -2,7 +2,7 @@
 /**
  * 文件作用：把 Xiaoyu OpenTUI CLI 编译为当前平台的 Bun 单文件可执行程序。
  * 关联模块：apps/cli/src/main.ts、@opentui/solid/bun-plugin、scripts/release/cli.ts。
- * 当前实现：固定使用 OpenTUI Solid transform plugin，并把 parser worker 一并嵌入 BunFS，输出到 dist/cli/xiaoyu[.exe]。
+ * 当前实现：使用 pnpm Workspace 当前安装的 OpenTUI Solid transform plugin，并把 parser worker 一并嵌入 BunFS，输出到 dist/cli/xiaoyu[.exe]。
  * 职责边界：本脚本只构建当前平台 CLI；Server/Web 仍由根 Node/tsup/Vite 构建链负责，不伪造跨平台二进制。
  */
 
@@ -36,7 +36,7 @@ const localParserWorker = path.join(scriptDir, 'node_modules', '@opentui', 'core
 const rootParserWorker = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
 const parserWorkerCandidate = fs.existsSync(localParserWorker) ? localParserWorker : rootParserWorker
 if (!fs.existsSync(parserWorkerCandidate)) {
-  throw new Error(`OpenTUI parser worker missing: ${parserWorkerCandidate}. Run xma-dev -> [1] to prepare the pinned OpenTUI runtime first.`)
+  throw new Error(`OpenTUI parser worker missing: ${parserWorkerCandidate}. Run xma-dev -> [1] to prepare the pnpm Workspace OpenTUI runtime first.`)
 }
 const parserWorker = fs.realpathSync(parserWorkerCandidate)
 const workerRelativePath = path.relative(scriptDir, parserWorker).replaceAll('\\', '/')
@@ -58,7 +58,7 @@ const result = await Bun.build({
   tsconfig: path.join(root, 'tsconfig.json'),
   plugins: [createSolidTransformPlugin()],
   format: 'esm',
-  // 中文说明：Bun 1.3.14 在 Windows 上存在已知 minify 构建崩溃案例；CLI 单文件发布优先保证可复现与稳定，暂不在 compile 阶段压缩。
+  // 中文说明：部分 Bun Windows 版本在 minify + compile 组合下出现过构建稳定性问题；CLI 单文件发布优先保证可复现与稳定，暂不在 compile 阶段压缩。
   minify: false,
   splitting: true,
   compile: {

@@ -1,16 +1,15 @@
 /**
- * 文件作用：为 XMA OpenTUI CLI 恢复 `[1]` 用户选择的固定 Bun Runtime，并统一源码运行与 CLI 构建入口。
- * 关联模块：xma-prepare.ps1、xma-common.ps1、package.json、apps/cli/opentui-runtime/build.ts。
- * 当前实现：Windows 优先读取 checkout 本地 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）与项目默认 `xma-path/bun`，并真实校验 Bun 1.3.14；旧 `xma-path/state`/环境变量只作迁移兼容；中文/特殊字符源码路径构建时，用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
- * 职责边界：只恢复并启动已经准备好的 Bun/OpenTUI 前端，不安装依赖、不下载 Bun；SUBST 只在单次 build 生命周期存在，最终 dist/cli/xiaoyu.exe 不依赖它。
+ * 文件作用：从 pnpm Workspace 的 node_modules 恢复 Xiaoyu OpenTUI CLI 使用的 Bun Runtime，并统一源码运行与 CLI 构建入口。
+ * 关联模块：package.json、pnpm-workspace.yaml、apps/cli/opentui-runtime/package.json、apps/cli/opentui-runtime/build.ts。
+ * 当前实现：Bun/OpenTUI 作为普通 Workspace 依赖由 `pnpm install` 管理；运行/构建直接读取 node_modules 中已安装版本，不再维护 xma-path Bun Home、独立下载器或固定 Bun 版本。Windows 中文/特殊字符源码路径构建时，仍用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
+ * 职责边界：只启动已经由 `[1]`/`[8]` 准备好的 node_modules，不安装依赖、不联网；SUBST 只在单次 build 生命周期存在，最终 dist/cli/xiaoyu.exe 不依赖它。
  */
 
-import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const BUN_VERSION = '1.3.14'
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(scriptDir, '..', '..')
 const runtimeRoot = path.join(root, 'apps', 'cli', 'opentui-runtime')
@@ -19,118 +18,51 @@ const forwarded = process.argv.slice(3).filter(value => value !== '--')
 
 interface BunRuntime {
   executable: string
-  home?: string
-  source: 'project-state' | 'project-default' | 'legacy-env' | 'legacy-state' | 'path'
+  version: string
+  packageRoot: string
 }
 
-function bunExecutableFromHome(home: string): string {
-  const name = process.platform === 'win32' ? 'bun.exe' : 'bun'
-  return path.join(path.resolve(home), BUN_VERSION, name)
+function readJson<T>(file: string): T {
+  return JSON.parse(readFileSync(file, 'utf8')) as T
 }
 
-function isExpectedBun(executable: string): boolean {
+function isExpectedBun(executable: string, expectedVersion: string): boolean {
   const probe = spawnSync(executable, ['--version'], { encoding: 'utf8', shell: false })
-  return probe.status === 0 && probe.stdout.trim() === BUN_VERSION
-}
-
-function projectDefaultBunHome(): string {
-  return path.join(root, 'xma-path', 'bun')
-}
-
-function checkoutStateRoot(): string {
-  const gitEntry = path.join(root, '.git')
-  try {
-    const info = lstatSync(gitEntry)
-    if (info.isDirectory()) return path.join(gitEntry, 'xma-state')
-    if (info.isFile()) {
-      const line = readFileSync(gitEntry, 'utf8').trim()
-      const match = /^gitdir:\s*(.+)$/i.exec(line)
-      if (match?.[1]) {
-        const gitDir = path.isAbsolute(match[1]) ? path.resolve(match[1]) : path.resolve(root, match[1])
-        return path.join(gitDir, 'xma-state')
-      }
-    }
-  } catch { /* 非 Git 源码树回退项目 .cache。 */ }
-  return path.join(root, '.cache', 'xma-state')
-}
-
-function readProjectBunHome(): { home: string; source: BunRuntime['source'] } | undefined {
-  const stateFile = path.join(checkoutStateRoot(), 'bun-environment.json')
-  if (existsSync(stateFile)) {
-    try {
-      const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { formatVersion?: number; location?: string; bunHome?: string; version?: string }
-      if (state.formatVersion === 2 && state.version === BUN_VERSION) {
-        if (state.location === 'project') return { home: projectDefaultBunHome(), source: 'project-state' }
-        if (state.bunHome) return { home: state.bunHome, source: 'project-state' }
-      }
-    } catch { /* 状态损坏时继续尝试默认/旧兼容来源。 */ }
-  }
-
-  const oldProjectStateFile = path.join(root, 'xma-path', 'state', 'bun-environment.json')
-  if (existsSync(oldProjectStateFile)) {
-    try {
-      const state = JSON.parse(readFileSync(oldProjectStateFile, 'utf8')) as { formatVersion?: number; location?: string; bunHome?: string; version?: string }
-      if (state.formatVersion === 2 && state.version === BUN_VERSION) {
-        if (state.location === 'project') return { home: projectDefaultBunHome(), source: 'legacy-state' }
-        if (state.bunHome) return { home: state.bunHome, source: 'legacy-state' }
-      }
-    } catch { /* 旧项目状态只作迁移兼容。 */ }
-  }
-
-  const legacyStateFile = path.join(root, '.xma', 'state', 'bun-environment.json')
-  if (existsSync(legacyStateFile)) {
-    try {
-      const state = JSON.parse(readFileSync(legacyStateFile, 'utf8')) as { bunHome?: string; version?: string }
-      if (state.version === BUN_VERSION && state.bunHome) return { home: state.bunHome, source: 'legacy-state' }
-    } catch { /* 旧状态只作兼容。 */ }
-  }
-  return undefined
+  return probe.status === 0 && probe.stdout.trim() === expectedVersion
 }
 
 function resolveBun(): BunRuntime {
-  const configured = readProjectBunHome()
-  const candidates: Array<{ home: string; source: BunRuntime['source'] }> = []
-  if (configured) candidates.push(configured)
-  candidates.push({ home: projectDefaultBunHome(), source: 'project-default' })
-  if (process.env.XMA_BUN_HOME?.trim()) candidates.push({ home: process.env.XMA_BUN_HOME, source: 'legacy-env' })
-
-  const seen = new Set<string>()
-  for (const candidate of candidates) {
-    const home = path.resolve(candidate.home)
-    const key = process.platform === 'win32' ? home.toLowerCase() : home
-    if (seen.has(key)) continue
-    seen.add(key)
-    const executable = bunExecutableFromHome(home)
-    if (existsSync(executable) && isExpectedBun(executable)) return { executable, home, source: candidate.source }
+  const packageRoot = path.join(root, 'node_modules', 'bun')
+  const packageJson = path.join(packageRoot, 'package.json')
+  if (!existsSync(packageJson)) {
+    throw new Error('未检测到 Workspace Bun Runtime。请运行 xma-dev → [1]，或主菜单 [8] 刷新 JavaScript Runtime。')
   }
+  const pkg = readJson<{ version?: string }>(packageJson)
+  const version = pkg.version?.trim()
+  if (!version) throw new Error(`Bun package 缺少版本信息：${packageJson}`)
 
-  if (process.platform !== 'win32' && isExpectedBun('bun')) return { executable: 'bun', source: 'path' }
-  throw new Error(`未找到 Bun ${BUN_VERSION} Runtime。请运行 xma-dev → [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。`)
+  const candidates = process.platform === 'win32'
+    ? [path.join(packageRoot, 'bin', 'bun.exe')]
+    : [path.join(root, 'node_modules', '.bin', 'bun'), path.join(packageRoot, 'bin', 'bun.exe')]
+  for (const executable of candidates) {
+    if (existsSync(executable) && isExpectedBun(executable, version)) return { executable, version, packageRoot }
+  }
+  throw new Error(`node_modules 中的 Bun Runtime 不完整或版本探针失败（package=${version}）。请运行 xma-dev → [1]/[8] 重新执行 pnpm 安装。`)
 }
 
-function openTuiHomeFromBunHome(home: string): string {
-  return path.join(path.dirname(path.resolve(home)), 'opentui')
-}
-
-function ensureOpenTuiDependencyLink(runtime: BunRuntime): void {
-  if (!runtime.home) return
-  const target = path.join(openTuiHomeFromBunHome(runtime.home), 'node_modules')
-  if (!existsSync(target)) {
-    throw new Error(`OpenTUI Runtime 依赖不存在：${target}。请运行 xma-dev → [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。`)
+function ensureOpenTuiDependencies(): void {
+  const required = [
+    ['@opentui', 'core', 'package.json'],
+    ['@opentui', 'solid', 'package.json'],
+    ['solid-js', 'package.json'],
+    ['@types', 'bun', 'package.json'],
+  ]
+  const missing = required
+    .map(parts => path.join(runtimeRoot, 'node_modules', ...parts))
+    .filter(file => !existsSync(file))
+  if (missing.length > 0) {
+    throw new Error(`OpenTUI Workspace 依赖不完整：${missing.join('；')}。请运行 xma-dev → [1]，或主菜单 [8] 刷新 JavaScript Runtime。`)
   }
-
-  const link = path.join(runtimeRoot, 'node_modules')
-  if (existsSync(link)) {
-    try {
-      if (realpathSync(link) === realpathSync(target)) return
-    } catch { /* 旧链接失效时下面重建。 */ }
-  }
-
-  try {
-    lstatSync(link)
-    rmSync(link, { recursive: true, force: true })
-  } catch { /* 路径不存在。 */ }
-  symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')
 }
 
 function ensureWritableDirectory(candidate: string): string | undefined {
@@ -169,9 +101,9 @@ function stageBunForCompile(source: string, runtimeDir: string): string {
   return staged
 }
 
-function resolveBunCompileCache(): string {
-  // 中文说明：XMA 自己控制的真实编译数据始终进入当前 checkout 的 `.cache/`；删除它只会丢构建缓存，不影响已生成的 xiaoyu.exe。
-  const candidate = path.join(root, '.cache', 'bun-compile', BUN_VERSION)
+function resolveBunCompileCache(version: string): string {
+  // 中文说明：XMA 自己控制的真实编译数据始终进入当前 checkout 的 `.cache/`；删除它只会丢构建缓存，不影响 node_modules Runtime 或已生成的 xiaoyu.exe。
+  const candidate = path.join(root, '.cache', 'bun-compile', version)
   const ready = ensureWritableDirectory(candidate)
   if (ready) return ready
   throw new Error(`无法创建项目级 Bun 编译缓存：${candidate}。请检查 XMA 项目目录是否可写。`)
@@ -197,11 +129,9 @@ interface CompilePathAlias {
 }
 
 function createWindowsCompileAlias(realCache: string): CompilePathAlias {
-  // 中文说明：Bun 1.3.14 Windows `--compile` 在包含中文/部分特殊字符的 TEMP 路径上会在内部复制 bun.exe 时返回 ENOENT。
-  // 不把缓存退回 C:\Users\...\Temp；只给当前项目 `.cache` 建立单次 ASCII 路径别名，真实文件仍在项目缓存中。
-  if (process.platform !== 'win32' || !containsNonAscii(realCache)) {
-    return { root: realCache, dispose: () => undefined }
-  }
+  // 中文说明：部分 Bun Windows 版本在包含中文/特殊字符的 TEMP 路径上可能在内部复制自身时返回 ENOENT。
+  // 不把缓存退回系统 TEMP；只给当前项目 `.cache` 建立单次 ASCII 路径别名，真实文件仍在项目缓存中。
+  if (process.platform !== 'win32' || !containsNonAscii(realCache)) return { root: realCache, dispose: () => undefined }
 
   const subst = resolveSubstExecutable()
   const candidates: string[] = []
@@ -210,9 +140,7 @@ function createWindowsCompileAlias(realCache: string): CompilePathAlias {
     const driveRoot = `${letter}:\\`
     if (!existsSync(driveRoot)) candidates.push(`${letter}:`)
   }
-  if (candidates.length === 0) {
-    throw new Error('Bun Windows 编译需要一个临时空闲盘符来兼容中文项目路径，但当前没有可用盘符。请释放一个盘符后重试。')
-  }
+  if (candidates.length === 0) throw new Error('Bun Windows 编译需要一个临时空闲盘符来兼容中文项目路径，但当前没有可用盘符。请释放一个盘符后重试。')
 
   let lastError = ''
   for (const drive of candidates) {
@@ -232,18 +160,15 @@ function createWindowsCompileAlias(realCache: string): CompilePathAlias {
       description: `${aliasRoot} -> ${realCache}`,
       dispose: () => {
         const removed = spawnSync(subst, [drive, '/D'], { encoding: 'utf8', shell: false })
-        if (removed.status !== 0) {
-          console.warn(`[xma] 警告：临时 Bun 路径别名 ${drive} 未能自动解除；可执行 \`subst ${drive} /D\` 手动清理。`)
-        }
+        if (removed.status !== 0) console.warn(`[xma] 警告：临时 Bun 路径别名 ${drive} 未能自动解除；可执行 \`subst ${drive} /D\` 手动清理。`)
       },
     }
   }
-
   throw new Error(`无法为 Bun Windows 编译创建项目缓存的 ASCII 路径别名。${lastError ? `最后错误：${lastError}` : ''}`)
 }
 
 const bunRuntime = resolveBun()
-ensureOpenTuiDependencyLink(bunRuntime)
+ensureOpenTuiDependencies()
 const bun = bunRuntime.executable
 const devArguments = forwarded.length > 0 ? forwarded : [root]
 const args = command === 'dev'
@@ -253,16 +178,13 @@ const args = command === 'dev'
     : undefined
 
 if (!args) throw new Error('Usage: tsx scripts/cli/bun.ts <dev|build> [args...]')
-// 中文说明：Bun 的 --cwd 不是这里的进程工作目录替代品；直接把 cwd 固定到独立 Runtime，
-// 既能让 bunfig.toml/preload 正常生效，也避免 `bun run` 把入口误判为 package script。
-// --no-install 锁死运行/构建阶段不得偷偷联网补依赖；缺依赖必须回到 xma-dev → [1] 显式准备。
+// 中文说明：运行/构建都使用 pnpm 已安装的 Bun；--no-install 锁死此阶段不得偷偷联网补依赖，缺包必须回到 xma-dev → [1]/[8]。
 const childEnv = { ...process.env }
-if (bunRuntime.home) childEnv.XMA_BUN_HOME = bunRuntime.home
 let bunExecutable = bun
 let disposeCompileAlias: () => void = () => {}
 
 if (command === 'build') {
-  const compileCache = resolveBunCompileCache()
+  const compileCache = resolveBunCompileCache(bunRuntime.version)
   const alias = createWindowsCompileAlias(compileCache)
   disposeCompileAlias = alias.dispose
   const compileTemp = path.join(alias.root, 'tmp')
@@ -276,7 +198,7 @@ if (command === 'build') {
   childEnv.TMP = compileTemp
   bunExecutable = stageBunForCompile(bun, compileRuntime)
 
-  console.log(`[xma] Bun source runtime: ${bun}`)
+  console.log(`[xma] Bun workspace runtime: ${bun} (${bunRuntime.version})`)
   console.log(`[xma] Bun compile cache: ${compileCache}`)
   if (alias.description) console.log(`[xma] Bun Windows path alias: ${alias.description}`)
   console.log(`[xma] Bun compile temp: ${compileTemp}`)

@@ -265,7 +265,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 
 - `xiaoyu` canonical command + `xma` compatibility alias；
 - 持续 TUI，而不是欢迎页打印后退出；
-- Xiaoyu Active Terminal Host 固定采用 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.11`，只迁移 Renderer/Input/Focus/Dialog/Flex layout，不复制 MiMo Code 的 Agent/Provider/Session 业务。主输入必须使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、selection、paste 与多行；Active Renderer 禁止重新引入 `CURSOR_MARKER`、手写 DECTCEM、手写 mouse-reporting 或 reverse-video 假光标。Home/Transcript/Prompt/Shortcut/Notice 共享响应式居中栅格并保持左右留白对称；`Ctrl+P` 与 `Ctrl+K` 共用可搜索命令面板，Provider/Model/Reasoning/Tool Approval 使用同一 OpenTUI Dialog/focus/key event 生命周期。旧 Pi TUI 仅迁移期保留 Workspace Trust 与纯合同/历史回归兼容，不得重新成为主工作台 Renderer；
+- Xiaoyu Active Terminal Host 采用 pnpm Workspace 管理的 `Bun + @opentui/core + @opentui/solid + solid-js`；`[1]/[8]` 以 registry latest 刷新并通过 lockfile + Gate 固化当次可复现组合，只迁移 Renderer/Input/Focus/Dialog/Flex layout，不复制 MiMo Code 的 Agent/Provider/Session 业务。主输入必须使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、selection、paste 与多行；Active Renderer 禁止重新引入 `CURSOR_MARKER`、手写 DECTCEM、手写 mouse-reporting 或 reverse-video 假光标。Home/Transcript/Prompt/Shortcut/Notice 共享响应式居中栅格并保持左右留白对称；`Ctrl+P` 与 `Ctrl+K` 共用可搜索命令面板，Provider/Model/Reasoning/Tool Approval 使用同一 OpenTUI Dialog/focus/key event 生命周期。旧 Pi TUI 仅迁移期保留 Workspace Trust 与纯合同/历史回归兼容，不得重新成为主工作台 Renderer；
 - Workspace Home/root 风险确认；
 - CLI 绑定正式 Workspace + JSONL Session Runtime；
 - OpenAI-compatible Brain Terminal 配置闭环：用户级非 Secret Profile Store、OS Credentials 默认安全录入、Credential Env Reference 兼容、Brain Ready、模型列表/选择；旧 `XIAOYU_*` 环境变量保持兼容；

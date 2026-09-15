@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@opentui/core": "0.1.101",
-    "@opentui/solid": "0.1.101",
-    "solid-js": "1.9.11"
+    "@opentui/core": "latest",
+    "@opentui/solid": "latest",
+    "solid-js": "latest"
   },
   "devDependencies": {
-    "@types/bun": "1.3.11"
+    "@types/bun": "latest"
   }
 }

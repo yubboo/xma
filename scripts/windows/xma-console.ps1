@@ -1,12 +1,12 @@
 ﻿<#
-文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布和全量检查。
+文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布、全量检查和 Git 源码更新。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；CLI 运行/检查会恢复 `[1]` 选择的 Bun Home 与 Rust/Cargo Home，再执行真实版本/offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时。
-职责边界：GitHub 推送不经过本文件；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
+当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 继续从独立 Home 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
+职责边界：GitHub push 仍只由 XMA-GitHub.bat 负责；[10] 只更新当前 clone，不提交/推送；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
 param(
-  [ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','bun','rust')]
+  [ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','js','bun','rust','update')]
   [string]$Command = 'menu',
   [string]$Workspace = ''
 )
@@ -19,11 +19,6 @@ Set-Location $Root
 $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
-$OpenTuiVersion = '0.1.101'
-$SolidJsVersion = '1.9.11'
-$BunTypesVersion = '1.3.11'
-$BunVersion = '1.3.14'
-[void](Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion)
 
 function Write-Header {
   Clear-Host
@@ -38,9 +33,9 @@ function Prepare-Environment {
   if ($LASTEXITCODE -ne 0) { throw 'XMA 开发环境准备失败。' }
 }
 
-function Prepare-BunRuntime {
-  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component bun
-  if ($LASTEXITCODE -ne 0) { throw 'Bun / OpenTUI Runtime 准备失败。' }
+function Prepare-JavaScriptRuntime {
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component js
+  if ($LASTEXITCODE -ne 0) { throw 'Workspace JavaScript Runtime 刷新失败。' }
 }
 
 function Prepare-RustRuntime {
@@ -48,6 +43,100 @@ function Prepare-RustRuntime {
   if ($LASTEXITCODE -ne 0) { throw 'Rust / Cargo 准备失败。' }
 }
 
+
+
+function Invoke-XmaGitCapture {
+  param([Parameter(Mandatory = $true)][string[]]$ArgumentList)
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $output = & git.exe @ArgumentList 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  if ($exitCode -ne 0) {
+    $message = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($message)) { $message = "git.exe $($ArgumentList -join ' ') failed with exit code $exitCode" }
+    throw $message
+  }
+  return ((@($output | ForEach-Object { [string]$_ }) -join "`n").Trim())
+}
+
+function Assert-XmaGitCloneForUpdate {
+  if (Test-Path -LiteralPath (Join-Path $Root '.xma-package\source-manifest.json') -PathType Leaf) {
+    throw '当前目录是正式源码包，不是长期 Git clone；[10] 只允许更新真实 clone。源码包请继续使用 XMA-Sync.bat。'
+  }
+  if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Git，无法更新项目。' }
+  $inside = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--is-inside-work-tree')
+  if ($inside.Trim().ToLowerInvariant() -ne 'true') { throw '当前目录不是 Git 工作树，无法执行项目更新。' }
+  $top = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--show-toplevel')
+  if ([IO.Path]::GetFullPath($top) -ine [IO.Path]::GetFullPath($Root)) {
+    throw "当前脚本根目录不是 Git 顶层：$top"
+  }
+  $branch = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--abbrev-ref','HEAD')
+  if ($branch.Trim() -ne 'main') { throw "[10] 只更新 main 分支；当前分支是 $branch。请先切回 main 再执行。" }
+  $origin = Invoke-XmaGitCapture -ArgumentList @('remote','get-url','origin')
+  $normalized = $origin.Trim().ToLowerInvariant()
+  $allowed = @(
+    'https://github.com/yubboo/xma.git',
+    'https://github.com/yubboo/xma',
+    'git@github.com:yubboo/xma.git',
+    'ssh://git@github.com/yubboo/xma.git'
+  )
+  if ($normalized -notin $allowed) {
+    throw "当前 origin 不是 yubboo/xma，拒绝自动更新：$origin"
+  }
+  return $origin.Trim()
+}
+
+function Confirm-XmaGitReset {
+  Write-Host ''
+  Write-Host '[警告] 强制恢复会丢弃 Git 已跟踪文件的本地修改，并让源码与 origin/main 一致。' -ForegroundColor Yellow
+  Write-Host '[保留] .git/xma-state、xma-path、node_modules、.cache、dist 等 Git 忽略的本地依赖/缓存不会被 reset --hard 删除。' -ForegroundColor DarkGray
+  $answer = (Read-Host '确认强制恢复？请输入 YES 继续').Trim()
+  return ($answer -ceq 'YES')
+}
+
+function Update-XmaProject {
+  $origin = Assert-XmaGitCloneForUpdate
+  while ($true) {
+    Write-Host ''
+    Write-Host '====================================================================' -ForegroundColor DarkCyan
+    Write-Host '  XMA 项目更新' -ForegroundColor Cyan
+    Write-Host "  Repo: $origin" -ForegroundColor DarkGray
+    Write-Host "  Worktree: $Root" -ForegroundColor DarkGray
+    Write-Host '====================================================================' -ForegroundColor DarkCyan
+    Write-Host '  [1] 安全更新                         fetch + pull --rebase --autostash' -ForegroundColor Green
+    Write-Host '      保留本地修改；如出现冲突会停止并明确提示。' -ForegroundColor DarkGray
+    Write-Host '  [2] 强制恢复 GitHub main             fetch + reset --hard origin/main'
+    Write-Host '      丢弃已跟踪文件本地修改；不删除 Git 忽略的依赖/缓存。' -ForegroundColor DarkGray
+    Write-Host '  [0] 返回'
+    Write-Host ''
+    $updateChoice = (Read-Host '请选择更新方式').Trim()
+    switch ($updateChoice) {
+      '1' {
+        Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
+        Write-Host '[更新] 正在安全同步当前分支...' -ForegroundColor Cyan
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main') | Out-Host
+        Write-Host '[完成] XMA 源码已安全更新。请关闭本控制台并重新运行 xma-dev.bat，让新脚本完整生效。' -ForegroundColor Green
+        exit 0
+      }
+      '2' {
+        if (-not (Confirm-XmaGitReset)) { Write-Host '[取消] 未执行强制恢复。' -ForegroundColor Yellow; continue }
+        Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
+        Write-Host '[恢复] 正在用 origin/main 覆盖当前已跟踪源码...' -ForegroundColor Yellow
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('reset','--hard','origin/main') | Out-Host
+        Write-Host '[完成] 当前源码已强制恢复到 GitHub main。请关闭本控制台并重新运行 xma-dev.bat。' -ForegroundColor Green
+        exit 0
+      }
+      '0' { return }
+      default { Write-Host '无效选项。' -ForegroundColor Yellow }
+    }
+  }
+}
 
 function Assert-BasicRuntime {
   foreach ($command in @('node.exe','pnpm.cmd')) {
@@ -96,42 +185,40 @@ function Assert-XmaCargoOfflineReady {
 }
 
 function Resolve-XmaBunRuntime {
-  $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
-  if (-not $bunRuntime) {
-    $discovered = @(Get-XmaDiscoveredBunHomes -ProjectRoot $Root -ExpectedVersion $BunVersion)
-    if ($discovered.Count -gt 1) {
-      throw "检测到多套 Bun $BunVersion Runtime（$($discovered -join '；')），无法安全自动选择。请运行主菜单 [8] 或 [1] 明确选择依赖位置；[4]/[7] 不会偷偷改选。"
-    }
-    throw "未检测到 Bun $BunVersion Runtime。请运行主菜单 [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。"
+  $packageJson = Join-Path $Root 'node_modules\bun\package.json'
+  $bunExe = Join-Path $Root 'node_modules\bun\bin\bun.exe'
+  if (-not (Test-Path -LiteralPath $packageJson -PathType Leaf) -or -not (Test-Path -LiteralPath $bunExe -PathType Leaf)) {
+    throw '未检测到 Workspace Bun Runtime。请运行主菜单 [1]，或使用 [8] 刷新 JavaScript Runtime。'
   }
-  if ($bunRuntime.Source -eq 'drive-scan') {
-    Write-Host "[恢复] checkout 状态缺失；已从现有磁盘自动重新接管 Bun $BunVersion：$($bunRuntime.BunHome)" -ForegroundColor DarkCyan
+  $version = [string]((Get-Content -LiteralPath $packageJson -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+  $probe = Invoke-XmaProbe -FilePath $bunExe -ArgumentList @('--version')
+  if ($probe.ExitCode -ne 0 -or (($probe.Output -join ' ').Trim() -ne $version)) {
+    throw "node_modules 中 Bun Runtime 版本探针失败：package=$version · exe=$bunExe。请运行 [1]/[8] 重新执行 pnpm 安装。"
   }
-  return $bunRuntime
+  return [pscustomobject]@{ BunExe = $bunExe; Version = $version }
 }
 
 function Assert-CliJsDependencies {
   Assert-CoreDependencies
   $bunRuntime = Resolve-XmaBunRuntime
-  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunRuntime.BunHome
-  $packages = @{
-    (Join-Path $openTuiHome 'node_modules\@opentui\core\package.json') = $OpenTuiVersion
-    (Join-Path $openTuiHome 'node_modules\@opentui\solid\package.json') = $OpenTuiVersion
-    (Join-Path $openTuiHome 'node_modules\solid-js\package.json') = $SolidJsVersion
-    (Join-Path $openTuiHome 'node_modules\@types\bun\package.json') = $BunTypesVersion
+  $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
+  $packages = @(
+    (Join-Path $runtimeRoot 'node_modules\@opentui\core\package.json'),
+    (Join-Path $runtimeRoot 'node_modules\@opentui\solid\package.json'),
+    (Join-Path $runtimeRoot 'node_modules\solid-js\package.json'),
+    (Join-Path $runtimeRoot 'node_modules\@types\bun\package.json')
+  )
+  foreach ($packageFile in $packages) {
+    if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) {
+      throw "Xiaoyu OpenTUI Workspace 依赖尚未准备：$packageFile。请运行 [1]，或主菜单 [8] 刷新 JavaScript Runtime。"
+    }
   }
-  foreach ($packageFile in $packages.Keys) {
-    if (-not (Test-Path $packageFile)) { throw "Xiaoyu OpenTUI 依赖尚未准备：$packageFile。请运行主菜单 [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。" }
-    $installed = (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
-    $expected = $packages[$packageFile]
-    if ($installed -ne $expected) { throw "Xiaoyu OpenTUI 依赖版本不一致：$packageFile · 期望 $expected，实际 $installed。请运行主菜单 [8] 重新准备。" }
-  }
-  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunRuntime.BunHome)) {
-    throw "OpenTUI 依赖存在，但无法连接到源码 Runtime：$openTuiHome。请运行主菜单 [8] 重新准备。"
-  }
-  Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $BunVersion + OpenTUI $OpenTuiVersion）。" -ForegroundColor Green
+  $core = [string]((Get-Content -LiteralPath $packages[0] -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+  $solidRenderer = [string]((Get-Content -LiteralPath $packages[1] -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+  $solidJs = [string]((Get-Content -LiteralPath $packages[2] -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+  Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $($bunRuntime.Version) + OpenTUI core $core / solid $solidRenderer + Solid $solidJs）。" -ForegroundColor Green
   Write-Host "[Bun] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
-  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
+  Write-Host "[OpenTUI] $runtimeRoot\node_modules" -ForegroundColor DarkGray
 }
 
 function Assert-DesktopJsDependencies {
@@ -329,8 +416,10 @@ if ($Command -ne 'menu') {
     'desktop' { Start-Desktop }
     'cli' { Start-Cli -WorkspacePath $Workspace }
     'check' { Invoke-FullCheck }
-    'bun' { Prepare-BunRuntime }
+    'js' { Prepare-JavaScriptRuntime }
+    'bun' { Prepare-JavaScriptRuntime }
     'rust' { Prepare-RustRuntime }
+    'update' { Update-XmaProject }
     'release' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1'); if ($LASTEXITCODE -ne 0) { throw '构建失败' } }
     'release-windows' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1') -WindowsPackages; if ($LASTEXITCODE -ne 0) { throw 'Windows 发布构建失败' } }
   }
@@ -340,15 +429,16 @@ if ($Command -ne 'menu') {
 while ($true) {
   Write-Header
   Write-Host '  [1] 一键准备开发环境                   ← 推荐首次运行' -ForegroundColor Green
-  Write-Host '      系统工具 + Workspace JS；Bun/Rust 缺失时可跳过后由 [8]/[9] 补齐' -ForegroundColor DarkGray
+  Write-Host '      系统工具 + Workspace JS Runtime；Bun/OpenTUI 由 pnpm/node_modules 统一管理' -ForegroundColor DarkGray
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
   Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'
   Write-Host '  [5] 构建发布 · Desktop 当前平台        默认 Electron 主桌面端'
   Write-Host '  [6] 构建发布 · Desktop Windows         Electron Setup + Portable'
   Write-Host '  [7] 全量检查                          使用已准备依赖，不偷偷下载'
-  Write-Host '  [8] 单独安装 · Bun / OpenTUI          缺失时单独补齐'
+  Write-Host '  [8] 刷新 · JavaScript Runtime         pnpm latest：Bun / OpenTUI / Solid'
   Write-Host '  [9] 单独安装 · Rust / Cargo           缺失时单独补齐'
+  Write-Host '  [10] 更新项目                         安全更新 / 强制恢复 GitHub main'
   Write-Host '  [0] 退出'
   Write-Host ''
   $choice = (Read-Host '请选择').Trim()
@@ -361,8 +451,9 @@ while ($true) {
       '5' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1'); if ($LASTEXITCODE -ne 0) { throw '构建失败' } }
       '6' { & (Join-Path $PSScriptRoot 'xma-build-release.ps1') -WindowsPackages; if ($LASTEXITCODE -ne 0) { throw 'Windows 发布构建失败' } }
       '7' { Invoke-FullCheck }
-      '8' { Prepare-BunRuntime }
+      '8' { Prepare-JavaScriptRuntime }
       '9' { Prepare-RustRuntime }
+      '10' { Update-XmaProject }
       '0' { exit 0 }
       default { Write-Host '无效选项。' -ForegroundColor Yellow }
     }

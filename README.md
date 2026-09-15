@@ -63,17 +63,17 @@ cd xma
 .\xma-dev.bat
 ```
 
-标准源码流程固定就是上面三条命令。要让 `git clone https://github.com/yubboo/xma.git` 原样成功，当前父目录中不能已经存在非空的 `xma/XMA`（Windows 大小写不敏感）。如果历史解压目录、旧 clone 或旧版维护脚本已经占用了这个名字，先把那个旧目录移走或确认无用后删除，然后**原样重新执行同一条 `git clone`**；不要求改成 `xma-work`、`xma-worktree` 或其他目录名。
+标准源码流程固定就是上面三条命令。`git clone` 只用于第一次下载：当前父目录已经存在非空 `xma/XMA` 时，Git 会按安全规则拒绝覆盖。已有正确 clone 后不要重复 clone，直接运行 `xma-dev.bat → [10] 更新项目`：`[1] 安全更新` 使用 `fetch + pull --rebase --autostash`；本地已跟踪源码确实需要完全恢复时可选择 `[2] 强制恢复 GitHub main`，确认后执行 `fetch + reset --hard origin/main`。该强制恢复不会自动执行 `git clean`，因此不会主动删除 Git 忽略的 `xma-path/node_modules/.cache/dist/.git/xma-state`。
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 checkout 本地状态恢复同一真实位置并重新校验；Git checkout 的控制状态放在 `.git/xma-state/`，不会因为选择外部依赖位置就在项目根额外创建一个空壳 `xma-path`。 Bun/OpenTUI 与 Rust/Cargo 的安装位置菜单共用键盘选择器：`↑/↓` 会直接在 `[1]/[2]/[3]` 三行之间移动选中高亮，`Enter` 确认，也保留数字键 `1/2/3` 直达；不额外渲染“当前选择”状态行。不支持原始按键读取的 PowerShell Host 会自动退回传统数字输入。Rust 安装只使用隔离的 `RUSTUP_HOME/CARGO_HOME` 与 stable default，不设置绑定 checkout 绝对路径的 `rustup override`，因此 U 盘换盘符/项目移动不会留下目录级 toolchain 绑定。
+首次进入菜单选择 `[1] 一键准备开发环境`。Bun、OpenTUI、Solid 与 `@types/bun` 已并入 pnpm Workspace：`[1]` 会主动查询 registry 的 `latest` 并更新 lockfile，然后统一安装到当前 checkout 的 `node_modules/`；`[8] 刷新 · JavaScript Runtime` 可单独执行同一刷新。`[4]`、`[7]` 与 `build:cli` 只使用已经安装并由 lockfile 记录的版本，不会在运行/检查阶段偷偷联网升级。Rust/Cargo 仍是独立 Native Toolchain，缺失时由 `[1]` 询问 Y/N，或稍后使用 `[9]` 单独安装；Rust 安装位置支持跟随项目 `xma-path/rust`、D 盘或用户自定义真实盘符，并使用隔离 `RUSTUP_HOME/CARGO_HOME` + stable default，不设置目录级 `rustup override`。
 
-依赖下载默认是 `auto` 模式：会对官方源和批准的镜像做短探针，优先响应更快的一侧，下载失败或持续低速时自动切换；Bun ZIP 仍做 SHA-256 校验。Windows 有 `curl.exe` 时会直接显示实时下载进度，Rust/OpenTUI 子安装过程也保持真实终端输出，不再长时间静默。需要强制只偏好官方或镜像时，可在启动前设置 `XMA_DOWNLOAD_SOURCE=official` 或 `XMA_DOWNLOAD_SOURCE=mirror`；该设置只影响 XMA 准备流程，不改系统全局 registry/rustup 配置。
+JavaScript Runtime 的下载与版本解析统一交给 pnpm/npm registry；`[1]/[8]` 会在 npm 官方与 `registry.npmmirror.com` 间按当前准备策略切换，并通过 pnpm lockfile 固化这次解析结果。XMA 不再维护 Bun ZIP/tgz 下载器、SourceForge 镜像、Bun SHA 清单或独立 Bun Home。Rust/rustup 仍可使用官方源与 RsProxy 的进程级加速策略，镜像环境变量不会写入 User/Machine 全局设置。
 
-默认项目依赖布局只包含实体依赖：`xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`。其中 OpenTUI 的真实 `node_modules` 存在对应依赖根的 `opentui/`；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做一次迁移，不再作为当前控制目录。
+JavaScript 依赖统一位于 Workspace `node_modules/`：根 `node_modules/bun` 提供 Bun Runtime，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types/bun。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/bun`、`xma-path/opentui`、`xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做清理/迁移兼容，不再作为当前 JavaScript Runtime。
 
-删除/清理依赖后的行为也按真实文件状态判断：如果删除整个项目默认 `xma-path/`，下一次 `[1]` 会在 `[4/9]` 把 Bun/OpenTUI 视为缺失并重新询问 Y/N；如果只删 `xma-path/opentui/`，同样会把 Bun/OpenTUI **整组件**判定为不完整并询问是否修复。Rust/Cargo 如果原本就是项目默认 `xma-path/rust/`，删除后 `[5/9]` 会重新询问 Y/N；如果你此前明确装在 `D:\XMA\Rust` 等外部位置且实体仍真实存在，删除旧项目状态或 checkout 状态后会自动重新发现并接管，不会假装“依赖不存在”也不会重复安装。`[4]`/`[7]` 只校验和运行，不会偷偷修复或联网安装；缺失时会明确引导 `[8]`/`[9]` 或重新运行 `[1]`。 如果脚本升级或旧状态清理导致 `.git/xma-state` 暂时缺失，但某个已挂载盘符下仍存在唯一一套 `xma-path/bun`、`xma-path/rust`（或旧 `XMA/Rust`）且真实版本探针通过，`[4]/[7]` 会离线重新发现并补写 checkout 状态；找到多套候选时拒绝猜测，要求回 `[1]/[8]/[9]` 明确选择。
+删除/清理依赖后的行为按真实文件状态判断：删除 `node_modules/` 后，下一次 `[1]` 会重新解析 latest 并安装 Workspace JavaScript Runtime；只想刷新 Bun/OpenTUI/Solid 时使用 `[8]`。删除 `xma-path/rust` 只影响项目内 Rust/Cargo；若此前选择了外部 `D:/E:/<盘符>:/xma-path/rust` 或兼容旧 `D:/XMA/Rust` 且实体仍真实存在，则 Rust 探针通过后可重新接管。`[4]`/`[7]` 只校验和运行，不会偷偷执行 `pnpm update`、`pnpm install` 或 Rust 联网安装。
 
 开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
 
@@ -152,7 +152,7 @@ XMA-GitHub.bat
 xma-dev.bat
 ```
 
-菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查，以及 `[8] Bun/OpenTUI`、`[9] Rust/Cargo` 两个独立补装入口。首次运行 `[1]` 会准备通用 Workspace 依赖；Bun/Rust 缺失时允许选择 N 跳过，之后再由 `[8]/[9]` 补齐。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。Electron 下载由 XMA 直接显示百分比/MB，并在官方源长时间无数据时做校验后的备用源容错；Windows 下载后的 ZIP 使用系统 PowerShell `Expand-Archive` 做 staging 解压与原子安装，绕开 Node 24.16+ 的旧 ZIP 依赖问题。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查、`[8] 刷新 JavaScript Runtime`、`[9] Rust/Cargo` 与 `[10] 更新项目`。首次运行 `[1]` 会刷新并安装 pnpm Workspace 的 Bun/OpenTUI/Solid/TypeScript 等 JavaScript Runtime；Rust 缺失时允许选择 N 跳过，之后再由 `[9]` 补齐。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
 
 
 ## Terminal / Distribution 第一批

@@ -269,13 +269,13 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
 - Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.git/xma-state/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
-- `[1]` 首次或依赖声明变化时使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime；已准备且 package/lockfile/平台指纹一致时必须跳过重复 install/esbuild rebuild；首次接管没有 stamp 的旧缓存必须优先做 offline/frozen 校验，验证通过直接复用，不得为了生成 stamp 再联网。OpenTUI 固定版本已匹配时同样跳过重复 `bun install`，Rust Cargo 声明未变化时跳过重复 `cargo fetch`。
+- `[1]` / `[8]` 是 JavaScript Runtime 的唯一主动更新边界：先对受管依赖 `bun`、`@opentui/core`、`@opentui/solid`、`solid-js`、`@types/bun` 执行 registry latest 刷新并更新 lockfile，再 `pnpm install`。`pnpm-workspace.yaml -> allowBuilds` 只能批准经过审核的 `bun` 与 `esbuild` lifecycle；Electron 不得进入 allowBuilds，Chromium Runtime 仍由 Desktop 明确流程按需准备。
 - `[1]` 写入开发态 `.git/xma-state/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量；旧 `.xma/dev-bin` 只允许作为迁移清理对象。
-- Windows `[1]` 必须把 Bun/OpenTUI 与 Rust/Cargo 当成两个可独立跳过/补装的组件：先真实检测；缺失时分别询问 Y/N；选择 N 只跳过该组件并继续。主菜单 `[8]` / `[9]` 分别单独准备 Bun/OpenTUI 与 Rust/Cargo。
-- XMA 自管依赖根固定为三种选择：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实存在的盘符后使用 `<盘符>:/xma-path`。禁止把 `%LOCALAPPDATA%/XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定使用 `bun/`、`opentui/`、`rust/`；项目本地状态和开发 shim 使用checkout 本地 `.git/xma-state/`（非 Git 树回退 `.cache/xma-state/`）。 三项安装位置必须使用同一原位键盘菜单：`↑/↓` 直接移动 `[1]/[2]/[3]` 行的高亮，`Enter` 确认，数字键可直达；不得额外打印独立“当前选择”状态行。Rust 自管安装不得使用 `rustup override set stable` 绑定当前源码绝对路径；通过隔离 `RUSTUP_HOME/CARGO_HOME` 与 stable default 保持可移动。
-- Windows XMA 自管依赖下载默认使用 `XMA_DOWNLOAD_SOURCE=auto`：对官方源与批准镜像做快速可达性/延迟探针，连接失败或持续低速时自动切换备用源；允许 `official|mirror` 显式覆盖。下载器必须优先使用系统 `curl.exe --progress-bar` 显示实时进度，并配置 connect/stall timeout；无 curl 时才回退 `Invoke-WebRequest`。Bun ZIP 必须以发布 `SHASUMS256.txt` 校验；镜像/registry/rustup 环境变量只在当前准备进程内生效，不写 User/Machine 全局设置。
-- `[4]`、`[7]`、`build:cli` 必须从 checkout 本地 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）恢复 `[1]/[8]/[9]` 已确认的位置并真实验证 executable/version/offline crates；不得因为源码移动、U 盘盘符变化或旧绝对路径而误报依赖缺失。旧 `.xma/tools|state|dev-bin` 只作为一次迁移来源，迁移后不得继续写入。
-- Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式联网补包。
+- Windows `[1]` 不再把 Bun/OpenTUI 作为独立安装组件；它们属于 Workspace JavaScript Runtime，随 pnpm 安装。主菜单 `[8]` 仅负责刷新 JavaScript Runtime latest；Rust/Cargo 仍可在 `[1]` 选择 N 跳过，并由 `[9]` 单独准备。
+- `xma-path` 安装位置选择只适用于 Rust/Cargo：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实存在的盘符。Bun/OpenTUI/Solid 必须只存在于 pnpm Workspace `node_modules`，禁止 `xma-path/bun|opentui`。项目控制状态与开发 shim 使用 `.git/xma-state/`（非 Git树回退 `.cache/xma-state/`）。Rust 位置菜单使用原位 `↑/↓`/Enter/数字直选，且禁止 `rustup override set stable`。
+- JavaScript Runtime 下载/更新交给 pnpm/npm registry；禁止维护 Bun ZIP/tgz/SourceForge/独立 checksum 下载链。Rustup 的官方/RsProxy 切换只能作用于当前准备进程，不写全局配置。
+- `[4]`、`[7]`、`build:cli` 的 JavaScript Runtime 必须直接从 Workspace `node_modules` 读取并真实验证，不得依赖 Bun checkout state 或盘符扫描；Rust/Cargo 继续从 `.git/xma-state` 恢复并做 executable/version/offline crates 校验。旧 `.xma` 与旧 `xma-path/bun|opentui|state|dev-bin` 只作为清理/迁移兼容。
+- Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式 `pnpm update/install` 或联网补包。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。
 - `electron` 不进入 `allowBuilds`；`pnpm-workspace.yaml -> allowBuilds` 只显式白名单确有构建需求的依赖。
 - 禁止 `dangerouslyAllowAllBuilds` 和固定工作流中的交互 `pnpm approve-builds`。
@@ -316,7 +316,7 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 
 应提交：源码、文档、测试、AI 开发上下文、脚本、配置模板、CI、`pnpm-lock.yaml`、`Cargo.lock`。
 
-禁止提交：`node_modules/`、`.cache/`、`xma-path/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。`xma-path/` 是当前本机依赖/状态根；`.xma/` 仅保留旧版迁移保护，不得产生新的现役状态。XMA-controlled 中间产物必须统一进入 `.cache/`，正式构建产物必须统一进入 `dist/`；根 `build/target` 与 app-local Desktop 输出只作为旧版遗留/防误提交路径处理。
+禁止提交：`node_modules/`、`.cache/`、`xma-path/`、`target/`、`dist/`、`build/`、根 `runtime/`、`.xma/`、用户 Workspace、覆盖率、缓存、日志、`.env`、Secret、安装包、发布归档。`xma-path/` 仅用于 Rust/Cargo 等非 npm Native 开发依赖；JavaScript Runtime 位于 `node_modules/`；`.xma/` 仅保留旧版迁移保护，不得产生新的现役状态。XMA-controlled 中间产物必须统一进入 `.cache/`，正式构建产物必须统一进入 `dist/`；根 `build/target` 与 app-local Desktop 输出只作为旧版遗留/防误提交路径处理。
 
 `.gitignore` 是第一层，GitHub Safety 是第二层。Safety 必须扫描 Git 真正可能提交的文件，不能把已忽略二进制缓存误判 Secret。
 

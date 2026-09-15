@@ -31,7 +31,7 @@ xiaoyu-<os>-<arch>/
 └─ bundle.json
 ```
 
-0.1.x portable 仍携带私有 Node Runtime，但只服务 Server/Web；交互式 `xiaoyu` CLI 由固定 Bun 1.3.14 编译为当前平台可执行文件。不得为了“单文件”牺牲可验证升级、Native 边界或调试证据。
+0.1.x portable 仍携带私有 Node Runtime，但只服务 Server/Web；交互式 `xiaoyu` CLI 由 pnpm Workspace 当前已安装并经 Gate 验证的 Bun 编译为当前平台可执行文件。不得为了“单文件”牺牲可验证升级、Native 边界或调试证据。
 
 ## 3. Windows 安装合同
 
@@ -91,7 +91,7 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
 - Terminal 对真实 Provider 的 text/reasoning SSE 必须按 Runtime live event 实时绘制，Tool Call/Result 同步可见；禁止“用户提交后静默等待，最终整段一次性出现”。
-- Active Terminal UI 固定采用 `Bun 1.3.14 + @opentui/core@0.1.101 + @opentui/solid@0.1.101 + solid-js@1.9.11`，版本基线与 MiMo Code 已验证组合对齐；OpenTUI 只接管 Terminal 表现/输入/焦点/布局，不接管 XMA Agent Runtime、Provider、Session、Workspace Policy、Tool Approval 或 Rust Native Kernel。
+- Active Terminal UI 的 Bun/OpenTUI/Solid 由 pnpm Workspace `latest` 刷新并由 lockfile 固化本次解析版本；版本升级必须经过 XMA TypeScript/Test/Gate 验证；OpenTUI 只接管 Terminal 表现/输入/焦点/布局，不接管 XMA Agent Runtime、Provider、Session、Workspace Policy、Tool Approval 或 Rust Native Kernel。
 - 主 Prompt 使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、选择、粘贴与多行输入；Active Renderer 禁止再次输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或 Pi TUI reverse-video 光标补丁。Tab 模式切换、Ctrl+P/Ctrl+K、Esc 返回和 Dialog focus 必须统一走 OpenTUI 键盘/焦点体系。
 - Home / Transcript / Prompt / Shortcut / Notice 使用 OpenTUI Flexbox 响应式布局，左右边距必须对称；Prompt 的真实输入光标必须位于输入组件内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；
@@ -148,7 +148,7 @@ Windows 资产在 Windows 构建，Linux 资产在 Linux 构建，macOS 资产�
 
 `xma-dev.bat → [1]` 在准备完依赖后，会在当前 checkout 本地 `.git\xma-state\dev-bin\` 生成 `xiaoyu.cmd / xma.cmd` 开发 shim，并把**该 dev-bin**写入当前用户 `User PATH`。不把整个 Git 仓库加入 PATH，不修改 Machine PATH，也不需要管理员权限。这样开发者新开终端后可在任意 Workspace 直接输入 `xiaoyu` / `xma`，命令会回到当前源码 checkout 并以调用时目录作为 Workspace。
 
-Windows 源码开发的 XMA 自管**依赖实体根**使用 `xma-path/`：默认跟随当前 checkout，内部只放 `bun/`、`opentui/`、`rust/`；也可显式选择 `D:/xma-path` 或其他真实盘符的 `<盘符>:/xma-path`。checkout 控制状态、prepare stamp、Source Sync 元数据与开发 shim 独立存放在 `.git/xma-state/`（无 Git 临时树回退 `.cache/xma-state/`），因此选择外部依赖盘符时不会在项目根生成第二个空壳 `xma-path`。这些都属于源码开发本地状态，必须被 Git/Source Package 排除，与普通用户正式安装目录 `%LOCALAPPDATA%\Programs\Xiaoyu` 完全分离。旧 `.xma/`、`xma-path/state|dev-bin` 只保留迁移兼容，不再产生新的当前状态。
+Windows 源码开发的 JavaScript Runtime 全部位于 pnpm Workspace `node_modules/`；XMA 自管 `xma-path/` 只用于 Rust/Cargo 等非 npm Native Toolchain，可默认跟随 checkout 或显式选择 `D:/xma-path` / 其他真实盘符。checkout 控制状态、prepare stamp、Source Sync 元数据与开发 shim 独立存放在 `.git/xma-state/`（无 Git 临时树回退 `.cache/xma-state/`），因此选择外部依赖盘符时不会在项目根生成第二个空壳 `xma-path`。这些都属于源码开发本地状态，必须被 Git/Source Package 排除，与普通用户正式安装目录 `%LOCALAPPDATA%\Programs\Xiaoyu` 完全分离。旧 `.xma/`、`xma-path/state|dev-bin` 只保留迁移兼容，不再产生新的当前状态。
 
 同一 Windows 用户只激活一个 XMA 开发 checkout 的 dev-bin；再次在另一份 checkout 执行 `[1]` 会替换旧 dev-bin PATH entry。移动仓库后重新运行 `[1]` 即可刷新。该机制只是开发便利，不替代正式 Release 安装器 `%LOCALAPPDATA%\Programs\Xiaoyu\bin`。
 

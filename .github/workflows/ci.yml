@@ -14,21 +14,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.3.14'
       - run: npm install -g pnpm@11.17.0
-      - name: Install workspace dependencies without Desktop runtime downloads
-        shell: bash
+      - name: Refresh managed JS runtime and install workspace dependencies
         run: |
-          if [ -f pnpm-lock.yaml ]; then
-            pnpm install --frozen-lockfile --ignore-scripts
-          else
-            pnpm install --no-frozen-lockfile --ignore-scripts
-          fi
+          pnpm run runtime:update
+          pnpm install --no-frozen-lockfile
       - run: pnpm rebuild esbuild
-      - name: Install pinned Xiaoyu OpenTUI frontend
-        run: bun install --cwd apps/cli/opentui-runtime --no-save
       - run: pnpm check
       - run: pnpm build:web
       - run: pnpm build:cli

@@ -1,12 +1,12 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持 ↑/↓ + Enter 或数字键选择并持久化安装位置；网络准备支持官方/镜像自动测速、停滞切换、实时进度与校验；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；Bun/OpenTUI/Solid 作为 pnpm Workspace 依赖统一进入 node_modules，[1]/[8] 会刷新这些受管 JS Runtime 依赖到 registry latest 并更新 lockfile；Rust 仍支持 ↑/↓ + Enter 或数字键选择独立安装位置；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
 param(
-  [ValidateSet('all','bun','rust')]
+  [ValidateSet('all','js','bun','rust')]
   [string]$Component = 'all'
 )
 
@@ -16,12 +16,6 @@ Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
 [void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $ElectronVersion = '41.2.0'
-$BunVersion = '1.3.14'
-$BunWindowsX64Sha256 = '0a0620930b6675d7ba440e81f4e0e00d3cfbe096c4b140d3fff02205e9e18922'
-$BunWindowsAarch64Sha256 = '89841f5a57f2348b67ec0839b718f4bf4ea7d07c371c9ba4b77b6c790f918953'
-$OpenTuiVersion = '0.1.101'
-$SolidJsVersion = '1.9.11'
-$BunTypesVersion = '1.3.11'
 $PrepareStateRoot = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'prepare'
 
 function Get-XmaFingerprint([string[]]$Paths, [string]$Salt = '') {
@@ -167,7 +161,7 @@ function Measure-XmaDownloadProbe([string]$Url) {
     # Windows 自带 curl 使用 Schannel；当本机/网络无法访问证书吊销服务器时，默认会把“无法检查吊销”当成 TLS 失败。
     # best-effort 仍保留证书链验证，只在吊销服务离线时继续；Bun ZIP 之后还有固定 SHA-256 真值校验。
     if ($env:OS -eq 'Windows_NT') { $curlTlsArgs += '--ssl-revoke-best-effort' }
-    & $curl.Source @curlTlsArgs '--fail' '--location' '--silent' '--show-error' '--connect-timeout' '3' '--max-time' '5' '--range' '0-0' '--output' 'NUL' $Url *> $null
+    & $curl.Source @curlTlsArgs '--fail' '--location' '--silent' '--show-error' '--connect-timeout' '2' '--max-time' '3' '--range' '0-0' '--output' 'NUL' $Url *> $null
     if ($LASTEXITCODE -eq 0) { $result = [math]::Round($watch.Elapsed.TotalMilliseconds) }
   } catch {
     $result = [double]::PositiveInfinity
@@ -209,8 +203,8 @@ function Get-XmaOrderedDownloadSources {
   $ready = @($measured | Where-Object { -not [double]::IsPositiveInfinity($_.Latency) } | Sort-Object Latency)
   $failed = @($measured | Where-Object { [double]::IsPositiveInfinity($_.Latency) })
   if ($ready.Count -eq 0) {
-    Write-Host '[下载源] auto · 快速测速均失败，按官方 → 镜像顺序尝试并启用停滞切换。' -ForegroundColor DarkCyan
-    return @($official + $mirrors)
+    Write-Host '[下载源] auto · 快速测速均失败，按该组件预设顺序尝试并启用停滞切换。' -ForegroundColor DarkCyan
+    return @($Sources)
   }
 
   $summary = @($measured | ForEach-Object {
@@ -219,6 +213,45 @@ function Get-XmaOrderedDownloadSources {
   }) -join ' · '
   Write-Host "[下载源] auto · $summary · 优先 $($ready[0].Source.Name)" -ForegroundColor DarkCyan
   return @($ready.Source + $failed.Source)
+}
+
+function Invoke-XmaCurlDownloadStable {
+  param(
+    [Parameter(Mandatory = $true)][string]$CurlPath,
+    [Parameter(Mandatory = $true)][string]$Url,
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [Parameter(Mandatory = $true)][string]$SourceName
+  )
+
+  $stderrFile = "$Destination.curl-error.txt"
+  Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+  $curlArgs = @('--fail','--location','--silent','--show-error','--connect-timeout','6','--speed-limit','16384','--speed-time','12','--output',('"' + $Destination + '"'),('"' + $Url + '"'))
+  if ($env:OS -eq 'Windows_NT') { $curlArgs = @('--ssl-revoke-best-effort') + $curlArgs }
+
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  try {
+    $process = Start-Process -FilePath $CurlPath -ArgumentList $curlArgs -NoNewWindow -PassThru -RedirectStandardError $stderrFile
+    $nextReport = 3
+    while (-not $process.HasExited) {
+      Start-Sleep -Milliseconds 500
+      if ($watch.Elapsed.TotalSeconds -ge $nextReport) {
+        $downloaded = if (Test-Path -LiteralPath $Destination -PathType Leaf) { (Get-Item -LiteralPath $Destination).Length } else { 0 }
+        Write-Host ("[下载中] {0} · {1:N1} MiB · {2:N0}s" -f $SourceName, ($downloaded / 1MB), $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
+        $nextReport += 4
+      }
+    }
+    $process.WaitForExit()
+    $process.Refresh()
+    $exitCode = $process.ExitCode
+    if ($exitCode -ne 0) {
+      $details = if (Test-Path -LiteralPath $stderrFile -PathType Leaf) { (Get-Content -LiteralPath $stderrFile -Raw -ErrorAction SilentlyContinue).Trim() } else { '' }
+      if ([string]::IsNullOrWhiteSpace($details)) { throw "curl exit $exitCode" }
+      throw "curl exit $exitCode · $details"
+    }
+  } finally {
+    $watch.Stop()
+    Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Invoke-XmaDownloadFile {
@@ -239,17 +272,13 @@ function Invoke-XmaDownloadFile {
     Write-Host "[来源] $($source.Name) · $($source.Url)" -ForegroundColor DarkGray
     try {
       if ($curl) {
-        # `--progress-bar` 把百分比/速度/剩余时间直接画到当前终端；连续 20 秒低于 2 KiB/s 视为停滞并自动切换下一源。
-        # Windows Schannel 在吊销服务器离线时可能返回 CRYPT_E_REVOCATION_OFFLINE。best-effort 只放宽“吊销服务不可达”，
-        # 不关闭 TLS 证书链验证；Bun/Rust 下载仍执行固定版本哈希校验。
-        $curlTlsArgs = @()
-        if ($env:OS -eq 'Windows_NT') { $curlTlsArgs += '--ssl-revoke-best-effort' }
-        & $curl.Source @curlTlsArgs '--fail' '--location' '--show-error' '--progress-bar' '--connect-timeout' '10' '--speed-limit' '2048' '--speed-time' '20' '--retry' '1' '--retry-delay' '1' '--output' $Destination ([string]$source.Url)
-        if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE" }
+        # 不使用 curl --progress-bar：它会在 Windows Terminal 同一行高频重绘，导致 Text Cursor Indicator/硬件光标左右闪烁。
+        # curl 以 silent 模式下载，XMA 每约 4 秒输出一条稳定的 MiB/耗时里程碑；低速 12 秒即切换备用源。
+        Invoke-XmaCurlDownloadStable -CurlPath $curl.Source -Url ([string]$source.Url) -Destination $Destination -SourceName ([string]$source.Name)
       } else {
-        Write-Host '[提示] 当前没有 curl.exe，回退 PowerShell Invoke-WebRequest；下载期间使用 PowerShell 自带进度显示。' -ForegroundColor DarkYellow
+        Write-Host '[提示] 当前没有 curl.exe，回退 PowerShell Invoke-WebRequest；该模式只显示阶段状态，不做动态光标重绘。' -ForegroundColor DarkYellow
         $previousProgress = $ProgressPreference
-        $ProgressPreference = 'Continue'
+        $ProgressPreference = 'SilentlyContinue'
         try {
           Invoke-WebRequest -Uri ([string]$source.Url) -OutFile $Destination -UseBasicParsing
         } finally {
@@ -283,7 +312,7 @@ function Invoke-XmaVisibleProcess {
   # Windows PowerShell 5.1 下，Start-Process 后自行轮询 Process.WaitForExit(timeout) 可能出现
   # 子进程已成功结束但 ExitCode 仍未稳定回填的情况，最终把成功安装误判成“failed with exit code <空>”。
   # 这里使用 Start-Process 自身的 -Wait 契约：保留 -NoNewWindow 让 Bun/rustup 直接继承当前终端，
-  # 同时由 PowerShell 等待并回填稳定 ExitCode。下载文件本身仍由 curl progress-bar 提供百分比/速度。
+  # 同时由 PowerShell 等待并回填稳定 ExitCode。文件下载使用稳定的阶段里程碑输出，不做同一行动态光标重绘。
   $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru
   $exitCode = $process.ExitCode
   if ($null -eq $exitCode) { throw "$FilePath 进程已结束，但 Windows PowerShell 未返回退出码。" }
@@ -485,204 +514,6 @@ function Select-XmaDependencyRoot([string]$ComponentLabel) {
       return $customRoot
     }
     Write-Host '请输入 1、2 或 3。' -ForegroundColor Yellow
-  }
-}
-
-function Test-XmaBunExecutable([string]$Executable) {
-  if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) { return $false }
-  $probe = Invoke-XmaProbe -FilePath $Executable -ArgumentList @('--version')
-  return ($probe.ExitCode -eq 0) -and (($probe.Output -join ' ').Trim() -eq $BunVersion)
-}
-
-function Save-XmaBunHome([string]$BunHome) {
-  $normalized = [IO.Path]::GetFullPath($BunHome)
-  $env:XMA_BUN_HOME = $normalized
-  Save-XmaBunEnvironmentState -ProjectRoot $Root -BunHome $normalized -Version $BunVersion
-  # 中文说明：0.1.0 早期曾把 Bun Home 写入 User 环境。现在 checkout 自己的 `.git/xma-state`（非 Git 树为 `.cache/xma-state`）才是权威，
-  # 避免移动 U 盘/切换仓库后旧绝对路径继续污染新终端。
-  [Environment]::SetEnvironmentVariable('XMA_BUN_HOME', $null, 'User')
-}
-
-function Move-XmaLegacyBunToProjectDefault {
-  $legacyExe = Join-Path $Root ".xma\tools\bun\$BunVersion\bun.exe"
-  if (-not (Test-XmaBunExecutable $legacyExe)) { return $null }
-
-  $bunHome = Get-XmaDefaultBunHome -ProjectRoot $Root
-  $targetRoot = Join-Path $bunHome $BunVersion
-  $bunExe = Join-Path $targetRoot 'bun.exe'
-  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
-  Write-Host "[迁移] 检测到旧版项目内 Bun $BunVersion；正在迁移到 $bunHome，不重复下载。" -ForegroundColor Yellow
-  Copy-Item -LiteralPath $legacyExe -Destination $bunExe -Force
-  if (-not (Test-XmaBunExecutable $bunExe)) { throw "旧 Bun 迁移后校验失败：$bunExe" }
-  Save-XmaBunHome -BunHome $bunHome
-  Remove-Item -LiteralPath (Join-Path $Root '.xma\tools\bun') -Recurse -Force -ErrorAction SilentlyContinue
-  return [pscustomobject]@{ BunHome = $bunHome; BunExe = $bunExe; Version = $BunVersion; Source = 'legacy-checkout-migration' }
-}
-
-function Install-XmaBunRuntime([switch]$PromptIfMissing) {
-  # 先恢复已经配置的 Runtime；只要真实 `bun.exe --version` 通过，就绝不重复安装。
-  $existing = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
-  if ($existing) {
-    # 旧 state/User env 可能仍把 Bun 指回当前 checkout 的 `.xma/tools/bun`。即使真实可执行，也必须先迁移，不能把旧目录重新保存成 external Home。
-    $legacyBunHome = [IO.Path]::GetFullPath((Join-Path $Root '.xma\tools\bun'))
-    $existingHome = [IO.Path]::GetFullPath($existing.BunHome)
-    if ($existingHome -ieq $legacyBunHome) {
-      $migratedExisting = Move-XmaLegacyBunToProjectDefault
-      if (-not $migratedExisting) { throw '检测到旧 .xma Bun 状态，但迁移校验失败。' }
-      Write-Host "[通过] Bun $BunVersion 已从旧 .xma 自动迁移到项目 xma-path。" -ForegroundColor Green
-      return $migratedExisting.BunExe
-    }
-
-    Save-XmaBunHome -BunHome $existing.BunHome
-    Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "[缓存] Bun $($existing.Version) 已安装并通过真实校验，跳过重复安装。" -ForegroundColor DarkCyan
-    Write-Host "[位置] $($existing.BunHome)" -ForegroundColor DarkGray
-    Write-Host "[运行时] $($existing.BunExe)" -ForegroundColor DarkGray
-    return $existing.BunExe
-  }
-
-  # 旧 `.xma/tools/bun` 是 0.1.0 早期设计。存在时自动迁移到项目默认 xma-path，不让用户再次选位置/下载。
-  $migrated = Move-XmaLegacyBunToProjectDefault
-  if ($migrated) {
-    Write-Host "[通过] Bun $BunVersion 已迁移到项目 xma-path。" -ForegroundColor Green
-    return $migrated.BunExe
-  }
-
-  if ($PromptIfMissing) {
-    Write-Host '[缺少] 当前没有可用 Bun/OpenTUI Runtime。' -ForegroundColor Yellow
-    if (-not (Confirm-XmaAction "是否安装 Bun $BunVersion / OpenTUI Runtime？选择 N 会跳过，可稍后在主菜单 [8] 单独安装。")) {
-      Write-Host '[跳过] Bun/OpenTUI Runtime 未安装；Web/Desktop 的通用 JS 依赖仍会继续准备。' -ForegroundColor Yellow
-      return $null
-    }
-  }
-
-  $dependencyRoot = Select-XmaDependencyRoot -ComponentLabel 'Bun / OpenTUI Runtime'
-  $bunHome = Join-Path $dependencyRoot 'bun'
-  $targetRoot = Join-Path $bunHome $BunVersion
-  $bunExe = Join-Path $targetRoot 'bun.exe'
-  New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
-
-  if (Test-XmaBunExecutable $bunExe) {
-    Write-Host "[发现] 目标位置已经存在可用 Bun $BunVersion，直接接管，不重复下载。" -ForegroundColor DarkCyan
-  } else {
-    $cacheRoot = Join-Path $Root '.cache\bun'
-    $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-    $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
-    $assetName = "bun-windows-$assetArch.zip"
-    $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
-    $expectedBunSha256 = if ($assetArch -eq 'aarch64') { $BunWindowsAarch64Sha256 } else { $BunWindowsX64Sha256 }
-    $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
-    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
-    if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
-
-    $bunSources = @(
-      [pscustomobject]@{
-        Kind = 'official'
-        Name = 'Bun GitHub 官方'
-        Url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/$assetName"
-        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/$assetName"
-      },
-      [pscustomobject]@{
-        Kind = 'mirror'
-        Name = 'SourceForge Bun 镜像'
-        Url = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/$assetName/download"
-        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/$assetName/download"
-      }
-    )
-    Write-Host "[下载] 正在准备固定 Bun $BunVersion（Xiaoyu OpenTUI Runtime）..." -ForegroundColor Yellow
-    Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
-    Write-Host "[安装位置] $bunHome" -ForegroundColor Cyan
-    try {
-      [void](Invoke-XmaDownloadFile -Sources $bunSources -Destination $zip -Label "Bun $BunVersion Windows $assetArch")
-
-      # 固定版本的官方 GitHub Release asset digest 是源码真值，不再为校验额外下载 SHASUMS256.txt。
-      # 这样 GitHub/SourceForge 的校验清单端点被重置、CRL 服务离线时，也不会让首次 clone 的 `[1]` 在 ZIP 下载前就失败。
-      $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($expectedBunSha256 -ne $actual) { throw "Bun ZIP SHA-256 校验失败：期望 $expectedBunSha256，实际 $actual。" }
-      Write-Host "[验证] Bun ZIP SHA-256 校验通过：$assetName" -ForegroundColor DarkCyan
-
-      Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-      $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
-      if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
-      Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
-    } finally {
-      Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-      Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
-    }
-  }
-
-  if (-not (Test-XmaBunExecutable $bunExe)) { throw "Bun $BunVersion 安装后真实执行校验失败：$bunExe" }
-  Save-XmaBunHome -BunHome $bunHome
-  Remove-Item -LiteralPath (Join-Path $Root '.cache\bun') -Recurse -Force -ErrorAction SilentlyContinue
-  Write-Host "[通过] Bun $BunVersion · Xiaoyu OpenTUI Runtime" -ForegroundColor Green
-  Write-Host "[位置] $bunHome" -ForegroundColor DarkGray
-  Write-Host "[运行时] $bunExe" -ForegroundColor DarkGray
-  return $bunExe
-}
-
-function Test-XmaOpenTuiDependencies([string]$RuntimeRoot) {
-  $expected = @{
-    '@opentui/core' = $OpenTuiVersion
-    '@opentui/solid' = $OpenTuiVersion
-    'solid-js' = $SolidJsVersion
-    '@types/bun' = $BunTypesVersion
-  }
-  foreach ($name in $expected.Keys) {
-    $packageFile = Join-Path $RuntimeRoot ("node_modules\{0}\package.json" -f $name)
-    if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) { return $false }
-    try {
-      $version = (Get-Content -LiteralPath $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
-      if ($version -ne $expected[$name]) { return $false }
-    } catch { return $false }
-  }
-  return $true
-}
-
-function Get-XmaPathEntries([string]$Value) {
-  if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
-  return @($Value.Split(';') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-}
-
-function Get-XmaNormalizedPath([string]$Value) {
-  try { $candidate = [IO.Path]::GetFullPath($Value) } catch { $candidate = $Value }
-  return $candidate.TrimEnd([char[]]@('\','/'))
-}
-
-
-function Invoke-XmaProbe([string]$FilePath, [string[]]$ArgumentList = @()) {
-  # 中文说明：rustup 在“已安装 shim、但没有 toolchain/default”时会把 warn 写到 stderr。
-  # 这属于“依赖尚未准备”的可恢复状态，不能被 $ErrorActionPreference='Stop' 提前升级成整个 [1] 失败。
-  $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    $output = @(& $FilePath @ArgumentList 2>$null)
-    return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $output }
-  } catch {
-    return [pscustomobject]@{ ExitCode = -1; Output = @($_.Exception.Message) }
-  } finally {
-    $ErrorActionPreference = $previousPreference
-  }
-}
-
-function Add-XmaUserPathEntry([string]$Directory) {
-  $normalizedTarget = Get-XmaNormalizedPath $Directory
-  $current = [Environment]::GetEnvironmentVariable('Path','User')
-  $entries = @(Get-XmaPathEntries $current)
-  if ($entries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedTarget }) { return $false }
-  $next = (@($Directory) + $entries) -join ';'
-  [Environment]::SetEnvironmentVariable('Path', $next, 'User')
-  return $true
-}
-
-function Test-XmaWritableDirectory([string]$Path) {
-  try {
-    New-Item -ItemType Directory -Force -Path $Path | Out-Null
-    $probe = Join-Path $Path ('.xma-write-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
-    [IO.File]::WriteAllText($probe, 'ok', ([Text.UTF8Encoding]::new($false)))
-    Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
-    return $true
-  } catch {
-    return $false
   }
 }
 
@@ -985,7 +816,8 @@ function Remove-XmaLegacyProjectControlState {
       Copy-Item -LiteralPath $old -Destination $next -Force
     }
   }
-  foreach ($oldControl in @((Join-Path $legacyPathRoot 'state'), (Join-Path $legacyPathRoot 'dev-bin'))) {
+  # Bun/OpenTUI 已进入 pnpm node_modules；项目内旧实体与旧控制目录都可在 JS Runtime 成功准备后清理。外部 xma-path 不在这里猜测/删除。
+  foreach ($oldControl in @((Join-Path $legacyPathRoot 'state'), (Join-Path $legacyPathRoot 'dev-bin'), (Join-Path $legacyPathRoot 'bun'), (Join-Path $legacyPathRoot 'opentui'))) {
     if (Test-Path -LiteralPath $oldControl) { Remove-XmaDirectoryEntry -Path $oldControl }
   }
   if (Test-Path -LiteralPath $legacyPathRoot -PathType Container) {
@@ -1014,116 +846,6 @@ function Remove-XmaLegacyLocalDirectory {
   } catch {}
 }
 
-function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
-  $sourceRuntimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
-  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($BunExecutable))
-  $bunHome = Split-Path -Parent $bunVersionDir
-  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
-  $targetNodeModules = Join-Path $openTuiHome 'node_modules'
-  $sourceNodeModules = Join-Path $sourceRuntimeRoot 'node_modules'
-  $sourcePackage = Join-Path $sourceRuntimeRoot 'package.json'
-  $sourceBunfig = Join-Path $sourceRuntimeRoot 'bunfig.toml'
-
-  New-Item -ItemType Directory -Force -Path $openTuiHome | Out-Null
-  # 依赖实体目录保留固定 package/bunfig 元数据，便于后续版本校验和独立补装；源码仍是 canonical source。
-  Copy-Item -LiteralPath $sourcePackage -Destination (Join-Path $openTuiHome 'package.json') -Force
-  if (Test-Path -LiteralPath $sourceBunfig -PathType Leaf) { Copy-Item -LiteralPath $sourceBunfig -Destination (Join-Path $openTuiHome 'bunfig.toml') -Force }
-
-  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
-    # 0.1.0 早期把 OpenTUI dependency island 实体放在源码目录 node_modules；如果它已经完整，先复制到新的 xma-path，避免重复联网安装。
-    $sourceItem = Get-Item -LiteralPath $sourceNodeModules -Force -ErrorAction SilentlyContinue
-    $sourceIsPhysical = $sourceItem -and (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
-    if ($sourceIsPhysical -and (Test-XmaOpenTuiDependencies $sourceRuntimeRoot)) {
-      Write-Host "[迁移] 检测到旧版 OpenTUI 本地依赖；正在迁移到 $openTuiHome，不重复下载。" -ForegroundColor Yellow
-      if (Test-Path -LiteralPath $targetNodeModules -PathType Container) { Remove-Item -LiteralPath $targetNodeModules -Recurse -Force }
-      Copy-Item -LiteralPath $sourceNodeModules -Destination $targetNodeModules -Recurse -Force
-    }
-  }
-
-  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
-    Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
-    Write-Host "[安装位置] $openTuiHome" -ForegroundColor Cyan
-    $registrySources = @(Get-XmaNpmRegistrySources)
-    $previousRegistry = $env:BUN_CONFIG_REGISTRY
-    $installed = $false
-    $lastRegistryError = ''
-    Push-Location $openTuiHome
-    try {
-      foreach ($registrySource in $registrySources) {
-        $env:BUN_CONFIG_REGISTRY = [string]$registrySource.Url
-        Write-Host "[下载源] OpenTUI npm registry：$($registrySource.Name) · $($registrySource.Url)" -ForegroundColor DarkCyan
-        try {
-          # Start-Process -NoNewWindow -Wait 让 Bun 继承真实终端并由 PowerShell 稳定等待退出；保留上游实时输出，同时可靠读取退出码。
-          Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save') -Activity 'Bun / OpenTUI 依赖下载'
-          $installed = $true
-          break
-        } catch {
-          $lastRegistryError = $_.Exception.Message
-          # 真值优先：如果 Bun 已经把固定版本依赖完整落盘，即使 Windows Host 在读取子进程状态时异常，
-          # 也不能把“实体已完整”误判成安装失败并重复切换 registry。
-          if (Test-XmaOpenTuiDependencies $openTuiHome) {
-            Write-Host "[通过] $($registrySource.Name) 已形成完整 OpenTUI 依赖；按实体真值继续。" -ForegroundColor Green
-            $installed = $true
-            break
-          }
-          Write-Host "[切换] $($registrySource.Name) 安装失败：$lastRegistryError" -ForegroundColor Yellow
-        }
-      }
-    } finally {
-      Pop-Location
-      if ($null -eq $previousRegistry) { Remove-Item Env:BUN_CONFIG_REGISTRY -ErrorAction SilentlyContinue }
-      else { $env:BUN_CONFIG_REGISTRY = $previousRegistry }
-    }
-    if (-not $installed) { throw "OpenTUI 依赖安装失败；已尝试所有 npm registry。最后错误：$lastRegistryError" }
-  }
-
-  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) { throw "Xiaoyu OpenTUI 依赖准备后版本仍不完整：$openTuiHome" }
-  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
-    throw "OpenTUI 依赖已准备，但无法把源码 Runtime 连接到 xma-path：$openTuiHome"
-  }
-  if (-not (Test-XmaOpenTuiDependencies $sourceRuntimeRoot)) { throw 'OpenTUI 依赖链接建立后仍无法从源码 Runtime 解析。' }
-
-  Write-Host "[通过] Xiaoyu TUI framework 已准备完成：OpenTUI $OpenTuiVersion + Solid $SolidJsVersion + Bun $BunVersion。" -ForegroundColor Green
-  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
-}
-
-function Ensure-XmaBunOpenTuiRuntime([switch]$PromptIfMissing) {
-  # 中文说明：Bun + OpenTUI 是一个运行组件。`[1]` 必须按“整组件真值”判断，
-  # 不能只看到 bun.exe 就认为准备完成，否则用户删除 xma-path\opentui 后不会再次获得 Y/N 修复机会。
-  $before = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
-  $bunExe = Install-XmaBunRuntime -PromptIfMissing:$PromptIfMissing
-  if (-not $bunExe) { return $null }
-
-  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
-  $bunHome = Split-Path -Parent $bunVersionDir
-  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
-  $openTuiReady = Test-XmaOpenTuiDependencies $openTuiHome
-
-  if (-not $openTuiReady -and $PromptIfMissing -and $before) {
-    Write-Host "[缺少] Bun $BunVersion 已存在，但 OpenTUI Runtime 依赖不完整：$openTuiHome" -ForegroundColor Yellow
-    if (-not (Confirm-XmaAction '是否修复/重新安装 OpenTUI Runtime？选择 N 会跳过，可稍后在主菜单 [8] 单独安装。')) {
-      Write-Host '[跳过] OpenTUI Runtime 未修复；Bun 本体保留，但 [4]/[7] 仍会提示先运行 [8]。' -ForegroundColor Yellow
-      return $null
-    }
-  }
-
-  if (-not $openTuiReady) {
-    # Bun 本轮刚由用户同意安装时，沿用同一次“Bun / OpenTUI Runtime”授权，不重复弹第二个 Y/N。
-    # 旧版实体依赖如果完整，Ensure 会优先本地迁移；只有确实缺失时才联网安装。
-    # 中文说明：该函数最终必须只返回 bun.exe 路径。Bun install 的 stdout 只能显示到 Host，不能进入 PowerShell 返回管道污染 `$bunExe`。
-    Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host
-  } elseif (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
-    throw "OpenTUI 依赖存在，但无法连接到源码 Runtime：$openTuiHome"
-  }
-
-  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
-    throw "Bun/OpenTUI 组件准备结束但真实依赖仍不完整：$openTuiHome"
-  }
-  Write-Host "[通过] Bun/OpenTUI 整组件已就绪：Bun $BunVersion + OpenTUI $OpenTuiVersion" -ForegroundColor Green
-  Write-Host "[OpenTUI] $openTuiHome" -ForegroundColor DarkGray
-  return $bunExe
-}
-
 function Remove-XmaPackageMetadataFromGitWorktree {
   # `.xma-package` 只属于正式源码包。只要当前目录已经是 Git checkout，它就不再是长期工作目录的一部分。
   $gitDir = Join-Path $Root '.git'
@@ -1134,16 +856,111 @@ function Remove-XmaPackageMetadataFromGitWorktree {
   }
 }
 
-function Prepare-XmaBunOnly {
+function Get-XmaInstalledPackageVersion([string]$PackageJson) {
+  if (-not (Test-Path -LiteralPath $PackageJson -PathType Leaf)) { return '' }
+  try { return [string]((Get-Content -LiteralPath $PackageJson -Raw -Encoding UTF8 | ConvertFrom-Json).version) } catch { return '' }
+}
+
+function Get-XmaWorkspaceJavaScriptRuntimeInfo {
+  $bunPackage = Join-Path $Root 'node_modules\bun\package.json'
+  $bunExe = if ($IsWindows -or $env:OS -eq 'Windows_NT') { Join-Path $Root 'node_modules\bun\bin\bun.exe' } else { Join-Path $Root 'node_modules\.bin\bun' }
+  $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
+  $corePackage = Join-Path $runtimeRoot 'node_modules\@opentui\core\package.json'
+  $solidPackage = Join-Path $runtimeRoot 'node_modules\@opentui\solid\package.json'
+  $solidJsPackage = Join-Path $runtimeRoot 'node_modules\solid-js\package.json'
+  $bunTypesPackage = Join-Path $runtimeRoot 'node_modules\@types\bun\package.json'
+
+  foreach ($file in @($bunPackage,$corePackage,$solidPackage,$solidJsPackage,$bunTypesPackage)) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $null }
+  }
+  if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) { return $null }
+
+  $bunVersion = Get-XmaInstalledPackageVersion $bunPackage
+  $bunProbe = Invoke-XmaProbe -FilePath $bunExe -ArgumentList @('--version')
+  if ($bunProbe.ExitCode -ne 0 -or (($bunProbe.Output -join ' ').Trim() -ne $bunVersion)) { return $null }
+
+  return [pscustomobject]@{
+    BunExe = $bunExe
+    BunVersion = $bunVersion
+    OpenTuiCoreVersion = (Get-XmaInstalledPackageVersion $corePackage)
+    OpenTuiSolidVersion = (Get-XmaInstalledPackageVersion $solidPackage)
+    SolidJsVersion = (Get-XmaInstalledPackageVersion $solidJsPackage)
+    BunTypesVersion = (Get-XmaInstalledPackageVersion $bunTypesPackage)
+  }
+}
+
+function Invoke-XmaManagedJavaScriptLatestUpdate {
+  Write-Host '[更新] 正在检查 XMA JS Runtime 最新稳定版本：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
+  Write-Host '[策略] Bun/OpenTUI/Solid 使用 registry latest；[1]/[8] 统一刷新 Workspace lockfile + node_modules，运行/检查阶段不联网更新。' -ForegroundColor DarkGray
+
+  $registrySources = @(Get-XmaNpmRegistrySources)
+  $previousRegistry = [string]$env:npm_config_registry
+  $lastError = ''
+  try {
+    foreach ($registry in $registrySources) {
+      $env:npm_config_registry = [string]$registry.Url
+      Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
+      try {
+        Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','runtime:update')
+        return
+      } catch {
+        $lastError = $_.Exception.Message
+        Write-Host "[切换] $($registry.Name) 更新失败：$lastError" -ForegroundColor Yellow
+      }
+    }
+  } finally {
+    if ([string]::IsNullOrWhiteSpace($previousRegistry)) { Remove-Item Env:npm_config_registry -ErrorAction SilentlyContinue }
+    else { $env:npm_config_registry = $previousRegistry }
+  }
+  throw "XMA JS Runtime latest 更新失败；已尝试可用 npm registry。最后错误：$lastError"
+}
+
+function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
+  if ($RefreshLatest) { Invoke-XmaManagedJavaScriptLatestUpdate }
+
+  Write-Host '[安装] 正在同步 Workspace JavaScript 依赖到 node_modules...' -ForegroundColor Yellow
+  Write-Host '[安全] pnpm allowBuilds 仅允许 bun + esbuild；Electron Chromium Runtime 不会在这里 postinstall 下载。' -ForegroundColor DarkYellow
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
+
+  $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
+  $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
+  $tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
+  $tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
+  foreach ($tool in @($tsx,$vite,$tsc,$tsup)) { if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Workspace JavaScript 工具缺失：$tool" } }
+
+  $runtime = Get-XmaWorkspaceJavaScriptRuntimeInfo
+  if (-not $runtime) { throw 'Bun/OpenTUI Workspace Runtime 未完整进入 node_modules。请检查 pnpm install 输出后重试。' }
+
+  Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
+
+  $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
+  $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
+  if (-not (Test-Path -LiteralPath $desktopElectronPackage -PathType Leaf)) { throw 'Desktop Electron package 元数据缺失。' }
+  $installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
+  if ($installedElectron -ne $ElectronVersion) { throw "Electron package 版本不一致：期望 $ElectronVersion，实际 $installedElectron。" }
+  if (-not (Test-Path -LiteralPath $desktopTauriCmd -PathType Leaf)) { throw 'Tauri 2 CLI package 未安装完整。' }
+
+  Write-Host "[通过] Workspace JS Runtime：Bun $($runtime.BunVersion) · OpenTUI core $($runtime.OpenTuiCoreVersion) / solid $($runtime.OpenTuiSolidVersion) · Solid $($runtime.SolidJsVersion)" -ForegroundColor Green
+  Write-Host "[Bun] $($runtime.BunExe)" -ForegroundColor DarkGray
+  Write-Host '[位置] Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules。' -ForegroundColor DarkGray
+  return $runtime
+}
+
+function Prepare-XmaJavaScriptOnly {
   Write-Host '====================================================================' -ForegroundColor DarkCyan
-  Write-Host '  XMA · 单独安装 Bun / OpenTUI Runtime' -ForegroundColor Cyan
+  Write-Host '  XMA · 刷新 JavaScript Runtime' -ForegroundColor Cyan
   Write-Host '====================================================================' -ForegroundColor DarkCyan
-  $bunExe = Ensure-XmaBunOpenTuiRuntime
-  if (-not $bunExe) { throw 'Bun / OpenTUI Runtime 单独准备未完成。' }
+  [void](Ensure-XmaWorkspaceJavaScriptDependencies -RefreshLatest)
   Remove-XmaLegacyLocalDirectory
   Remove-XmaLegacyProjectControlState
   Remove-XmaPackageMetadataFromGitWorktree
-  Write-Host '[完成] Bun / OpenTUI Runtime 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
+  Write-Host '[完成] Workspace JS / Bun / OpenTUI 已刷新到 registry latest；可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
 function Prepare-XmaRustOnly {
@@ -1161,21 +978,20 @@ function Prepare-XmaRustOnly {
   Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
-if ($Component -eq 'bun') { Prepare-XmaBunOnly; exit 0 }
+if ($Component -in @('js','bun')) { Prepare-XmaJavaScriptOnly; exit 0 }
 if ($Component -eq 'rust') { Prepare-XmaRustOnly; exit 0 }
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：Bun/OpenTUI 与 Rust/Cargo 如果尚未安装，会先询问 Y/N；选择 N 只跳过对应组件，不中断其余准备。' -ForegroundColor DarkGray
-Write-Host '说明：默认依赖根跟随当前项目的 xma-path；不会主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。' -ForegroundColor DarkGray
-Write-Host '说明：下载源默认 auto：官方/镜像做快速测速，下载停滞或失败会自动切换；可用 XMA_DOWNLOAD_SOURCE=official|mirror 覆盖。' -ForegroundColor DarkGray
-Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
+Write-Host '说明：Bun/OpenTUI/Solid 已并入 pnpm Workspace；[1] 会检查 registry latest 并统一安装到 node_modules，不再维护独立 Bun xma-path。' -ForegroundColor DarkGray
+Write-Host '说明：Rust/Cargo 仍是 Native Toolchain；缺失时会询问 Y/N，选择 N 只跳过 Rust，不中断 JavaScript 开发环境准备。' -ForegroundColor DarkGray
+Write-Host '说明：不会下载 Electron Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。' -ForegroundColor DarkGray
 Write-Host ''
 Refresh-XmaPath
 
-Write-Host '[1/9] Git' -ForegroundColor Cyan
+Write-Host '[1/8] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
 if (Get-Command git.exe -ErrorAction SilentlyContinue) { Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green }
 else {
@@ -1189,7 +1005,7 @@ else {
 }
 
 Write-Host ''
-Write-Host '[2/9] Node.js 22+' -ForegroundColor Cyan
+Write-Host '[2/8] Node.js 22+' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js。' -ForegroundColor Yellow
@@ -1213,7 +1029,7 @@ if ($major -lt 22) {
 Write-Host "[通过] Node.js $nodeVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[3/9] pnpm 11.17.0' -ForegroundColor Cyan
+Write-Host '[3/8] pnpm 11.17.0' -ForegroundColor Cyan
 $pnpmVersion = if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) { (& pnpm.cmd --version).Trim() } else { '' }
 if ($pnpmVersion -ne '11.17.0') {
   if ($pnpmVersion) { Write-Host "[调整] 当前 pnpm $pnpmVersion，项目固定使用 11.17.0。" -ForegroundColor Yellow } else { Write-Host '[缺少] 当前没有检测到 pnpm。' -ForegroundColor Yellow }
@@ -1225,79 +1041,28 @@ if ($pnpmVersion -ne '11.17.0') { throw "pnpm 版本校验失败：期望 11.17.
 Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
-Write-Host '[4/9] Bun 1.3.14 / OpenTUI Runtime' -ForegroundColor Cyan
-Write-Host '[检查] 正在真实恢复 Bun + OpenTUI 整组件；任一部分缺失时才询问是否安装/修复。' -ForegroundColor DarkCyan
-$bunExe = Ensure-XmaBunOpenTuiRuntime -PromptIfMissing
+Write-Host '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain' -ForegroundColor Cyan
+Write-Host '[检查] 正在通过 pnpm 刷新受管 JS Runtime latest 并同步整个 Workspace node_modules...' -ForegroundColor DarkCyan
+$jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies -RefreshLatest
+$workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
+Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 
 Write-Host ''
-Write-Host '[5/9] Rust / Cargo' -ForegroundColor Cyan
+Write-Host '[5/8] Rust / Cargo' -ForegroundColor Cyan
 Write-Host '[检查] 正在真实恢复 Rust stable / Cargo；不存在时才询问是否安装。' -ForegroundColor DarkCyan
 $rustRuntime = Ensure-XmaRustToolchain -PromptIfMissing
 
 Write-Host ''
-Write-Host '[6/9] MSVC C++ Build Tools' -ForegroundColor Cyan
+Write-Host '[6/8] MSVC C++ Build Tools' -ForegroundColor Cyan
 if ($rustRuntime) { Ensure-XmaMsvc } else { Write-Host '[跳过] Rust/Cargo 未安装，因此本轮不准备 MSVC；可稍后主菜单 [9] 单独安装 Rust/Cargo。' -ForegroundColor Yellow }
 
 Write-Host ''
-Write-Host '[7/9] TypeScript / Web / CLI / Desktop JavaScript 依赖' -ForegroundColor Cyan
-Write-Host '[检查] 正在检查 XMA Workspace JavaScript 依赖...' -ForegroundColor DarkCyan
-$tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
-$vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
-$tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
-$tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
-$desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
-$desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
-$workspaceJsReady = (Test-Path $tsx) -and (Test-Path $vite) -and (Test-Path $tsc) -and (Test-Path $tsup) -and (Test-Path $desktopElectronPackage) -and (Test-Path $desktopTauriCmd)
-$workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
-$workspaceStampReady = Test-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
-if ($workspaceJsReady -and -not $workspaceStampReady) {
-  Write-Host '[校验] 检测到现有 Workspace 依赖，正在离线确认可直接复用...' -ForegroundColor DarkCyan
-  & pnpm.cmd install --ignore-scripts --offline --frozen-lockfile *> $null
-  $offlineInstallOk = $LASTEXITCODE -eq 0
-  if ($offlineInstallOk) { & pnpm.cmd exec tsx -e 'const value: number = 1; if (value !== 1) process.exit(1)' *> $null; $offlineInstallOk = $LASTEXITCODE -eq 0 }
-  if ($offlineInstallOk) { Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint; $workspaceStampReady = $true; Write-Host '[缓存] 现有 Workspace 依赖离线校验通过，直接复用。' -ForegroundColor DarkCyan }
-}
-if ($workspaceJsReady -and $workspaceStampReady) { Write-Host '[缓存] Workspace package/lockfile/node_modules 指纹未变化，跳过重复 pnpm install 与 esbuild rebuild。' -ForegroundColor DarkCyan }
-else {
-  Write-Host '[安装] Workspace 依赖状态变化或缓存不完整，正在同步 JavaScript 依赖...' -ForegroundColor Yellow
-  Write-Host '[安全] 使用 --ignore-scripts，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
-  Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
-}
-if ($bunExe) {
-  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
-  $bunHome = Split-Path -Parent $bunVersionDir
-  $openTuiHome = Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome
-  if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
-    throw "[4/9] 已确认 Bun/OpenTUI，但 [7/9] 复检发现 OpenTUI 依赖丢失：$openTuiHome。请重新运行 [1] 或主菜单 [8]。"
-  }
-  if (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
-    throw "OpenTUI 依赖存在，但源码 Runtime 链接已失效：$openTuiHome。请重新运行 [1] 或主菜单 [8]。"
-  }
-  Write-Host '[缓存] Bun/OpenTUI 已由 [4/9] 完整准备，本步骤只做复检，不重复安装。' -ForegroundColor DarkCyan
-} else {
-  Write-Host '[跳过] Bun/OpenTUI 本轮未准备；主菜单 [8] 可单独补齐。' -ForegroundColor Yellow
-}
-Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
-Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
-if (-not (Test-Path $desktopElectronPackage)) { throw 'Desktop Electron package 元数据缺失。' }
-$installedElectron = (Get-Content $desktopElectronPackage -Raw -Encoding UTF8 | ConvertFrom-Json).version
-if ($installedElectron -ne $ElectronVersion) { throw "Electron package 版本不一致：期望 $ElectronVersion，实际 $installedElectron。" }
-if (-not (Test-Path $desktopTauriCmd)) { throw 'Tauri 2 CLI package 未安装完整。' }
-Write-Host '[通过] Workspace JavaScript 依赖已准备完成。' -ForegroundColor Green
-
-Write-Host ''
-Write-Host '[8/9] XMA Native Rust crates' -ForegroundColor Cyan
+Write-Host '[7/8] XMA Native Rust crates' -ForegroundColor Cyan
 if ($rustRuntime) { Ensure-XmaCargoCrates -RustRuntime $rustRuntime }
 else { Write-Host '[跳过] Rust/Cargo 未安装，因此不预取 Native crates；主菜单 [9] 会一次补齐 Rust/Cargo + crates。' -ForegroundColor Yellow }
 
 Write-Host ''
-Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
+Write-Host '[8/8] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
 Remove-XmaLegacyLocalDirectory
@@ -1307,13 +1072,8 @@ Remove-XmaPackageMetadataFromGitWorktree
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
-if ($bunExe) {
-  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
-  $bunHomeSummary = Split-Path -Parent $bunVersionDir
-  $bunDependencyRootSummary = Split-Path -Parent $bunHomeSummary
-  Write-Host "[Bun/OpenTUI] 依赖根：$bunDependencyRootSummary" -ForegroundColor Cyan
-  Write-Host '[Bun/OpenTUI] 整组件已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan
-} else { Write-Host '[Bun/OpenTUI] 本轮跳过或未完整；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
+Write-Host "[JS Runtime] Bun $($jsRuntime.BunVersion) · OpenTUI $($jsRuntime.OpenTuiCoreVersion) · Solid $($jsRuntime.SolidJsVersion) · node_modules" -ForegroundColor Cyan
+Write-Host '[JS 更新] 重新运行 [1] 或主菜单 [8] 会再次查询 registry latest；[4]/[7] 只使用已安装 lock/node_modules，不自动联网升级。' -ForegroundColor DarkGray
 if ($rustRuntime) {
   $rustInstallRootSummary = Split-Path -Parent ([IO.Path]::GetFullPath($rustRuntime.CargoHome))
   $rustDependencyRootSummary = Split-Path -Parent $rustInstallRootSummary

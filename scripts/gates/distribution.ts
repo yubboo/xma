@@ -12,14 +12,19 @@ function text(file: string): string {
   return readFileSync(file, 'utf8')
 }
 
-const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string> }
+const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }
 const cliPackage = JSON.parse(text('apps/cli/package.json')) as { dependencies?: Record<string, string> }
 const openTuiPackage = JSON.parse(text('apps/cli/opentui-runtime/package.json')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
-if (openTuiPackage.dependencies?.['@opentui/core'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI core must stay pinned to the MiMo-validated 0.1.101 baseline.')
-if (openTuiPackage.dependencies?.['@opentui/solid'] !== '0.1.101') throw new Error('Xiaoyu OpenTUI Solid binding must stay pinned to 0.1.101.')
-if (openTuiPackage.dependencies?.['solid-js'] !== '1.9.11') throw new Error('Xiaoyu OpenTUI Solid runtime must stay pinned to solid-js 1.9.11.')
+if (rootPackage.devDependencies?.bun !== 'latest') throw new Error('Xiaoyu Bun source runtime must use registry latest and be lockfile-resolved by [1]/[8].')
+if (openTuiPackage.dependencies?.['@opentui/core'] !== 'latest') throw new Error('Xiaoyu OpenTUI core source dependency must use registry latest.')
+if (openTuiPackage.dependencies?.['@opentui/solid'] !== 'latest') throw new Error('Xiaoyu OpenTUI Solid binding source dependency must use registry latest.')
+if (openTuiPackage.dependencies?.['solid-js'] !== 'latest') throw new Error('Xiaoyu Solid runtime source dependency must use registry latest.')
+if (openTuiPackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('Xiaoyu Bun types source dependency must use registry latest.')
+const workspaceSource = text('pnpm-workspace.yaml')
+if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('Xiaoyu OpenTUI runtime must participate in root pnpm Workspace install.')
+if (rootPackage.scripts?.['runtime:update'] !== 'pnpm --workspace-root update --latest bun && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun') throw new Error('Managed JS Runtime latest refresh script is missing or drifted.')
 if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Legacy Workspace Trust/test compatibility still pins Pi TUI until the compatibility layer is retired.')
-if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pinned Bun/OpenTUI runner.')
+if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pnpm-managed Bun/OpenTUI runner.')
 if (rootPackage.scripts?.['smoke:cli'] !== 'tsx scripts/cli/smoke.ts') throw new Error('Xiaoyu compiled OpenTUI CLI must keep a canonical no-TTY smoke test.')
 if (!(rootPackage.scripts?.test ?? '').includes('apps/cli/tests/*.test.ts')) throw new Error('XMA tests must include apps/cli/tests.')
 if (rootPackage.scripts?.['release:cli-stage'] !== 'tsx scripts/release/cli.ts') throw new Error('XMA portable CLI staging script is missing.')
@@ -180,7 +185,7 @@ for (const marker of ["argument('directory', 'dist/release')", "'release-manifes
 
 
 const workflow = text('.github/workflows/release.yml')
-for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'oven-sh/setup-bun@v2', 'bun install --cwd apps/cli/opentui-runtime --no-save', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
+for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm run runtime:update', 'pnpm install --no-frozen-lockfile', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
   if (!workflow.includes(marker)) throw new Error(`XMA cross-platform release workflow marker missing: ${marker}`)
 }
 

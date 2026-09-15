@@ -50,36 +50,86 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 
-// 外部依赖盘符发现必须是显式行为，不能在 xma-dev 菜单脚本顶层自动执行。
+// 外部 Rust 依赖盘符发现必须是显式行为，不能在 xma-dev 菜单脚本顶层自动执行。
 // Windows PowerShell 5.1 对 List[object] 的 `@($results)` array-subexpression 存在 binder 兼容问题，discovery helper 必须返回 ToArray()。
 const discoveryCommonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
 for (const marker of [
+  'function Get-XmaDiscoveredRustHomes',
   '[switch]$DiscoverExternal',
   'if (-not $DiscoverExternal) { return $null }',
   'return $results.ToArray()',
 ]) {
-  if (!discoveryCommonSource.includes(marker)) throw new Error(`XMA external dependency discovery contract regression: missing ${marker}`)
+  if (!discoveryCommonSource.includes(marker)) throw new Error(`XMA external Rust discovery contract regression: missing ${marker}`)
 }
 if (discoveryCommonSource.includes('return @($results)')) throw new Error('PowerShell 5.1 discovery helpers must not return generic List via @($results); use ToArray().')
 if (discoveryCommonSource.includes("New-Object 'System.Collections.Generic.HashSet[string]'")) throw new Error('PowerShell discovery/path dedupe should use native case-insensitive hashtables instead of fragile generic HashSet constructor binding.')
+for (const legacyBunState of ['Import-XmaBunEnvironment', 'Save-XmaBunEnvironmentState', 'Get-XmaDiscoveredBunHomes', 'Get-XmaBunEnvironmentStatePath', 'XMA_BUN_HOME']) {
+  if (discoveryCommonSource.includes(legacyBunState)) throw new Error(`Bun must be pnpm/node_modules-managed; legacy Bun state helper remains in xma-common.ps1: ${legacyBunState}`)
+}
 
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 for (const marker of [
-  "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
-  "function Invoke-XmaVisibleProcess",
-  "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru",
+  'function Invoke-XmaVisibleProcess',
+  'Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru',
   '$exitCode = $process.ExitCode',
-  '已形成完整 OpenTUI 依赖；按实体真值继续。',
-  "Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save')",
   "Invoke-XmaVisibleProcess -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path')",
   "Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal')",
   "Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable')",
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`PowerShell live-process / value-return isolation regression: missing ${marker}`)
 }
+if (prepareSource.includes('WaitForExit(1000)')) throw new Error('PowerShell visible child process must not manually poll WaitForExit(timeout); use Start-Process -Wait -PassThru.')
 
-if (prepareSource.includes('WaitForExit(1000)')) throw new Error('PowerShell visible child process must not manually poll WaitForExit(timeout); Windows PowerShell 5.1 can leave ExitCode unresolved. Use Start-Process -Wait -PassThru.')
-if (prepareSource.includes('SHASUMS256-$BunVersion') || prepareSource.includes('Bun $BunVersion SHA-256 清单')) throw new Error('Pinned Bun runtime must validate against embedded official release digest; do not add a second checksum-manifest download dependency.')
+// Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. [1]/[8] refresh registry latest; [4]/[7]/build only consume installed files.
+const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string> }
+const openTuiRuntimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+if (rootRuntimePackage.devDependencies?.bun !== 'latest') throw new Error('Root Bun dependency must use registry tag latest; [1]/[8] own the refresh boundary.')
+for (const name of ['@opentui/core', '@opentui/solid', 'solid-js']) {
+  if (openTuiRuntimePackage.dependencies?.[name] !== 'latest') throw new Error(`OpenTUI runtime dependency must use registry tag latest: ${name}`)
+}
+if (openTuiRuntimePackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('@types/bun must use registry tag latest.')
+const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
+if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI runtime must be a real pnpm workspace package so root pnpm install owns its node_modules.')
+for (const marker of [
+  'function Get-XmaWorkspaceJavaScriptRuntimeInfo',
+  "Join-Path $Root 'node_modules\\bun\\package.json'",
+  "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
+  'function Invoke-XmaManagedJavaScriptLatestUpdate',
+  "@('run','runtime:update')",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
+  '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
+  'pnpm Workspace；[1] 会检查 registry latest',
+  'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules',
+]) {
+  if (!prepareSource.includes(marker)) throw new Error(`pnpm Workspace JS Runtime contract regression: missing ${marker}`)
+}
+for (const forbidden of [
+  'function Install-XmaBunRuntime', 'function Ensure-XmaBunOpenTuiRuntime', 'function Ensure-XmaOpenTuiDependencies',
+  'BunNpmWindowsX64Sha512', 'SourceForge Bun 镜像', 'SHASUMS256', 'XMA_BUN_HOME', 'Save-XmaBunEnvironmentState',
+  "@('install','--no-save')", "@('install','--ignore-scripts')",
+]) {
+  if (prepareSource.includes(forbidden)) throw new Error(`Legacy standalone Bun/OpenTUI installer must not return: ${forbidden}`)
+}
+
+const updateConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
+for (const marker of [
+  "'update' { Update-XmaProject }",
+  '[10] 更新项目',
+  'function Assert-XmaGitCloneForUpdate',
+  'https://github.com/yubboo/xma.git',
+  "@('fetch','origin','main')",
+  "@('pull','--rebase','--autostash','origin','main')",
+  "@('reset','--hard','origin/main')",
+  '确认强制恢复？请输入 YES 继续',
+  '.xma-package\\source-manifest.json',
+]) {
+  if (!updateConsoleSource.includes(marker)) throw new Error(`XMA [10] project update contract regression: missing ${marker}`)
+}
+if (updateConsoleSource.includes("@('clean','-fd')") || updateConsoleSource.includes('git clean -fd')) {
+  throw new Error('XMA [10] force update must not automatically git clean local dependencies/caches.')
+}
+
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
 for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
@@ -96,17 +146,6 @@ if (prepareSource.includes('[Console]::ReadKey') || prepareSource.includes('[Con
   throw new Error('Dependency arrow menu must use PowerShell Host RawUI; System.Console cursor/read APIs regress in Windows Terminal hosts.')
 }
 for (const marker of [
-  'function Invoke-XmaProbe',
-  'function Get-XmaDownloadSourceMode',
-  'XMA_DOWNLOAD_SOURCE',
-  'function Measure-XmaDownloadProbe',
-  'function Invoke-XmaDownloadFile',
-  "'--progress-bar'",
-  "'--speed-time'",
-  'SourceForge Bun 镜像',
-  'BunWindowsX64Sha256',
-  'BunWindowsAarch64Sha256',
-  "'--ssl-revoke-best-effort'",
   'function Get-XmaNpmRegistrySources',
   'https://registry.npmmirror.com',
   'function Get-XmaRustupSource',
@@ -120,18 +159,12 @@ for (const marker of [
   '$key.VirtualKeyCode -eq 13',
   '↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达',
   '$rawUi.CursorPosition = $position',
-  '若三行动态菜单已经完整显示，只补一个输入提示，绝不再次打印选项',
   "$prefix = if ($number -eq $selected) { '  > ' } else { '    ' }",
   "Read-XmaArrowMenuChoice -Prompt '请选择' -Items",
   'function Select-XmaDependencyRoot',
   "Get-XmaLocalPathRoot -ProjectRoot $Root",
   "$driveDRoot = 'D:\\xma-path'",
   '请输入真实盘符，例如 E',
-  'function Install-XmaBunRuntime',
-  'PromptIfMissing',
-  '主菜单 [8] 单独安装',
-  'Save-XmaBunEnvironmentState -ProjectRoot $Root',
-  'Move-XmaLegacyBunToProjectDefault',
   'function Ensure-XmaRustToolchain',
   'function Install-XmaRustStable',
   '主菜单 [9] 单独安装',
@@ -145,68 +178,128 @@ for (const marker of [
   'Refresh-XmaPath',
   '[检查] 正在检查 Git 是否可用...',
   '[完成] XMA 一键准备流程结束。',
-  '[Bun/OpenTUI] 依赖根：',
+  '[JS Runtime] Bun ',
   '[Rust/Cargo] 依赖根：',
   '[控制状态]',
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
   "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime',
-  'Workspace package/lockfile/node_modules 指纹未变化',
-  'function Ensure-XmaOpenTuiDependencies',
-  'function Ensure-XmaBunOpenTuiRuntime',
-  'Bun + OpenTUI 是一个运行组件',
-  'OpenTUI Runtime 依赖不完整',
-  '[缓存] Bun/OpenTUI 已由 [4/9] 完整准备，本步骤只做复检，不重复安装。',
-  'function Remove-XmaPackageMetadataFromGitWorktree',
-  '当前 checkout 状态不存在，但检测到可真实运行的外部 Rust/Cargo',
-  "Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome",
-  "Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome",
-  "@('install','--no-save')",
-  'Xiaoyu TUI framework 已准备完成',
   'function Install-XmaDevelopmentCommands',
   'function Remove-XmaLegacyProjectControlState',
   "Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'",
   "@('xiaoyu.cmd','xma.cmd')",
   "if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }",
-  '[9/9] 开发态 Xiaoyu 命令',
-  'Test-XmaPrepareStamp',
-  '跳过重复 pnpm install 与 esbuild rebuild',
+  '[8/8] 开发态 Xiaoyu 命令',
   'Cargo 指纹未变化；仍验证实际 crate 缓存',
   'cargo fetch 完成后 offline 复检通过',
   '选择 N 会跳过',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
-if (/SetEnvironmentVariable\([^)]*['"]Machine['"][^)]*\)/i.test(prepareSource)) {
-  throw new Error('XMA development preparation must not modify Machine PATH; use current-user PATH only')
+if (/SetEnvironmentVariable\([^)]*['"]Machine['"][^)]*\)/i.test(prepareSource)) throw new Error('XMA development preparation must not modify Machine PATH; use current-user PATH only')
+if (/AppData\\Local\\XMA\\(?:Bun|Rust)/i.test(prepareSource)) throw new Error('Rust default install must follow project xma-path instead of system C user directories')
+if (prepareSource.includes("@('override','set','stable')")) throw new Error('Rust preparation must not use rustup directory override; it binds the checkout absolute path')
+if (prepareSource.includes('> 当前选择：')) throw new Error('Dependency root arrow menu must highlight the actual [1]/[2]/[3] rows instead of rendering a separate status line')
+if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) throw new Error('dev shim belongs to checkout-local state, not xma-path')
+if (prepareSource.includes("@('exec','esbuild','--version')")) throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
+if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) throw new Error('XMA preparation must never download Electron Chromium Runtime')
+if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')")) throw new Error('XMA preparation must not prefetch Tauri Rust crates')
+
+const commonWindowsSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
+for (const marker of [
+  'function Get-XmaDiscoveredRustHomes',
+  '[IO.DriveInfo]::GetDrives()',
+  "Join-Path $driveRoot 'xma-path\\rust'",
+  "Join-Path $driveRoot 'XMA\\Rust'",
+  "Source = 'drive-scan'",
+  'Save-XmaRustEnvironmentState -ProjectRoot $ProjectRoot -CargoHome $cargoHome -RustupHome $rustupHome',
+]) {
+  if (!commonWindowsSource.includes(marker)) throw new Error(`XMA offline Rust rediscovery contract missing: ${marker}`)
 }
-if (/AppData\\Local\\XMA\\(?:Bun|Rust)/i.test(prepareSource)) throw new Error('Bun/Rust default install must follow project xma-path instead of system C user directories')
-if (prepareSource.includes("@('override','set','stable')")) {
-  throw new Error('Rust preparation must not use rustup directory override; it binds the checkout absolute path and breaks removable-drive/project moves')
+for (const forbidden of ['Import-XmaBunEnvironment','Save-XmaBunEnvironmentState','Get-XmaDiscoveredBunHomes','Get-XmaOpenTuiHomeFromBunHome','Connect-XmaOpenTuiNodeModules']) {
+  if (commonWindowsSource.includes(forbidden)) throw new Error(`Standalone Bun state must not remain in common helper: ${forbidden}`)
 }
-if (prepareSource.includes('> 当前选择：')) {
-  throw new Error('Dependency root arrow menu must highlight the actual [1]/[2]/[3] rows instead of rendering a separate current-selection status line')
+
+const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
+for (const marker of [
+  'function Assert-CliJsDependencies',
+  'function Resolve-XmaBunRuntime',
+  "Join-Path $Root 'node_modules\\bun\\package.json'",
+  "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
+  "Join-Path $runtimeRoot 'node_modules\\@opentui\\core\\package.json'",
+  'Xiaoyu OpenTUI Runtime 已就绪',
+  "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','js','bun','rust','update')]",
+  "'cli' { Start-Cli -WorkspacePath $Workspace }",
+  "$cliArguments += @('--', $resolvedWorkspace)",
+  '未检测到 rustfmt/cargo-fmt。请运行主菜单 [9]',
+  'Rust rustfmt 已就绪；[7] 将保持 offline',
+  'function Resolve-XmaCargoRuntime',
+  '$importedRust = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal',
+  'function Assert-XmaCargoOfflineReady',
+  'Rust/Cargo 环境已恢复：CARGO_HOME=',
+  '[8] 刷新 · JavaScript Runtime',
+  '[9] 单独安装 · Rust / Cargo',
+  '[10] 更新项目',
+  "'js' { Prepare-JavaScriptRuntime }",
+  "'bun' { Prepare-JavaScriptRuntime }",
+  "'rust' { Prepare-RustRuntime }",
+]) {
+  if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console dependency contract regression: missing ${marker}`)
 }
-if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) {
-  throw new Error('External dependency selection must not create project xma-path only for dev-bin; dev shim belongs to checkout-local state')
+for (const forbidden of ['Import-XmaBunEnvironment','Get-XmaDiscoveredBunHomes','Get-XmaOpenTuiHomeFromBunHome','Connect-XmaOpenTuiNodeModules','[8] 单独安装 · Bun / OpenTUI']) {
+  if (cliConsoleSource.includes(forbidden)) throw new Error(`Console must use pnpm/node_modules Bun runtime: ${forbidden}`)
 }
-const commonControlState = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
-if (commonControlState.includes("return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state')")) {
-  throw new Error('Checkout control state must not be hardwired to project xma-path/state')
+
+const consoleHead = cliConsoleSource.split(/\r?\n/).slice(0, 40).join('\n')
+if (/Import-XmaRustEnvironment[^\n]*-DiscoverExternal/.test(consoleHead)) throw new Error('xma-dev menu startup must not scan external Rust drives before operation selection.')
+const prepareHead = prepareSource.split(/\r?\n/).slice(0, 30).join('\n')
+if (/Import-XmaRustEnvironment[^\n]*-DiscoverExternal/.test(prepareHead)) throw new Error('xma-prepare top-level initialization must not scan external drives before Rust preparation starts.')
+
+const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
+for (const marker of [
+  "path.join(root, 'node_modules', 'bun')",
+  "path.join(packageRoot, 'package.json')",
+  "path.join(runtimeRoot, 'node_modules'",
+  'fileURLToPath(import.meta.url)',
+  "path.join(root, '.cache', 'bun-compile', version)",
+  'function createWindowsCompileAlias',
+  'containsNonAscii(realCache)',
+  'spawnSync(subst, [drive, realCache]',
+  "spawnSync(subst, [drive, '/D']",
+  "const compileTemp = path.join(alias.root, 'tmp')",
+  "const compileRuntime = path.join(alias.root, 'runtime')",
+  'childEnv.BUN_TMPDIR = compileTemp',
+  'childEnv.TEMP = compileTemp',
+  'childEnv.TMP = compileTemp',
+  'let disposeCompileAlias: () => void = () => {}',
+  'disposeCompileAlias()',
+  "['run', '--no-install'",
+]) {
+  if (!bunRunnerSource.includes(marker)) throw new Error(`Bun node_modules/project-cache contract regression: missing ${marker}`)
 }
-for (const forbiddenEnv of ["SetEnvironmentVariable('CARGO_HOME'", "SetEnvironmentVariable('RUSTUP_HOME'"]) {
-  if (prepareSource.includes(forbiddenEnv)) throw new Error(`XMA dependency homes must be restored from checkout-local state, not persisted globally: ${forbiddenEnv}`)
+for (const forbidden of ['XMA_BUN_HOME','bun-environment.json',"path.join(root, 'xma-path', 'bun')",'process.env.LOCALAPPDATA',"process.env.TEMP ? path.join","process.env.TMP ? path.join","'C:\\","'D:\\","'H:\\"]) {
+  if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun runner must not use standalone state/fixed temp/drive: ${forbidden}`)
 }
-if (prepareSource.includes("@('exec','esbuild','--version')")) {
-  throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
+
+// 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
+const commonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
+for (const marker of [
+  'function Invoke-XmaExternal', '& $FilePath @ArgumentList', 'function Get-XmaProjectVersion', 'function Test-XmaElectronRuntime',
+  'function Import-XmaRustEnvironment', 'function Save-XmaRustEnvironmentState', 'function Get-XmaLocalPathRoot',
+  "return (Join-Path $ProjectRoot 'xma-path')", 'function Get-XmaCheckoutStateRoot', "return (Join-Path $gitEntry 'xma-state')",
+  "return (Join-Path $ProjectRoot '.cache\\xma-state')", 'function Test-XmaCargoOfflineDependencies',
+  'dist/version + path.txt + 可执行文件', '-Encoding UTF8',
+]) {
+  if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
 }
-if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) {
-  throw new Error('XMA preparation must never download Electron Chromium Runtime')
-}
-if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')")) {
-  throw new Error('XMA preparation must not prefetch Tauri Rust crates')
+if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
+if (!commonSource.includes('调用非交互安装命令必须显式 `| Out-Host`')) throw new Error('Invoke-XmaExternal pipeline-output contract documentation missing')
+
+for (const file of ['scripts/windows/xma-prepare.ps1','scripts/windows/xma-github.ps1','scripts/windows/xma-console.ps1','scripts/windows/xma-build-release.ps1']) {
+  const text = readFileSync(file, 'utf8')
+  if (!text.includes(". (Join-Path $PSScriptRoot 'xma-common.ps1')")) throw new Error(`Windows helper must reuse xma-common.ps1: ${file}`)
+  if (/function\s+(?:Run|Invoke-External)\b/.test(text)) throw new Error(`Windows helper must not define a private external-command runner: ${file}`)
+  if (/\[string\[\]\]\$Args\b/i.test(text) || /@Args\b/i.test(text)) throw new Error(`PowerShell automatic $args regression detected: ${file}`)
 }
 
 const desktopReleaseSource = readFileSync('scripts/windows/xma-build-release.ps1', 'utf8')
@@ -224,142 +317,6 @@ for (const forbidden of ['scripts/release/cli.ts', "@('run','build')", 'build:cl
   if (desktopReleaseSource.includes(forbidden)) throw new Error(`Desktop release must not build CLI/Server/full Rust workspace: ${forbidden}`)
 }
 
-
-const commonWindowsSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
-for (const marker of [
-  'function Get-XmaDiscoveredBunHomes',
-  '[IO.DriveInfo]::GetDrives()',
-  "Source = 'drive-scan'",
-  'Save-XmaBunEnvironmentState -ProjectRoot $ProjectRoot -BunHome $bunHome -Version $ExpectedVersion',
-  'function Get-XmaDiscoveredRustHomes',
-  "Join-Path $driveRoot 'xma-path\\rust'",
-  "Join-Path $driveRoot 'XMA\\Rust'",
-  'Save-XmaRustEnvironmentState -ProjectRoot $ProjectRoot -CargoHome $cargoHome -RustupHome $rustupHome',
-]) {
-  if (!commonWindowsSource.includes(marker)) throw new Error(`XMA offline dependency rediscovery contract missing: ${marker}`)
-}
-
-const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
-for (const marker of [
-  'function Assert-CliJsDependencies',
-  'function Resolve-XmaBunRuntime',
-  'Get-XmaDiscoveredBunHomes -ProjectRoot $Root -ExpectedVersion $BunVersion',
-  "Source -eq 'drive-scan'",
-  'Get-XmaOpenTuiHomeFromBunHome -BunHome $bunRuntime.BunHome',
-  "Join-Path $openTuiHome 'node_modules\\@opentui\\core\\package.json'",
-  "Join-Path $openTuiHome 'node_modules\\@opentui\\solid\\package.json'",
-  'Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunRuntime.BunHome',
-  'Xiaoyu OpenTUI Runtime 已就绪',
-  'Assert-CliJsDependencies\r\n  Assert-DesktopJsDependencies',
-  "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','bun','rust')]",
-  "'cli' { Start-Cli -WorkspacePath $Workspace }",
-  "$cliArguments += @('--', $resolvedWorkspace)",
-  '未检测到 rustfmt/cargo-fmt。请运行主菜单 [9]',
-  'Rust rustfmt 已就绪；[7] 将保持 offline',
-  'function Resolve-XmaCargoRuntime',
-  '$importedRust = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal',
-  '$bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal',
-  'function Assert-XmaCargoOfflineReady',
-  'Rust/Cargo 环境已恢复：CARGO_HOME=',
-  '[8] 单独安装 · Bun / OpenTUI',
-  '[9] 单独安装 · Rust / Cargo',
-  "'bun' { Prepare-BunRuntime }",
-  "'rust' { Prepare-RustRuntime }",
-]) {
-  if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
-}
-
-
-
-const consoleHead = cliConsoleSource.split(/\r?\n/).slice(0, 40).join('\n')
-if (/Import-Xma(?:Rust|Bun)Environment[^\n]*-DiscoverExternal/.test(consoleHead)) {
-  throw new Error('xma-dev menu startup must not scan external drives before the user selects an operation.')
-}
-const prepareHead = prepareSource.split(/\r?\n/).slice(0, 30).join('\n')
-if (/Import-XmaRustEnvironment[^\n]*-DiscoverExternal/.test(prepareHead)) {
-  throw new Error('xma-prepare top-level initialization must not scan external drives before dependency preparation actually starts.')
-}
-
-const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
-for (const marker of [
-  'process.env.XMA_BUN_HOME',
-  "path.join(checkoutStateRoot(), 'bun-environment.json')",
-  "path.join(root, 'xma-path', 'state', 'bun-environment.json')",
-  "path.join(root, 'xma-path', 'bun')",
-  'function openTuiHomeFromBunHome',
-  "path.join(openTuiHomeFromBunHome(runtime.home), 'node_modules')",
-  "symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir')",
-  'bun-environment.json',
-  'fileURLToPath(import.meta.url)',
-  "path.join(root, '.cache', 'bun-compile', BUN_VERSION)",
-  'function createWindowsCompileAlias',
-  'containsNonAscii(realCache)',
-  'spawnSync(subst, [drive, realCache]',
-  "spawnSync(subst, [drive, '/D']",
-  "const compileTemp = path.join(alias.root, 'tmp')",
-  "const compileRuntime = path.join(alias.root, 'runtime')",
-  'childEnv.BUN_TMPDIR = compileTemp',
-  'childEnv.TEMP = compileTemp',
-  'childEnv.TMP = compileTemp',
-  'let disposeCompileAlias: () => void = () => {}',
-  'disposeCompileAlias()',
-]) {
-  if (!bunRunnerSource.includes(marker)) throw new Error(`Bun project-cache/Unicode-path contract regression: missing ${marker}`)
-}
-for (const forbidden of ['process.env.LOCALAPPDATA', "process.env.TEMP ? path.join", "process.env.TMP ? path.join", "'C:\\\\", "'D:\\\\", "'H:\\\\"]) {
-  if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun compile must not bind Windows user temp storage or a fixed drive: ${forbidden}`)
-}
-
-if (bunRunnerSource.includes("path.join(root, '.xma', 'tools', 'bun'")) throw new Error('Bun runner must restore checkout-local state instead of fixed checkout .xma/tools/bun')
-
-// 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
-// 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
-// 导致 `pnpm check`、`rustup component add rustfmt` 等命令退化成裸 `pnpm` / `rustup`。
-const commonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
-for (const marker of [
-  'function Invoke-XmaExternal',
-  '& $FilePath @ArgumentList',
-  'function Get-XmaProjectVersion',
-  'function Test-XmaElectronRuntime',
-  'function Import-XmaBunEnvironment',
-  'function Save-XmaBunEnvironmentState',
-  'function Import-XmaRustEnvironment',
-  'function Save-XmaRustEnvironmentState',
-  'function Get-XmaLocalPathRoot',
-  "return (Join-Path $ProjectRoot 'xma-path')",
-  'function Get-XmaCheckoutStateRoot',
-  "return (Join-Path $gitEntry 'xma-state')",
-  "return (Join-Path $ProjectRoot '.cache\\xma-state')",
-  'function Get-XmaOpenTuiHomeFromBunHome',
-  'function Connect-XmaOpenTuiNodeModules',
-  'function Test-XmaCargoOfflineDependencies',
-  "dist/version + path.txt + 可执行文件",
-  '-Encoding UTF8',
-]) {
-  if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
-}
-if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
-if (!commonSource.includes('调用非交互安装命令必须显式 `| Out-Host`')) {
-  throw new Error('Invoke-XmaExternal pipeline-output contract documentation missing')
-}
-
-for (const file of [
-  'scripts/windows/xma-prepare.ps1',
-  'scripts/windows/xma-github.ps1',
-  'scripts/windows/xma-console.ps1',
-  'scripts/windows/xma-build-release.ps1',
-]) {
-  const text = readFileSync(file, 'utf8')
-  if (!text.includes(". (Join-Path $PSScriptRoot 'xma-common.ps1')")) {
-    throw new Error(`Windows helper must reuse xma-common.ps1: ${file}`)
-  }
-  if (/function\s+(?:Run|Invoke-External)\b/.test(text)) {
-    throw new Error(`Windows helper must not define a private external-command runner: ${file}`)
-  }
-  if (/\[string\[\]\]\$Args\b/i.test(text) || /@Args\b/i.test(text)) {
-    throw new Error(`PowerShell automatic $args regression detected: ${file}`)
-  }
-}
 
 const githubSource = readFileSync('scripts/windows/xma-github.ps1', 'utf8')
 for (const forbidden of ['xma-prepare.ps1', "pnpm.cmd", "cargo.exe", "rustup.exe", "winget.exe", "npm.cmd", 'electron', 'tauri']) {
@@ -508,7 +465,7 @@ for (const file of [
   if (!existsSync(file)) throw new Error(`Desktop runtime file missing: ${file}`)
 }
 
-const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
+const workspaceYamlSource = readFileSync('pnpm-workspace.yaml', 'utf8')
 for (const marker of ['allowBuilds:', 'esbuild: true', 'overrides:', 'yauzl: "^3.3.1"']) {
   if (!workspaceSource.includes(marker)) throw new Error(`pnpm 11 build-script allowlist regression: missing ${marker}`)
 }

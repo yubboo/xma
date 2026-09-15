@@ -40,13 +40,15 @@
     "gate:naming": "tsx scripts/gates/naming.ts",
     "release:cli-stage": "tsx scripts/release/cli.ts",
     "gate:distribution": "tsx scripts/gates/distribution.ts",
-    "release:source-manifest": "tsx scripts/release/source-manifest.ts"
+    "release:source-manifest": "tsx scripts/release/source-manifest.ts",
+    "runtime:update": "pnpm --workspace-root update --latest bun && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsup": "^8.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "bun": "latest"
   }
 }
