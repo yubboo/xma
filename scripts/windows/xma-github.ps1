@@ -10,9 +10,9 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $RepoUrl = 'https://github.com/yubboo/xma.git'
 $ExpectedWorkRoot = if ($env:XMA_TARGET_ROOT) { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($env:XMA_TARGET_ROOT)) } else { '' }
 $PackageManifest = Join-Path $Root '.xma-package\source-manifest.json'
-$SyncState = Join-Path $Root 'xma-path\state\source-sync.json'
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
+$SyncState = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'source-sync.json'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $Host.UI.RawUI.WindowTitle = 'XMA GitHub Helper'
 

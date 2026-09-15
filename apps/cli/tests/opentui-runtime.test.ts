@@ -123,7 +123,9 @@ test('Bun OpenTUI runner uses the runtime cwd and forbids implicit dependency do
   assert.match(source, /const scriptDir = path\.dirname\(fileURLToPath\(import\.meta\.url\)\)/)
   assert.match(source, /const root = path\.resolve\(scriptDir, '\.\.', '\.\.'\)/)
   assert.match(source, /const runtimeRoot = path\.join\(root, 'apps', 'cli', 'opentui-runtime'\)/)
-  assert.match(source, /xma-path', 'state', 'bun-environment\.json'/)
+  assert.match(source, /function checkoutStateRoot/)
+  assert.match(source, /path\.join\(checkoutStateRoot\(\), 'bun-environment\.json'\)/)
+  assert.match(source, /xma-path', 'state', 'bun-environment\.json'/) // 0.1.0 legacy migration source only
   assert.match(source, /xma-path', 'bun'/)
   assert.match(source, /\[8\] 单独安装 Bun\/OpenTUI/)
   assert.match(source, /const devArguments = forwarded\.length > 0 \? forwarded : \[root\]/)

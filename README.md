@@ -67,13 +67,13 @@ cd xma
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 `xma-path/state` 恢复同一真实位置并重新校验。
+首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 checkout 本地状态恢复同一真实位置并重新校验；Git checkout 的控制状态放在 `.git/xma-state/`，不会因为选择外部依赖位置就在项目根额外创建一个空壳 `xma-path`。 Bun/OpenTUI 与 Rust/Cargo 的安装位置菜单共用键盘选择器：可用 `↑/↓` 移动、`Enter` 确认，也保留数字键 `1/2/3` 直达；不支持原始按键读取的 PowerShell Host 会自动退回传统数字输入。
 
-默认项目依赖布局为 `xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`、`xma-path/state/`、`xma-path/dev-bin/`。其中 OpenTUI 的真实 `node_modules` 存在 `xma-path/opentui/`，源码 Runtime 只建立本地依赖链接；旧 `.xma/` 内容只做一次迁移，不再作为当前依赖/状态目录。
+默认项目依赖布局只包含实体依赖：`xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`。其中 OpenTUI 的真实 `node_modules` 存在对应依赖根的 `opentui/`；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做一次迁移，不再作为当前控制目录。
 
-删除/清理依赖后的行为也按真实文件状态判断：如果删除整个项目默认 `xma-path/`，下一次 `[1]` 会在 `[4/9]` 把 Bun/OpenTUI 视为缺失并重新询问 Y/N；如果只删 `xma-path/opentui/`，同样会把 Bun/OpenTUI **整组件**判定为不完整并询问是否修复。Rust/Cargo 如果原本就是项目默认 `xma-path/rust/`，删除后 `[5/9]` 会重新询问 Y/N；如果你此前明确装在 `D:\XMA\Rust` 等外部位置且实体仍真实存在，删除项目 `xma-path/state` 后会自动重新发现并接管，不会假装“依赖不存在”也不会重复安装。`[4]`/`[7]` 只校验和运行，不会偷偷修复或联网安装；缺失时会明确引导 `[8]`/`[9]` 或重新运行 `[1]`。
+删除/清理依赖后的行为也按真实文件状态判断：如果删除整个项目默认 `xma-path/`，下一次 `[1]` 会在 `[4/9]` 把 Bun/OpenTUI 视为缺失并重新询问 Y/N；如果只删 `xma-path/opentui/`，同样会把 Bun/OpenTUI **整组件**判定为不完整并询问是否修复。Rust/Cargo 如果原本就是项目默认 `xma-path/rust/`，删除后 `[5/9]` 会重新询问 Y/N；如果你此前明确装在 `D:\XMA\Rust` 等外部位置且实体仍真实存在，删除旧项目状态或 checkout 状态后会自动重新发现并接管，不会假装“依赖不存在”也不会重复安装。`[4]`/`[7]` 只校验和运行，不会偷偷修复或联网安装；缺失时会明确引导 `[8]`/`[9]` 或重新运行 `[1]`。
 
-开发态命令使用仓库内被忽略的 `xma-path\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
+开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
 
 Linux / macOS：
 
@@ -130,7 +130,7 @@ Skill 内容通过标准 Context Assembly 进入模型，并由 durable Context 
 
 ## 维护者源码包同步流程（Windows）
 
-下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。长期 Git 工作目录保留 `.git/xma-path/.cache` 等真实本地状态；旧版 `.xma` 只作为一次迁移来源，迁移完成后不再作为当前状态目录。源码包专用 `.xma-package` 若由旧流程遗留在工作目录，会在 Sync 后自动清理；即使是手工把源码包覆盖到 Git checkout，下一次 `[1]`、`[8]` 或 `[9]` 也会识别 `.git` 并清掉这份包级元数据。
+下面是维护者从正式源码包同步到长期 Git 工作区的流程；普通 Git clone 用户跳过这一节。长期 Git 工作目录保留 `.git` checkout 状态、实际依赖位置与 `.cache` 等真实本地状态；旧版 `.xma` 只作为一次迁移来源，迁移完成后不再作为当前状态目录。源码包专用 `.xma-package` 若由旧流程遗留在工作目录，会在 Sync 后自动清理；即使是手工把源码包覆盖到 Git checkout，下一次 `[1]`、`[8]` 或 `[9]` 也会识别 `.git` 并清掉这份包级元数据。
 
 开发源码包解压后：
 

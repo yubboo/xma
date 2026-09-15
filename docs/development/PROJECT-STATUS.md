@@ -151,4 +151,4 @@ Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；
 
 详细分阶段出口见 `DEVELOPMENT-PLAN.md`。
 
-- Terminal 启动合同已固定为两层：每次 `xiaoyu / xma` 都先对调用者当前目录显示 Workspace Trust；通过后仅在没有已配置 Profile 时，在同一 Xiaoyu TUI 中央打开 Brain Setup。已有 Profile 跳过第二步，Ctrl+P 长期管理不变。Windows 开发环境 `[1]` 会注册当前 checkout 的 `xma-path/dev-bin` 到 User PATH，便于在任意 Workspace 直接运行开发态 `xiaoyu / xma`。
+- Terminal 启动合同已固定为两层：每次 `xiaoyu / xma` 都先对调用者当前目录显示 Workspace Trust；通过后仅在没有已配置 Profile 时，在同一 Xiaoyu TUI 中央打开 Brain Setup。已有 Profile 跳过第二步，Ctrl+P 长期管理不变。Windows 开发环境 `[1]` 会注册当前 checkout 的 `.git/xma-state/dev-bin` 到 User PATH，便于在任意 Workspace 直接运行开发态 `xiaoyu / xma`。

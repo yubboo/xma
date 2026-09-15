@@ -30,8 +30,8 @@
 | 我要找什么 | 主要位置 |
 | --- | --- |
 | Windows 源码开发控制台 | `xma-dev.bat` → `scripts/windows/xma-console.ps1` |
-| Windows 开发态 `xiaoyu / xma` PATH shim | `scripts/windows/xma-prepare.ps1` → `xma-path/dev-bin/`（本地生成，不提交） |
-| Windows 源码依赖根 | `scripts/windows/xma-common.ps1` + `xma-prepare.ps1` → `xma-path/{bun,opentui,rust,state,dev-bin}/`（本地生成，不提交） |
+| Windows 开发态 `xiaoyu / xma` PATH shim | `scripts/windows/xma-prepare.ps1` → checkout `.git/xma-state/dev-bin/`（非 Git 树回退 `.cache/xma-state/dev-bin/`；本地生成，不提交） |
+| Windows 源码依赖根 | `scripts/windows/xma-common.ps1` + `xma-prepare.ps1` → 依赖实体位于所选 `xma-path/{bun,opentui,rust}/`；checkout 状态位于 `.git/xma-state/`（本地生成，不提交） |
 | Linux/macOS 源码开发控制台 | `xma-dev` → `scripts/unix/xma-console.sh` |
 | Windows 普通用户安装器 | `scripts/install/xma-install.ps1` |
 | Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |
@@ -70,4 +70,4 @@
 
 ## 根目录卫生（Root Hygiene）
 
-根目录只放一级领域目录、工具链根配置、导航文档和极少量顶级 Launcher。普通实现文件/临时脚本不允许继续堆到根；`.git/`、`.cache/`、`xma-path/`、`node_modules/` 属于本机状态，不是源码 ownership；`.xma/` 仅作为 0.1.0 旧状态迁移兼容，不再是当前目录。
+根目录只放一级领域目录、工具链根配置、导航文档和极少量顶级 Launcher。普通实现文件/临时脚本不允许继续堆到根；`.git/`、`.cache/`、按用户选择存在的 `xma-path/`、`node_modules/` 属于本机状态，不是源码 ownership；`.xma/` 仅作为 0.1.0 旧状态迁移兼容，不再是当前目录。

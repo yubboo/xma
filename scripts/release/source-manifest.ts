@@ -1,6 +1,6 @@
 /**
  * 文件作用：为 XMA 源码包生成精确的 Source Manifest，供 XMA-Sync 自动识别新增、删除与重命名源码。
- * 关联模块：scripts/windows/xma-sync.ps1、源码 ZIP 打包流程、xma-path/state/source-sync.json。
+ * 关联模块：scripts/windows/xma-sync.ps1、源码 ZIP 打包流程、checkout 本地 xma-state/source-sync.json。
  * 当前实现：扫描当前源码树，按路径职责排除依赖/缓存/构建/运行数据，并输出 .xma-package/source-manifest.json。
  * 职责边界：Manifest 只描述源码包受管文件，不包含 .git、runtime、node_modules、.cache、dist 等本地状态，也不负责生成 ZIP。
  */

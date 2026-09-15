@@ -1,7 +1,7 @@
 /**
  * 文件作用：为 XMA OpenTUI CLI 恢复 `[1]` 用户选择的固定 Bun Runtime，并统一源码运行与 CLI 构建入口。
  * 关联模块：xma-prepare.ps1、xma-common.ps1、package.json、apps/cli/opentui-runtime/build.ts。
- * 当前实现：Windows 优先读取当前 checkout `xma-path/state` 与项目默认 `xma-path/bun`，并真实校验 Bun 1.3.14；旧环境变量只作迁移兼容；中文/特殊字符源码路径构建时，用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
+ * 当前实现：Windows 优先读取 checkout 本地 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）与项目默认 `xma-path/bun`，并真实校验 Bun 1.3.14；旧 `xma-path/state`/环境变量只作迁移兼容；中文/特殊字符源码路径构建时，用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
  * 职责边界：只恢复并启动已经准备好的 Bun/OpenTUI 前端，不安装依赖、不下载 Bun；SUBST 只在单次 build 生命周期存在，最终 dist/cli/xiaoyu.exe 不依赖它。
  */
 
@@ -37,8 +37,25 @@ function projectDefaultBunHome(): string {
   return path.join(root, 'xma-path', 'bun')
 }
 
+function checkoutStateRoot(): string {
+  const gitEntry = path.join(root, '.git')
+  try {
+    const info = lstatSync(gitEntry)
+    if (info.isDirectory()) return path.join(gitEntry, 'xma-state')
+    if (info.isFile()) {
+      const line = readFileSync(gitEntry, 'utf8').trim()
+      const match = /^gitdir:\s*(.+)$/i.exec(line)
+      if (match?.[1]) {
+        const gitDir = path.isAbsolute(match[1]) ? path.resolve(match[1]) : path.resolve(root, match[1])
+        return path.join(gitDir, 'xma-state')
+      }
+    }
+  } catch { /* 非 Git 源码树回退项目 .cache。 */ }
+  return path.join(root, '.cache', 'xma-state')
+}
+
 function readProjectBunHome(): { home: string; source: BunRuntime['source'] } | undefined {
-  const stateFile = path.join(root, 'xma-path', 'state', 'bun-environment.json')
+  const stateFile = path.join(checkoutStateRoot(), 'bun-environment.json')
   if (existsSync(stateFile)) {
     try {
       const state = JSON.parse(readFileSync(stateFile, 'utf8')) as { formatVersion?: number; location?: string; bunHome?: string; version?: string }
@@ -47,6 +64,17 @@ function readProjectBunHome(): { home: string; source: BunRuntime['source'] } | 
         if (state.bunHome) return { home: state.bunHome, source: 'project-state' }
       }
     } catch { /* 状态损坏时继续尝试默认/旧兼容来源。 */ }
+  }
+
+  const oldProjectStateFile = path.join(root, 'xma-path', 'state', 'bun-environment.json')
+  if (existsSync(oldProjectStateFile)) {
+    try {
+      const state = JSON.parse(readFileSync(oldProjectStateFile, 'utf8')) as { formatVersion?: number; location?: string; bunHome?: string; version?: string }
+      if (state.formatVersion === 2 && state.version === BUN_VERSION) {
+        if (state.location === 'project') return { home: projectDefaultBunHome(), source: 'legacy-state' }
+        if (state.bunHome) return { home: state.bunHome, source: 'legacy-state' }
+      }
+    } catch { /* 旧项目状态只作迁移兼容。 */ }
   }
 
   const legacyStateFile = path.join(root, '.xma', 'state', 'bun-environment.json')

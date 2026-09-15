@@ -1,12 +1,13 @@
 ﻿<#
 文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到自动识别或用户指定的 Git 工作目录。
-关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、xma-path/state/source-sync.json、XMA-GitHub.bat、GitHub yubboo/xma。
+关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、checkout 本地 xma-state/source-sync.json、XMA-GitHub.bat、GitHub yubboo/xma。
 当前实现：优先按包内 Source Manifest 比较文件内容；默认识别同级已存在且 origin 正确的 XMA Git 工作目录，存在多个或未找到时由用户明确选择；绝不自动创建/占用标准 git clone 使用的 xma 目录。
 职责边界：不得删除目标仓库 .git、xma-path、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
 $ErrorActionPreference = 'Stop'
 $Source = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+. (Join-Path $PSScriptRoot 'xma-common.ps1')
 $RepoUrl = 'https://github.com/yubboo/xma.git'
 
 function Test-XmaExpectedGitOrigin([string]$Path) {
@@ -110,8 +111,9 @@ if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw 'XMA Sourc
 $Target = Resolve-XmaSyncTarget -SourceRoot $Source
 $ProjectVersion = (Get-Content (Join-Path $Source 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $PackageManifest = Join-Path $Source '.xma-package\source-manifest.json'
-$SyncState = Join-Path $Target 'xma-path\state\source-sync.json'
-$SyncReport = Join-Path $Target 'xma-path\state\source-sync-last.txt'
+$CheckoutStateRoot = Get-XmaStateRoot -ProjectRoot $Target
+$SyncState = Join-Path $CheckoutStateRoot 'source-sync.json'
+$SyncReport = Join-Path $CheckoutStateRoot 'source-sync-last.txt'
 $ChangePreviewLimit = 20
 $SyncSummaryText = $null
 
@@ -166,13 +168,18 @@ function Remove-XmaEmptyParents {
 
 function Get-XmaPreviousManagedFiles {
   $legacySyncState = Join-Path $Target '.xma\source-sync.json'
-  if (-not (Test-Path -LiteralPath $SyncState -PathType Leaf) -and (Test-Path -LiteralPath $legacySyncState -PathType Leaf)) {
-    try {
-      $stateDir = Split-Path -Parent $SyncState
-      New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
-      Copy-Item -LiteralPath $legacySyncState -Destination $SyncState -Force
-      Write-Host '[迁移] 旧 .xma Source Sync 状态已迁移到 xma-path/state。' -ForegroundColor DarkCyan
-    } catch {}
+  $legacyProjectSyncState = Join-Path $Target 'xma-path\state\source-sync.json'
+  if (-not (Test-Path -LiteralPath $SyncState -PathType Leaf)) {
+    foreach ($legacyCandidate in @($legacyProjectSyncState, $legacySyncState)) {
+      if (-not (Test-Path -LiteralPath $legacyCandidate -PathType Leaf)) { continue }
+      try {
+        $stateDir = Split-Path -Parent $SyncState
+        New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
+        Copy-Item -LiteralPath $legacyCandidate -Destination $SyncState -Force
+        Write-Host '[迁移] 旧 Source Sync 状态已迁移到 checkout 本地 xma-state。' -ForegroundColor DarkCyan
+        break
+      } catch {}
+    }
   }
   if (Test-Path $SyncState) {
     try {
@@ -425,7 +432,7 @@ if (-not (Test-XmaExpectedGitOrigin $Target)) {
 }
 Write-Host '[验证] Git 工作目录与 origin 仍指向 yubboo/xma。' -ForegroundColor Green
 
-Write-Host '[完成] XMA 新源码已同步；.git / xma-path / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
+Write-Host '[完成] XMA 新源码已同步；.git checkout 状态 / 外部或项目 xma-path 依赖 / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
 if ($SyncSummaryText) {
   Write-Host "[本次同步] $SyncSummaryText" -ForegroundColor Cyan
   Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray

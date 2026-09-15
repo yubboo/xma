@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持用户选择并持久化安装位置；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持 ↑/↓ + Enter 或数字键选择并持久化安装位置；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -137,6 +137,73 @@ function Ensure-XmaWinget {
 }
 
 
+function Read-XmaArrowMenuChoice {
+  param(
+    [Parameter(Mandatory = $true)][string]$Prompt,
+    [Parameter(Mandatory = $true)][string[]]$Labels,
+    [int]$DefaultChoice = 1
+  )
+  if ($Labels.Count -lt 1) { throw '菜单至少需要一个选项。' }
+  if ($DefaultChoice -lt 1 -or $DefaultChoice -gt $Labels.Count) { $DefaultChoice = 1 }
+
+  # 中文说明：Windows Terminal / ConsoleHost 使用 ReadKey 提供 ↑/↓ + Enter 选择，同时保留数字键直达。
+  # 输入被重定向或宿主不支持 Console.ReadKey 时自动退回 Read-Host，避免脚本在 CI/特殊 PowerShell Host 中挂死。
+  $interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+  if (-not $interactive) {
+    while ($true) {
+      $fallback = (Read-Host "$Prompt [$DefaultChoice]").Trim()
+      if ([string]::IsNullOrWhiteSpace($fallback)) { return [string]$DefaultChoice }
+      if ($fallback -match '^\d+$') {
+        $numeric = [int]$fallback
+        if ($numeric -ge 1 -and $numeric -le $Labels.Count) { return [string]$numeric }
+      }
+      Write-Host ("请输入 1-{0}。" -f $Labels.Count) -ForegroundColor Yellow
+    }
+  }
+
+  $selected = $DefaultChoice
+  Write-Host '  操作：↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达' -ForegroundColor DarkGray
+  while ($true) {
+    $status = "  > 当前选择：[$selected] $($Labels[$selected - 1])"
+    $clearWidth = 100
+    try { $clearWidth = [Math]::Max(40, [Math]::Min(200, [Console]::BufferWidth - 1)) } catch {}
+    Write-Host ("`r" + (' ' * $clearWidth) + "`r") -NoNewline
+    Write-Host $status -NoNewline -ForegroundColor Green
+
+    try {
+      $key = [Console]::ReadKey($true)
+    } catch {
+      Write-Host ''
+      $fallback = (Read-Host "$Prompt [$selected]").Trim()
+      if ([string]::IsNullOrWhiteSpace($fallback)) { return [string]$selected }
+      if ($fallback -match '^\d+$') {
+        $numeric = [int]$fallback
+        if ($numeric -ge 1 -and $numeric -le $Labels.Count) { return [string]$numeric }
+      }
+      continue
+    }
+
+    if ($key.Key -eq [ConsoleKey]::UpArrow) {
+      $selected = if ($selected -le 1) { $Labels.Count } else { $selected - 1 }
+      continue
+    }
+    if ($key.Key -eq [ConsoleKey]::DownArrow) {
+      $selected = if ($selected -ge $Labels.Count) { 1 } else { $selected + 1 }
+      continue
+    }
+    if ($key.Key -eq [ConsoleKey]::Enter) {
+      Write-Host ''
+      return [string]$selected
+    }
+
+    $digit = [int][char]$key.KeyChar - [int][char]'0'
+    if ($digit -ge 1 -and $digit -le $Labels.Count) {
+      Write-Host ''
+      return [string]$digit
+    }
+  }
+}
+
 function Select-XmaDependencyRoot([string]$ComponentLabel) {
   $defaultRoot = Get-XmaLocalPathRoot -ProjectRoot $Root
   $driveDRoot = 'D:\xma-path'
@@ -147,8 +214,7 @@ function Select-XmaDependencyRoot([string]$ComponentLabel) {
     Write-Host "  [1] 跟随当前项目（推荐）  $defaultRoot" -ForegroundColor Green
     Write-Host "  [2] D 盘                    $driveDRoot" -ForegroundColor Gray
     Write-Host '  [3] 自定义盘符              输入 E / F / G 等真实盘符' -ForegroundColor Gray
-    $choice = (Read-Host '请选择 [1]').Trim()
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
+    $choice = Read-XmaArrowMenuChoice -Prompt '请选择' -Labels @('跟随当前项目（推荐）','D 盘','自定义盘符') -DefaultChoice 1
 
     if ($choice -eq '1') {
       if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 当前项目目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
@@ -192,7 +258,7 @@ function Save-XmaBunHome([string]$BunHome) {
   $normalized = [IO.Path]::GetFullPath($BunHome)
   $env:XMA_BUN_HOME = $normalized
   Save-XmaBunEnvironmentState -ProjectRoot $Root -BunHome $normalized -Version $BunVersion
-  # 中文说明：0.1.0 早期曾把 Bun Home 写入 User 环境。现在 checkout 自己的 xma-path/state 才是权威，
+  # 中文说明：0.1.0 早期曾把 Bun Home 写入 User 环境。现在 checkout 自己的 `.git/xma-state`（非 Git 树为 `.cache/xma-state`）才是权威，
   # 避免移动 U 盘/切换仓库后旧绝对路径继续污染新终端。
   [Environment]::SetEnvironmentVariable('XMA_BUN_HOME', $null, 'User')
 }
@@ -418,7 +484,7 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
     $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
   }
 
-  # 兼容用户电脑上已经存在但尚未写入 xma-path/state 的 Rust。只要真实探针通过，就接管并保存位置，不重复安装。
+  # 兼容用户电脑上已经存在但尚未写入 checkout 本地状态的 Rust。只要真实探针通过，就接管并保存位置，不重复安装。
   if (-not $rustReady) {
     $rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
     $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
@@ -434,7 +500,7 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
         $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
         $rustReady = $null -ne $runtime
         if ($rustReady -and -not $hadProjectState) {
-          Write-Host "[恢复] 项目 xma-path 状态不存在，但检测到可真实运行的外部 Rust/Cargo；已重新接管，不重复安装：$cargoHome" -ForegroundColor DarkCyan
+          Write-Host "[恢复] 当前 checkout 状态不存在，但检测到可真实运行的外部 Rust/Cargo；已重新接管，不重复安装：$cargoHome" -ForegroundColor DarkCyan
         }
       }
     }
@@ -524,13 +590,19 @@ function Ensure-XmaCargoCrates($RustRuntime) {
 }
 
 function Install-XmaDevelopmentCommands {
-  # 开发 shim 也收敛到 xma-path，不再创建 `.xma`。这里只把 dev-bin 写入 User PATH，不把整个仓库加入 PATH。
-  $devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'
+  # 开发 shim 属于 checkout 控制状态，不属于 Bun/Rust 依赖实体。放到 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`），
+  # 这样用户选择 D:/其他盘符安装依赖时，项目根不会仅为了 state/dev-bin 再生成一个空壳 xma-path。
+  $devBin = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'
   New-Item -ItemType Directory -Force -Path $devBin | Out-Null
   $launcher = @'
 @echo off
-setlocal EnableExtensions
-for %%I in ("%~dp0..\..") do set "XMA_DEV_ROOT=%%~fI"
+setlocal EnableExtensions DisableDelayedExpansion
+set "XMA_DEV_ROOT="
+if exist "%~dp0source-root.txt" set /p "XMA_DEV_ROOT="<"%~dp0source-root.txt"
+if not defined XMA_DEV_ROOT (
+  echo [ERROR] XMA development shim lost source-root.txt. Run xma-dev.bat ^> [1] again.
+  exit /b 1
+)
 call "%XMA_DEV_ROOT%\xma-dev.bat" cli "%CD%"
 exit /b %ERRORLEVEL%
 '@
@@ -547,7 +619,7 @@ exit /b %ERRORLEVEL%
   foreach ($entry in $userEntries) {
     $normalized = Get-XmaNormalizedPath $entry
     if ($normalized -ieq $normalizedDevBin) { continue }
-    # 同一用户只激活一个 XMA checkout；同时清掉 0.1.0 早期 `.xma/dev-bin` 与旧 checkout 的 xma-path/dev-bin。
+    # 同一用户只激活一个 XMA checkout；同时清掉旧 `.xma/dev-bin`、`xma-path/dev-bin` 与旧 checkout 的 `.git/.cache xma-state/dev-bin`。
     if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
     if ($normalized -match '(?i)[\\/]xma-path[\\/]dev-bin$') { continue }
     $nextUserEntries += $entry
@@ -562,6 +634,32 @@ exit /b %ERRORLEVEL%
   else { Write-Host '[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。' -ForegroundColor DarkCyan }
   Write-Host "[位置] $devBin" -ForegroundColor DarkGray
   Write-Host '[说明] 移动/重命名仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
+}
+
+function Remove-XmaLegacyProjectControlState {
+  # 0.1.0 早期把状态与开发 shim 放进项目根 `xma-path/state|dev-bin`。新版控制状态已经进入 checkout 本地 Git 元数据，
+  # 因此外部依赖（例如 D:\xma-path）时不应在源码根留下第二个 xma-path。先迁移 Source Sync 状态，再安全清理旧控制目录。
+  $legacyPathRoot = Get-XmaLocalPathRoot -ProjectRoot $Root
+  $legacyStateRoot = Join-Path $legacyPathRoot 'state'
+  $stateRoot = Get-XmaStateRoot -ProjectRoot $Root
+  foreach ($name in @('source-sync.json','source-sync-last.txt')) {
+    $old = Join-Path $legacyStateRoot $name
+    $next = Join-Path $stateRoot $name
+    if ((Test-Path -LiteralPath $old -PathType Leaf) -and -not (Test-Path -LiteralPath $next -PathType Leaf)) {
+      New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
+      Copy-Item -LiteralPath $old -Destination $next -Force
+    }
+  }
+  foreach ($oldControl in @((Join-Path $legacyPathRoot 'state'), (Join-Path $legacyPathRoot 'dev-bin'))) {
+    if (Test-Path -LiteralPath $oldControl) { Remove-XmaDirectoryEntry -Path $oldControl }
+  }
+  if (Test-Path -LiteralPath $legacyPathRoot -PathType Container) {
+    $children = @(Get-ChildItem -LiteralPath $legacyPathRoot -Force -ErrorAction SilentlyContinue)
+    if ($children.Count -eq 0) {
+      Remove-Item -LiteralPath $legacyPathRoot -Force -ErrorAction SilentlyContinue
+      Write-Host '[清理] 项目根旧 xma-path 仅包含控制状态，已移除；外部依赖位置保持不变。' -ForegroundColor DarkYellow
+    }
+  }
 }
 
 function Remove-XmaLegacyLocalDirectory {
@@ -678,6 +776,7 @@ function Prepare-XmaBunOnly {
   $bunExe = Ensure-XmaBunOpenTuiRuntime
   if (-not $bunExe) { throw 'Bun / OpenTUI Runtime 单独准备未完成。' }
   Remove-XmaLegacyLocalDirectory
+  Remove-XmaLegacyProjectControlState
   Remove-XmaPackageMetadataFromGitWorktree
   Write-Host '[完成] Bun / OpenTUI Runtime 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
@@ -692,6 +791,7 @@ function Prepare-XmaRustOnly {
   Write-Host '[Crates] 正在准备 XMA Native Rust crates...' -ForegroundColor Cyan
   Ensure-XmaCargoCrates -RustRuntime $rustRuntime
   Remove-XmaLegacyLocalDirectory
+  Remove-XmaLegacyProjectControlState
   Remove-XmaPackageMetadataFromGitWorktree
   Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
@@ -835,12 +935,14 @@ Write-Host '[9/9] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
 Install-XmaDevelopmentCommands
 Remove-XmaLegacyLocalDirectory
+Remove-XmaLegacyProjectControlState
 Remove-XmaPackageMetadataFromGitWorktree
 
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
-Write-Host "[依赖根] 默认位置：$(Get-XmaLocalPathRoot -ProjectRoot $Root)" -ForegroundColor Cyan
+Write-Host "[依赖根] 选择 [1] 跟随项目时：$(Get-XmaLocalPathRoot -ProjectRoot $Root)" -ForegroundColor Cyan
+Write-Host "[控制状态] $(Get-XmaStateRoot -ProjectRoot $Root)" -ForegroundColor DarkGray
 if ($bunExe) { Write-Host '[Bun/OpenTUI] 整组件已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan } else { Write-Host '[Bun/OpenTUI] 本轮跳过或未完整；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
 if ($rustRuntime) { Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan } else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
 Write-Host '[开发命令] 新开终端后，可在任意 Workspace 输入 xiaoyu / xma 启动当前源码 CLI。' -ForegroundColor Cyan

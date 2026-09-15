@@ -468,3 +468,23 @@
 - 修复：保持公共 `Invoke-XmaExternal` 的直连语义，不全局把 dev/TUI stdout 改成管道（避免破坏交互 TTY）。只在“需要返回对象/路径”的准备函数中，把非交互安装命令显式 `| Out-Host`：OpenTUI 安装、rustup-init、项目级 stable override、rustfmt component add 的输出继续实时显示，但不再进入函数返回值。`Ensure-XmaBunOpenTuiRuntime` 因此保证只返回 `bun.exe` 路径。
 - 回归：Windows Gate 锁定上述 `Out-Host` 隔离点，并在 `xma-common.ps1` 固化“交互命令保留直连、值返回函数必须消费非交互 stdout”的合同。版本仍为 `0.1.0`，继续覆盖正式同名源码包与 SHA-256。
 
+##40 · Windows 依赖安装位置键盘选择器
+
+- 日期：2026-09-15
+- 目的：改进 `[4/9] Bun/OpenTUI` 与 `[5/9] Rust/Cargo` 的安装位置选择体验；原先只能通过 `Read-Host` 输入 1/2/3，现在支持 Windows Terminal / ConsoleHost 中直接使用 ↑/↓ 移动并按 Enter 确认。
+- 交互：`Select-XmaDependencyRoot` 继续作为 Bun 与 Rust 共用的依赖根选择入口，新增 `Read-XmaArrowMenuChoice`。默认停在 `[1] 跟随当前项目`；↑/↓ 循环移动，Enter 确认；数字键 `1/2/3` 仍可直接选择，保持旧用户操作习惯。
+- 兼容：若输入被重定向或当前 PowerShell Host 无法使用 `Console.ReadKey`，自动退回原来的 `Read-Host` 数字选择，不让 CI、特殊 Host 或非交互环境挂死。`[3] 自定义盘符` 后续仍要求用户输入真实盘符并做存在/可写校验。
+- 复用：该选择器同时作用于 `[1]` 中 Bun/OpenTUI、Rust/Cargo 的首次安装，以及主菜单 `[8]` / `[9]` 单独补装；不改变 `xma-path`、D 盘、自定义盘符三种路径语义。
+- 回归：Windows Gate 锁定 `ReadKey + UpArrow + DownArrow + Enter + 数字键直达` 合同；PowerShell 继续保持 UTF-8 BOM + CRLF。版本仍为 `0.1.0`。
+
+
+
+##41 · 外部依赖位置不再生成项目根空壳 xma-path
+
+- 日期：2026-09-15
+- 目的：修复用户在 `[4/9] Bun/OpenTUI` 或 `[5/9] Rust/Cargo` 明确选择 `[2] D:/xma-path` / `[3]` 其他盘符后，源码根仍因为 state/dev-bin 硬编码而生成第二个 `<checkout>/xma-path` 的语义冲突。
+- 根因：依赖实体位置已经跟随 `Select-XmaDependencyRoot`，但 `Get-XmaStateRoot` 与 `Install-XmaDevelopmentCommands` 仍固定把状态、prepare stamp 和开发 shim 写到 `<checkout>/xma-path/state|dev-bin`。因此“选择外部依赖”只移动了 Bun/OpenTUI/Rust，本地控制状态仍会制造项目根 xma-path。
+- 修复：依赖实体与 checkout 控制状态彻底分离。普通 Git clone 的控制状态统一进入 `.git/xma-state/`；Git worktree 解析 `.git` 文件指向的真实 gitdir；非 Git 临时源码树回退 `.cache/xma-state/`。Bun/Rust state、prepare stamp、Source Sync state/report 与开发 `xiaoyu/xma` shim 都使用该 checkout state root。`xma-path` 只在用户真的选择“跟随当前项目”安装实体依赖时存在。
+- 迁移：继续读取旧 `xma-path/state` / `xma-path/dev-bin` 与 `.xma`；新状态写入成功后迁移 Source Sync 元数据并清理旧控制目录。如果项目根 `xma-path` 只剩旧 state/dev-bin，会自动删除；如果其中仍有 bun/opentui/rust 实体则保留，不误删依赖。
+- 行为：选择 `[2] D:/xma-path` 后，Bun/OpenTUI 实体位于 `D:/xma-path/{bun,opentui}`，项目根不会再仅因状态生成 `xma-path`；`[4]/[7]/build:cli` 仍从 checkout state 恢复该外部绝对位置。默认 `[1] 跟随当前项目` 时则继续合法使用 `<checkout>/xma-path/{bun,opentui,rust}`。
+- 回归：Windows Gate/README/CODEMAP/AGENTS 同步锁定“依赖位置与控制状态分离”合同；版本仍为 `0.1.0`，继续覆盖正式同名源码包与 SHA-256。

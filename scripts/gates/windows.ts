@@ -71,6 +71,13 @@ if (existsSync('XMA.bat') || existsSync('xma.bat')) {
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
 for (const marker of [
   'function Invoke-XmaProbe',
+  'function Read-XmaArrowMenuChoice',
+  '[Console]::ReadKey($true)',
+  '[ConsoleKey]::UpArrow',
+  '[ConsoleKey]::DownArrow',
+  '[ConsoleKey]::Enter',
+  '↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达',
+  "Read-XmaArrowMenuChoice -Prompt '请选择'",
   'function Select-XmaDependencyRoot',
   "Get-XmaLocalPathRoot -ProjectRoot $Root",
   "$driveDRoot = 'D:\\xma-path'",
@@ -102,13 +109,14 @@ for (const marker of [
   'OpenTUI Runtime 依赖不完整',
   '[缓存] Bun/OpenTUI 已由 [4/9] 完整准备，本步骤只做复检，不重复安装。',
   'function Remove-XmaPackageMetadataFromGitWorktree',
-  '项目 xma-path 状态不存在，但检测到可真实运行的外部 Rust/Cargo',
+  '当前 checkout 状态不存在，但检测到可真实运行的外部 Rust/Cargo',
   "Get-XmaOpenTuiHomeFromBunHome -BunHome $bunHome",
   "Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome",
   "@('install','--no-save')",
   'Xiaoyu TUI framework 已准备完成',
   'function Install-XmaDevelopmentCommands',
-  "Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'",
+  'function Remove-XmaLegacyProjectControlState',
+  "Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'",
   "@('xiaoyu.cmd','xma.cmd')",
   "if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }",
   '[9/9] 开发态 Xiaoyu 命令',
@@ -124,8 +132,15 @@ if (/SetEnvironmentVariable\([^)]*['"]Machine['"][^)]*\)/i.test(prepareSource)) 
   throw new Error('XMA development preparation must not modify Machine PATH; use current-user PATH only')
 }
 if (/AppData\\Local\\XMA\\(?:Bun|Rust)/i.test(prepareSource)) throw new Error('Bun/Rust default install must follow project xma-path instead of system C user directories')
+if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) {
+  throw new Error('External dependency selection must not create project xma-path only for dev-bin; dev shim belongs to checkout-local state')
+}
+const commonControlState = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
+if (commonControlState.includes("return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state')")) {
+  throw new Error('Checkout control state must not be hardwired to project xma-path/state')
+}
 for (const forbiddenEnv of ["SetEnvironmentVariable('CARGO_HOME'", "SetEnvironmentVariable('RUSTUP_HOME'"]) {
-  if (prepareSource.includes(forbiddenEnv)) throw new Error(`XMA dependency homes must be restored from checkout xma-path state, not persisted globally: ${forbiddenEnv}`)
+  if (prepareSource.includes(forbiddenEnv)) throw new Error(`XMA dependency homes must be restored from checkout-local state, not persisted globally: ${forbiddenEnv}`)
 }
 if (prepareSource.includes("@('exec','esbuild','--version')")) {
   throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
@@ -183,6 +198,7 @@ for (const marker of [
 const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
 for (const marker of [
   'process.env.XMA_BUN_HOME',
+  "path.join(checkoutStateRoot(), 'bun-environment.json')",
   "path.join(root, 'xma-path', 'state', 'bun-environment.json')",
   "path.join(root, 'xma-path', 'bun')",
   'function openTuiHomeFromBunHome',
@@ -208,7 +224,7 @@ for (const forbidden of ['process.env.LOCALAPPDATA', "process.env.TEMP ? path.jo
   if (bunRunnerSource.includes(forbidden)) throw new Error(`Bun compile must not bind Windows user temp storage or a fixed drive: ${forbidden}`)
 }
 
-if (bunRunnerSource.includes("path.join(root, '.xma', 'tools', 'bun'")) throw new Error('Bun runner must restore xma-path state instead of fixed checkout .xma/tools/bun')
+if (bunRunnerSource.includes("path.join(root, '.xma', 'tools', 'bun'")) throw new Error('Bun runner must restore checkout-local state instead of fixed checkout .xma/tools/bun')
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
 // 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
@@ -225,6 +241,9 @@ for (const marker of [
   'function Save-XmaRustEnvironmentState',
   'function Get-XmaLocalPathRoot',
   "return (Join-Path $ProjectRoot 'xma-path')",
+  'function Get-XmaCheckoutStateRoot',
+  "return (Join-Path $gitEntry 'xma-state')",
+  "return (Join-Path $ProjectRoot '.cache\\xma-state')",
   'function Get-XmaOpenTuiHomeFromBunHome',
   'function Connect-XmaOpenTuiNodeModules',
   'function Test-XmaCargoOfflineDependencies',
@@ -267,7 +286,7 @@ for (const marker of [
   'Assert-StagedFilesSafe',
   'Assert-GitWorkDirectory',
   '.xma-package\\source-manifest.json',
-  'xma-path\\state\\source-sync.json',
+  'Get-XmaStateRoot -ProjectRoot $Root',
   '源码包目录只负责 Source Sync',
   'git.exe ls-files --cached --others --exclude-standard',
   "git.exe' -ArgumentList @('add','-A')",
@@ -278,7 +297,7 @@ for (const marker of [
 }
 
 const readmeSource = readFileSync('README.md', 'utf8')
-for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`', 'xma-path\\dev-bin', 'User PATH', '同一 Xiaoyu TUI']) {
+for (const marker of ['## 快速开始', '.\\xma-dev.bat', '正式 `xma` 产品命令', 'Git clone 用户不需要运行 `XMA-Sync.bat`', '.git\\xma-state\\dev-bin', 'User PATH', '同一 Xiaoyu TUI']) {
   if (!readmeSource.includes(marker)) throw new Error(`README public source quick-start contract missing: ${marker}`)
 }
 const windowsWorkflowSource = readFileSync('docs/development/WINDOWS-WORKFLOW.md', 'utf8')
@@ -287,15 +306,16 @@ for (const marker of ['公共源码快速开始', '任意目录 / 任意盘符',
 }
 
 const agentRulesSource = readFileSync('AGENTS.md', 'utf8')
-for (const marker of ['新增 / 更新 / 删除 / 未变化', 'Manifest 总文件数不得冒充本次实际变更数', 'xma-path/state/source-sync-last.txt']) {
+for (const marker of ['新增 / 更新 / 删除 / 未变化', 'Manifest 总文件数不得冒充本次实际变更数', '.git/xma-state/source-sync-last.txt']) {
   if (!agentRulesSource.includes(marker)) throw new Error(`AGENTS Source Sync UX contract regression: missing ${marker}`)
 }
 
 const syncMigrationSource = readFileSync('scripts/windows/xma-sync.ps1', 'utf8')
 for (const marker of [
   '.xma-package\\source-manifest.json',
-  'xma-path\\state\\source-sync.json',
-  'xma-path\\state\\source-sync-last.txt',
+  'Get-XmaStateRoot -ProjectRoot $Target',
+  "Join-Path $CheckoutStateRoot 'source-sync.json'",
+  "Join-Path $CheckoutStateRoot 'source-sync-last.txt'",
   'Test-XmaFileContentEqual',
   '[变更摘要]',
   '[本次同步]',
@@ -544,8 +564,9 @@ for (const marker of [
   '请输入已经 clone 好的 XMA Git 仓库目录',
   'XMA 不会自动创建替代 worktree 目录',
   ".xma-package\\source-manifest.json",
-  "xma-path\\state\\source-sync.json",
-  "xma-path\\state\\source-sync-last.txt",
+  "Get-XmaStateRoot -ProjectRoot $Target",
+  "Join-Path $CheckoutStateRoot 'source-sync.json'",
+  "Join-Path $CheckoutStateRoot 'source-sync-last.txt'",
   'Test-XmaFileContentEqual',
   '[变更摘要]',
   '[本次同步]',

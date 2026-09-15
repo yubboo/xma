@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Bun/Rust 环境恢复、版本读取与外部命令执行。
 关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1。
-当前实现：把 XMA 自管依赖/状态统一收敛到 `xma-path`；默认跟随当前 checkout，也支持 D 盘或用户选择的其他真实盘符；后续入口统一从保存状态恢复 Bun 与 Rust/Cargo 并做真实可执行探针。
+当前实现：XMA 自管依赖可放在项目 `xma-path` 或用户选择的外部 `D:/xma-path`/其他盘符；checkout 控制状态改存 Git 本地元数据 `.git/xma-state`（非 Git 场景回退 `.cache/xma-state`），避免选择外部依赖后仍在项目根生成空壳 `xma-path`；后续入口统一恢复 Bun 与 Rust/Cargo 并做真实可执行探针。
 职责边界：这里只提供跨 Windows 入口共享的路径、环境与命令基础能力，不负责联网安装、Git 提交流程或产品构建策略。
 #>
 
@@ -16,9 +16,29 @@ function Get-XmaLocalPathRoot {
   return (Join-Path $ProjectRoot 'xma-path')
 }
 
+function Get-XmaCheckoutStateRoot {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  $gitEntry = Join-Path $ProjectRoot '.git'
+  if (Test-Path -LiteralPath $gitEntry -PathType Container) {
+    return (Join-Path $gitEntry 'xma-state')
+  }
+  if (Test-Path -LiteralPath $gitEntry -PathType Leaf) {
+    try {
+      $line = (Get-Content -LiteralPath $gitEntry -Raw -Encoding UTF8).Trim()
+      if ($line -match '^gitdir:\s*(.+)$') {
+        $gitDirText = [Environment]::ExpandEnvironmentVariables($Matches[1].Trim())
+        $gitDir = if ([IO.Path]::IsPathRooted($gitDirText)) { [IO.Path]::GetFullPath($gitDirText) } else { [IO.Path]::GetFullPath((Join-Path $ProjectRoot $gitDirText)) }
+        return (Join-Path $gitDir 'xma-state')
+      }
+    } catch {}
+  }
+  # 中文说明：正式源码开发通常是 Git checkout；无 `.git` 的源码包/临时树只把控制状态放入可删除的 `.cache`，不制造根 `xma-path`。
+  return (Join-Path $ProjectRoot '.cache\xma-state')
+}
+
 function Get-XmaStateRoot {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state')
+  return (Get-XmaCheckoutStateRoot -ProjectRoot $ProjectRoot)
 }
 
 function Get-XmaDefaultBunHome {
@@ -154,8 +174,8 @@ function Import-XmaBunEnvironment {
     [Parameter(Mandatory = $true)][string]$ExpectedVersion
   )
 
-  # 中文说明：当前 checkout 的 `xma-path/state` 是 XMA 自己的依赖位置真值；项目默认 Bun 位于 `xma-path/bun`，
-  # 保存为相对“project”位置，因此整个仓库移动盘符后仍能自动恢复。User/Process 环境与旧 `.xma` 状态只作为 0.1.0 迁移兼容来源。
+  # 中文说明：当前 checkout 的控制状态位于 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）；项目默认 Bun 仍位于 `xma-path/bun`。
+  # 状态保存为相对“project”位置，因此仓库移动盘符后仍能自动恢复；旧 `xma-path/state`、`.xma/state` 与 User/Process 环境只作为迁移兼容来源。
   $candidates = New-Object System.Collections.Generic.List[object]
   $stateFile = Get-XmaBunEnvironmentStatePath -ProjectRoot $ProjectRoot
   if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
@@ -166,6 +186,20 @@ function Import-XmaBunEnvironment {
           [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; BunHome = (Get-XmaDefaultBunHome -ProjectRoot $ProjectRoot) })
         } elseif ($state.bunHome) {
           [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; BunHome = [string]$state.bunHome })
+        }
+      }
+    } catch {}
+  }
+
+  $legacyProjectStateFile = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state\bun-environment.json'
+  if (Test-Path -LiteralPath $legacyProjectStateFile -PathType Leaf) {
+    try {
+      $legacyProject = Get-Content -LiteralPath $legacyProjectStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($legacyProject.formatVersion -eq 2 -and [string]$legacyProject.version -eq $ExpectedVersion) {
+        if ([string]$legacyProject.location -eq 'project') {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; BunHome = (Get-XmaDefaultBunHome -ProjectRoot $ProjectRoot) })
+        } elseif ($legacyProject.bunHome) {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; BunHome = [string]$legacyProject.bunHome })
         }
       }
     } catch {}
@@ -245,8 +279,8 @@ function Save-XmaRustEnvironmentState {
 function Import-XmaRustEnvironment {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
 
-  # 中文说明：优先使用当前 checkout `xma-path/state` 记录的 Rust 位置；默认安装在 `xma-path/rust` 并按项目相对位置恢复。
-  # 旧 User 环境与 `.xma/state` 仍作为迁移兼容来源，找到可用工具链后 `[1]` 会写回新的 xma-path 状态。
+  # 中文说明：优先使用 checkout 本地 `.git/xma-state`（非 Git 树为 `.cache/xma-state`）记录的 Rust 位置；默认安装仍在 `xma-path/rust` 并按项目相对位置恢复。
+  # 旧 `xma-path/state`、User 环境与 `.xma/state` 只作为迁移兼容来源，找到可用工具链后 `[1]` 会写回新的 checkout 状态。
   $candidates = New-Object System.Collections.Generic.List[object]
   $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $ProjectRoot
   if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
@@ -264,6 +298,20 @@ function Import-XmaRustEnvironment {
   }
 
   $defaultRustRoot = Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot
+  $legacyProjectStateFile = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state\rust-environment.json'
+  if (Test-Path -LiteralPath $legacyProjectStateFile -PathType Leaf) {
+    try {
+      $legacyProject = Get-Content -LiteralPath $legacyProjectStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
+      if ($legacyProject.formatVersion -eq 2) {
+        if ([string]$legacyProject.location -eq 'project') {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; CargoHome = (Join-Path $defaultRustRoot 'cargo'); RustupHome = (Join-Path $defaultRustRoot 'rustup') })
+        } elseif ($legacyProject.cargoHome) {
+          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; CargoHome = [string]$legacyProject.cargoHome; RustupHome = [string]$legacyProject.rustupHome })
+        }
+      }
+    } catch {}
+  }
+
   [void]$candidates.Add([pscustomobject]@{ Source = 'project-default'; CargoHome = (Join-Path $defaultRustRoot 'cargo'); RustupHome = (Join-Path $defaultRustRoot 'rustup') })
 
   $legacyStateFile = Join-Path $ProjectRoot '.xma\state\rust-environment.json'
