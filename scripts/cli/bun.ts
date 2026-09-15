@@ -259,7 +259,7 @@ if (!args) throw new Error('Usage: tsx scripts/cli/bun.ts <dev|build> [args...]'
 const childEnv = { ...process.env }
 if (bunRuntime.home) childEnv.XMA_BUN_HOME = bunRuntime.home
 let bunExecutable = bun
-let disposeCompileAlias = () => undefined
+let disposeCompileAlias: () => void = () => {}
 
 if (command === 'build') {
   const compileCache = resolveBunCompileCache()

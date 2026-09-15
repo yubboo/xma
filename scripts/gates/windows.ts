@@ -52,12 +52,13 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 for (const marker of [
   "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
-  "Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host",
-  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal') | Out-Host",
-  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('default','stable') | Out-Host",
-  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') | Out-Host",
+  "function Invoke-XmaVisibleProcess",
+  "Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save')",
+  "Invoke-XmaVisibleProcess -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path')",
+  "Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal')",
+  "Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable')",
 ]) {
-  if (!prepareSource.includes(marker)) throw new Error(`PowerShell value-return pipeline isolation regression: missing ${marker}`)
+  if (!prepareSource.includes(marker)) throw new Error(`PowerShell live-process / value-return isolation regression: missing ${marker}`)
 }
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
 for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
@@ -76,6 +77,20 @@ if (prepareSource.includes('[Console]::ReadKey') || prepareSource.includes('[Con
 }
 for (const marker of [
   'function Invoke-XmaProbe',
+  'function Get-XmaDownloadSourceMode',
+  'XMA_DOWNLOAD_SOURCE',
+  'function Measure-XmaDownloadProbe',
+  'function Invoke-XmaDownloadFile',
+  "'--progress-bar'",
+  "'--speed-time'",
+  'SourceForge Bun 镜像',
+  'SHASUMS256.txt',
+  'function Get-XmaNpmRegistrySources',
+  'https://registry.npmmirror.com',
+  'function Get-XmaRustupSource',
+  'https://rsproxy.cn',
+  'RUSTUP_DIST_SERVER',
+  'RUSTUP_UPDATE_ROOT',
   'function Read-XmaArrowMenuChoice',
   "$rawUi.ReadKey('NoEcho,IncludeKeyDown')",
   '$key.VirtualKeyCode -eq 38',
@@ -252,6 +267,7 @@ for (const marker of [
   'childEnv.BUN_TMPDIR = compileTemp',
   'childEnv.TEMP = compileTemp',
   'childEnv.TMP = compileTemp',
+  'let disposeCompileAlias: () => void = () => {}',
   'disposeCompileAlias()',
 ]) {
   if (!bunRunnerSource.includes(marker)) throw new Error(`Bun project-cache/Unicode-path contract regression: missing ${marker}`)

@@ -517,3 +517,15 @@
 - `[4]/[7]` 边界：再发现只读取本机现有文件并执行版本探针，不下载 Bun、不运行 `cargo fetch`、不安装组件；Rust crates 仍由既有 offline preflight 决定是否允许继续。多套依赖候选时 fail loud，不擅自改变用户选择。
 - 回归：Windows Gate 锁定 `DriveInfo.GetDrives()`、Bun/Rust drive-scan、状态补写和 Console 恢复提示；版本继续保持 `0.1.0`。
 
+
+
+##45 · Windows 依赖下载加速、实时进度与 CLI TypeScript 回归修复
+
+- 日期：2026-09-15
+- 目的：修复 Windows `[7]` 在 `scripts/cli/bun.ts` 因 `disposeCompileAlias` 被 TypeScript 推断为 `() => undefined` 而无法接受 `() => void` 的 typecheck 回归；同时改善 `[4/9] Bun/OpenTUI` 与 `[5/9] Rust/Cargo` 首次准备时“下载慢、长时间无进度像卡住”的体验。
+- CLI typecheck：`disposeCompileAlias` 显式声明为 `() => void`，保持 build 结束 `finally` 释放 SUBST alias 的原语义，不改变 Bun compile/cache 生命周期。该修复直接消除 `[7] -> pnpm check -> tsc --noEmit` 的 TS2322。
+- 下载源：新增 `XMA_DOWNLOAD_SOURCE=auto|official|mirror`。默认 `auto` 对官方源/批准镜像做短探针并按响应排序，失败或持续低速自动切换备用源；`official` 只用官方，`mirror` 镜像优先但仍允许官方兜底。探针结果在单次准备进程内缓存，避免同一源反复测速。
+- Bun：Bun 1.3.14 ZIP 使用 GitHub 官方 + SourceForge Bun exact mirror；`curl.exe` 存在时显示 progress bar，并用 connect timeout + 低速 stall timeout 自动切源。ZIP 下载后读取 Bun 同版本 `SHASUMS256.txt` 做 SHA-256 校验，再解压/验证 `bun --version`。OpenTUI 的 `bun install` 在 npm 官方与 npmmirror 之间选择，并通过 `Start-Process -NoNewWindow` 继承真实终端，让 Bun 自己的 resolving/downloading 日志可见。
+- Rust：Rustup 官方与 RsProxy 做同类选择；仅当前 XMA 进程临时设置 `RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT`，不写 User/Machine 环境。rustup-init 自身继续 SHA-256 校验；stable toolchain、rustfmt 与已有 rustup repair 通过可见子进程运行，并显示实时子进程日志 + PowerShell elapsed progress，避免“静默等待”。
+- 边界：镜像只用于显式准备入口 `[1]/[8]/[9]`；`[4]/[7]` 仍严格 offline/`--no-install`，不会因为新增镜像逻辑偷偷联网。Cargo crates 的 offline 真值检查合同不变。
+- 回归：Windows Gate 锁定下载源模式、curl progress/stall、Bun SHA 清单、SourceForge/npmmirror/RsProxy、可见子进程与 `disposeCompileAlias: () => void`；版本保持 `0.1.0`，继续覆盖同名正式源码包与 SHA-256。

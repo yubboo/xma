@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持 ↑/↓ + Enter 或数字键选择并持久化安装位置；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：检查/安装 Git、Node.js、pnpm、Bun、Rust/Cargo、MSVC；Bun/Rust 支持 ↑/↓ + Enter 或数字键选择并持久化安装位置；网络准备支持官方/镜像自动测速、停滞切换、实时进度与校验；安装 Workspace JavaScript 依赖但禁止 Desktop Runtime postinstall；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -134,6 +134,205 @@ function Ensure-XmaWinget {
   if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
     throw '未检测到 winget。请先安装或更新 Microsoft App Installer，再重新运行 XMA。'
   }
+}
+
+
+function Get-XmaDownloadSourceMode {
+  $mode = [string]$env:XMA_DOWNLOAD_SOURCE
+  if ([string]::IsNullOrWhiteSpace($mode)) { return 'auto' }
+  $normalized = $mode.Trim().ToLowerInvariant()
+  if ($normalized -notin @('auto','official','mirror')) {
+    Write-Host "[提示] XMA_DOWNLOAD_SOURCE=$mode 无效；使用 auto。可选：auto / official / mirror。" -ForegroundColor Yellow
+    return 'auto'
+  }
+  return $normalized
+}
+
+function Measure-XmaDownloadProbe([string]$Url) {
+  if ($null -eq $script:XmaDownloadProbeCache) { $script:XmaDownloadProbeCache = @{} }
+  if ($script:XmaDownloadProbeCache.ContainsKey($Url)) { return [double]$script:XmaDownloadProbeCache[$Url] }
+
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if (-not $curl) {
+    $script:XmaDownloadProbeCache[$Url] = [double]::PositiveInfinity
+    return [double]::PositiveInfinity
+  }
+
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  $result = [double]::PositiveInfinity
+  try {
+    & $curl.Source '--fail' '--location' '--silent' '--show-error' '--connect-timeout' '3' '--max-time' '5' '--range' '0-0' '--output' 'NUL' $Url *> $null
+    if ($LASTEXITCODE -eq 0) { $result = [math]::Round($watch.Elapsed.TotalMilliseconds) }
+  } catch {
+    $result = [double]::PositiveInfinity
+  } finally {
+    $watch.Stop()
+  }
+  $script:XmaDownloadProbeCache[$Url] = $result
+  return $result
+}
+
+function Get-XmaOrderedDownloadSources {
+  param([Parameter(Mandatory = $true)][object[]]$Sources)
+
+  $official = @($Sources | Where-Object { $_.Kind -eq 'official' })
+  $mirrors = @($Sources | Where-Object { $_.Kind -eq 'mirror' })
+  $mode = Get-XmaDownloadSourceMode
+
+  if ($mode -eq 'official') {
+    Write-Host '[下载源] official · 只使用官方源。' -ForegroundColor DarkCyan
+    return @($official)
+  }
+  if ($mode -eq 'mirror') {
+    Write-Host '[下载源] mirror · 加速镜像优先，失败后回退官方源。' -ForegroundColor DarkCyan
+    return @($mirrors + $official)
+  }
+
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if (-not $curl -or $Sources.Count -lt 2) {
+    Write-Host '[下载源] auto · 无法执行快速测速，官方源优先，失败后自动切换镜像。' -ForegroundColor DarkCyan
+    return @($official + $mirrors)
+  }
+
+  $measured = @()
+  foreach ($source in $Sources) {
+    $probe = if ($source.ProbeUrl) { [string]$source.ProbeUrl } else { [string]$source.Url }
+    $latency = Measure-XmaDownloadProbe -Url $probe
+    $measured += [pscustomobject]@{ Source = $source; Latency = $latency }
+  }
+  $ready = @($measured | Where-Object { -not [double]::IsPositiveInfinity($_.Latency) } | Sort-Object Latency)
+  $failed = @($measured | Where-Object { [double]::IsPositiveInfinity($_.Latency) })
+  if ($ready.Count -eq 0) {
+    Write-Host '[下载源] auto · 快速测速均失败，按官方 → 镜像顺序尝试并启用停滞切换。' -ForegroundColor DarkCyan
+    return @($official + $mirrors)
+  }
+
+  $summary = @($measured | ForEach-Object {
+    $latencyText = if ([double]::IsPositiveInfinity($_.Latency)) { '不可达' } else { "$([int]$_.Latency)ms" }
+    "$($_.Source.Name)=$latencyText"
+  }) -join ' · '
+  Write-Host "[下载源] auto · $summary · 优先 $($ready[0].Source.Name)" -ForegroundColor DarkCyan
+  return @($ready.Source + $failed.Source)
+}
+
+function Invoke-XmaDownloadFile {
+  param(
+    [Parameter(Mandatory = $true)][object[]]$Sources,
+    [Parameter(Mandatory = $true)][string]$Destination,
+    [Parameter(Mandatory = $true)][string]$Label
+  )
+
+  $ordered = @(Get-XmaOrderedDownloadSources -Sources $Sources)
+  if ($ordered.Count -eq 0) { throw "$Label 没有可用下载源。" }
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  $lastError = ''
+
+  foreach ($source in $ordered) {
+    Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+    Write-Host "[下载] $Label" -ForegroundColor Yellow
+    Write-Host "[来源] $($source.Name) · $($source.Url)" -ForegroundColor DarkGray
+    try {
+      if ($curl) {
+        # `--progress-bar` 把百分比/速度/剩余时间直接画到当前终端；连续 20 秒低于 2 KiB/s 视为停滞并自动切换下一源。
+        & $curl.Source '--fail' '--location' '--show-error' '--progress-bar' '--connect-timeout' '10' '--speed-limit' '2048' '--speed-time' '20' '--retry' '1' '--retry-delay' '1' '--output' $Destination ([string]$source.Url)
+        if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE" }
+      } else {
+        Write-Host '[提示] 当前没有 curl.exe，回退 PowerShell Invoke-WebRequest；下载期间使用 PowerShell 自带进度显示。' -ForegroundColor DarkYellow
+        $previousProgress = $ProgressPreference
+        $ProgressPreference = 'Continue'
+        try {
+          Invoke-WebRequest -Uri ([string]$source.Url) -OutFile $Destination -UseBasicParsing
+        } finally {
+          $ProgressPreference = $previousProgress
+        }
+      }
+      if (-not (Test-Path -LiteralPath $Destination -PathType Leaf)) { throw '下载结束但目标文件不存在。' }
+      $size = (Get-Item -LiteralPath $Destination).Length
+      if ($size -le 0) { throw '下载结果为空文件。' }
+      Write-Host ("[完成] {0} · {1:N1} MiB · {2}" -f $Label, ($size / 1MB), $source.Name) -ForegroundColor Green
+      return $source
+    } catch {
+      $lastError = $_.Exception.Message
+      Write-Host "[切换] $($source.Name) 下载失败/停滞：$lastError" -ForegroundColor Yellow
+    }
+  }
+
+  throw "$Label 下载失败；已尝试所有配置源。最后错误：$lastError"
+}
+
+function Invoke-XmaVisibleProcess {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @(),
+    [Parameter(Mandatory = $true)][string]$Activity
+  )
+
+  $display = if ($ArgumentList.Count -gt 0) { "$FilePath $($ArgumentList -join ' ')" } else { $FilePath }
+  Write-Host "> $display" -ForegroundColor DarkGray
+  $watch = [Diagnostics.Stopwatch]::StartNew()
+  $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru
+  try {
+    while (-not $process.WaitForExit(1000)) {
+      Write-Progress -Activity $Activity -Status ("正在下载/安装，已用 {0}s；子进程日志会继续实时输出。" -f [int]$watch.Elapsed.TotalSeconds) -PercentComplete -1
+      $process.Refresh()
+    }
+  } finally {
+    $watch.Stop()
+    Write-Progress -Activity $Activity -Completed
+  }
+  if ($process.ExitCode -ne 0) { throw "$FilePath failed with exit code $($process.ExitCode)" }
+}
+
+function Get-XmaNpmRegistrySources {
+  $sources = @(
+    [pscustomobject]@{ Kind = 'official'; Name = 'npm 官方'; Url = 'https://registry.npmjs.org'; ProbeUrl = 'https://registry.npmjs.org/-/ping' },
+    [pscustomobject]@{ Kind = 'mirror'; Name = 'npmmirror'; Url = 'https://registry.npmmirror.com'; ProbeUrl = 'https://registry.npmmirror.com/-/ping' }
+  )
+  return @(Get-XmaOrderedDownloadSources -Sources $sources)
+}
+
+function Get-XmaRustupSource {
+  $sources = @(
+    [pscustomobject]@{
+      Kind = 'official'
+      Name = 'Rust 官方'
+      DistServer = 'https://static.rust-lang.org'
+      UpdateRoot = 'https://static.rust-lang.org/rustup'
+      Url = 'https://static.rust-lang.org'
+      ProbeUrl = 'https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256'
+    },
+    [pscustomobject]@{
+      Kind = 'mirror'
+      Name = 'RsProxy'
+      DistServer = 'https://rsproxy.cn'
+      UpdateRoot = 'https://rsproxy.cn/rustup'
+      Url = 'https://rsproxy.cn'
+      ProbeUrl = 'https://rsproxy.cn/dist/channel-rust-stable.toml.sha256'
+    }
+  )
+  $ordered = @(Get-XmaOrderedDownloadSources -Sources $sources)
+  return $ordered[0]
+}
+
+function Set-XmaRustupDownloadSource {
+  $existingDist = [string]$env:RUSTUP_DIST_SERVER
+  $existingUpdate = [string]$env:RUSTUP_UPDATE_ROOT
+  if (-not [string]::IsNullOrWhiteSpace($existingDist) -or -not [string]::IsNullOrWhiteSpace($existingUpdate)) {
+    Write-Host "[下载源] Rustup 使用用户当前环境配置：DIST=$existingDist · UPDATE=$existingUpdate" -ForegroundColor DarkCyan
+    return [pscustomobject]@{ Kind = 'custom'; Name = '用户配置'; DistServer = $existingDist; UpdateRoot = $existingUpdate }
+  }
+
+  $source = Get-XmaRustupSource
+  if ($source.Kind -eq 'mirror') {
+    $env:RUSTUP_DIST_SERVER = $source.DistServer
+    $env:RUSTUP_UPDATE_ROOT = $source.UpdateRoot
+    Write-Host "[下载源] Rust stable / rustfmt 使用 RsProxy 加速；仅当前 XMA 进程生效，不写入 User/Machine 环境。" -ForegroundColor Cyan
+  } else {
+    Remove-Item Env:RUSTUP_DIST_SERVER -ErrorAction SilentlyContinue
+    Remove-Item Env:RUSTUP_UPDATE_ROOT -ErrorAction SilentlyContinue
+    Write-Host '[下载源] Rust stable / rustfmt 使用 Rust 官方源。' -ForegroundColor DarkCyan
+  }
+  return $source
 }
 
 
@@ -362,23 +561,65 @@ function Install-XmaBunRuntime([switch]$PromptIfMissing) {
     $cacheRoot = Join-Path $Root '.cache\bun'
     $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
     $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
+    $assetName = "bun-windows-$assetArch.zip"
     $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
+    $checksumFile = Join-Path $cacheRoot "SHASUMS256-$BunVersion.txt"
     $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
     if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
-    $url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/bun-windows-$assetArch.zip"
+
+    $bunSources = @(
+      [pscustomobject]@{
+        Kind = 'official'
+        Name = 'Bun GitHub 官方'
+        Url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/$assetName"
+        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
+      },
+      [pscustomobject]@{
+        Kind = 'mirror'
+        Name = 'SourceForge Bun 镜像'
+        Url = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/$assetName/download"
+        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
+      }
+    )
+    $bunChecksumSources = @(
+      [pscustomobject]@{
+        Kind = 'official'
+        Name = 'Bun GitHub 官方校验清单'
+        Url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
+        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
+      },
+      [pscustomobject]@{
+        Kind = 'mirror'
+        Name = 'SourceForge Bun 镜像校验清单'
+        Url = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
+        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
+      }
+    )
+
     Write-Host "[下载] 正在准备固定 Bun $BunVersion（Xiaoyu OpenTUI Runtime）..." -ForegroundColor Yellow
     Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
     Write-Host "[安装位置] $bunHome" -ForegroundColor Cyan
-    Write-Host "[来源] $url" -ForegroundColor DarkGray
     try {
-      Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+      [void](Invoke-XmaDownloadFile -Sources $bunChecksumSources -Destination $checksumFile -Label "Bun $BunVersion SHA-256 清单")
+      [void](Invoke-XmaDownloadFile -Sources $bunSources -Destination $zip -Label "Bun $BunVersion Windows $assetArch")
+
+      $escapedAsset = [regex]::Escape($assetName)
+      $checksumLine = Get-Content -LiteralPath $checksumFile -Encoding ASCII | Where-Object { $_ -match "^\s*([0-9a-fA-F]{64})\s+\*?$escapedAsset\s*$" } | Select-Object -First 1
+      if (-not $checksumLine) { throw "Bun SHA-256 清单中没有找到 $assetName。" }
+      [void]($checksumLine -match "^\s*([0-9a-fA-F]{64})")
+      $expected = $Matches[1].ToLowerInvariant()
+      $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+      if ($expected -ne $actual) { throw "Bun ZIP SHA-256 校验失败：期望 $expected，实际 $actual。" }
+      Write-Host '[验证] Bun ZIP SHA-256 校验通过。' -ForegroundColor DarkCyan
+
       Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
       $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
       if (-not $downloaded) { throw 'Bun ZIP 已下载，但没有找到 bun.exe。' }
       Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
     } finally {
       Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+      Remove-Item -LiteralPath $checksumFile -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
   }
@@ -477,6 +718,7 @@ function Install-XmaRustStable {
   $cargoExe = Join-Path $homes.CargoBin 'cargo.exe'
   $rustcExe = Join-Path $homes.CargoBin 'rustc.exe'
   $rustupExe = Join-Path $homes.CargoBin 'rustup.exe'
+  $rustupSource = Set-XmaRustupDownloadSource
 
   Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
   Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
@@ -493,8 +735,8 @@ function Install-XmaRustStable {
 
   if (Test-Path -LiteralPath $rustupExe -PathType Leaf) {
     Write-Host '[修复] 目标位置已有 rustup，但 stable toolchain 尚未完整；正在复用现有 rustup 修复，不重复下载 rustup-init。' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal') | Out-Host
-    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('default','stable') | Out-Host
+    Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal') -Activity 'Rust stable toolchain 下载/安装'
+    Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('default','stable') -Activity 'Rust stable 设置'
     Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
     $repaired = Import-XmaRustEnvironment -ProjectRoot $Root
     if ($repaired) {
@@ -513,25 +755,57 @@ function Install-XmaRustStable {
   $cacheRoot = Join-Path $Root '.cache\rustup'
   $installer = Join-Path $cacheRoot "rustup-init-$triple.exe"
   $checksumFile = "$installer.sha256"
-  $url = "https://static.rust-lang.org/rustup/dist/$triple/rustup-init.exe"
-  $checksumUrl = "$url.sha256"
   New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
-  Write-Host "[下载] 正在下载 Rust 官方 rustup-init（$triple）..." -ForegroundColor Yellow
-  Write-Host "[来源] $url" -ForegroundColor DarkGray
+  $rustupInitSources = @(
+    [pscustomobject]@{
+      Kind = 'official'
+      Name = 'Rust 官方'
+      Url = "https://static.rust-lang.org/rustup/dist/$triple/rustup-init.exe"
+      ProbeUrl = 'https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256'
+    },
+    [pscustomobject]@{
+      Kind = 'mirror'
+      Name = 'RsProxy'
+      Url = "https://rsproxy.cn/rustup/dist/$triple/rustup-init.exe"
+      ProbeUrl = 'https://rsproxy.cn/dist/channel-rust-stable.toml.sha256'
+    }
+  )
+  $rustupChecksumSources = @(
+    [pscustomobject]@{
+      Kind = 'official'
+      Name = 'Rust 官方校验'
+      Url = "https://static.rust-lang.org/rustup/dist/$triple/rustup-init.exe.sha256"
+      ProbeUrl = 'https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256'
+    },
+    [pscustomobject]@{
+      Kind = 'mirror'
+      Name = 'RsProxy 校验'
+      Url = "https://rsproxy.cn/rustup/dist/$triple/rustup-init.exe.sha256"
+      ProbeUrl = 'https://rsproxy.cn/dist/channel-rust-stable.toml.sha256'
+    }
+  )
+
   try {
-    Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
-    Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumFile -UseBasicParsing
+    [void](Invoke-XmaDownloadFile -Sources $rustupChecksumSources -Destination $checksumFile -Label "rustup-init $triple SHA-256")
+    $downloadedFrom = Invoke-XmaDownloadFile -Sources $rustupInitSources -Destination $installer -Label "Rust rustup-init $triple"
     $expected = ((Get-Content -LiteralPath $checksumFile -Raw -Encoding ASCII).Trim() -split '\s+')[0].ToLowerInvariant()
     $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($expected -ne $actual) { throw 'rustup-init SHA-256 校验失败，已拒绝执行。' }
     Write-Host '[验证] rustup-init SHA-256 校验通过。' -ForegroundColor DarkCyan
 
+    # 如果二进制实际从镜像回退成功，而当前没有用户自定义 rustup 源，让后续 stable/rustfmt 继续沿用同一加速源。
+    if ($downloadedFrom.Kind -eq 'mirror' -and $rustupSource.Kind -ne 'custom') {
+      $env:RUSTUP_DIST_SERVER = 'https://rsproxy.cn'
+      $env:RUSTUP_UPDATE_ROOT = 'https://rsproxy.cn/rustup'
+      Write-Host '[下载源] rustup-init 已切换 RsProxy；stable/rustfmt 继续复用该加速源。' -ForegroundColor Cyan
+    }
+
     # 当前 PATH 可能还包含旧 Rust shim；XMA 已经显式隔离 CARGO_HOME/RUSTUP_HOME，因此让 rustup-init 跳过 PATH 冲突检查，避免误报“Rust is installed”。
     $previousSkipPathCheck = $env:RUSTUP_INIT_SKIP_PATH_CHECK
     $env:RUSTUP_INIT_SKIP_PATH_CHECK = 'yes'
     try {
-      Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host
+      Invoke-XmaVisibleProcess -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') -Activity 'Rust stable toolchain 下载/安装'
     } finally {
       if ($null -eq $previousSkipPathCheck) { Remove-Item Env:RUSTUP_INIT_SKIP_PATH_CHECK -ErrorAction SilentlyContinue }
       else { $env:RUSTUP_INIT_SKIP_PATH_CHECK = $previousSkipPathCheck }
@@ -604,7 +878,8 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
   if ($rustfmtProbe.ExitCode -ne 0) {
     if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且当前 Rust Home 没有 rustup.exe。' }
     Write-Host '[缺少] 未检测到 rustfmt；正在为当前 XMA Rust Home 安装 rustfmt 组件...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') | Out-Host
+    [void](Set-XmaRustupDownloadSource)
+    Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') -Activity 'Rust rustfmt 组件下载/安装'
     $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
     if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
   }
@@ -781,8 +1056,31 @@ function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
   if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) {
     Write-Host '[安装] 正在准备 Xiaoyu 独立 Bun/OpenTUI 前端依赖...' -ForegroundColor Yellow
     Write-Host "[安装位置] $openTuiHome" -ForegroundColor Cyan
+    $registrySources = @(Get-XmaNpmRegistrySources)
+    $previousRegistry = $env:BUN_CONFIG_REGISTRY
+    $installed = $false
+    $lastRegistryError = ''
     Push-Location $openTuiHome
-    try { Invoke-XmaExternal -FilePath $BunExecutable -ArgumentList @('install','--no-save') } finally { Pop-Location }
+    try {
+      foreach ($registrySource in $registrySources) {
+        $env:BUN_CONFIG_REGISTRY = [string]$registrySource.Url
+        Write-Host "[下载源] OpenTUI npm registry：$($registrySource.Name) · $($registrySource.Url)" -ForegroundColor DarkCyan
+        try {
+          # Start-Process -NoNewWindow 让 Bun 直接继承真实终端，保留 resolving/downloading 的原生实时进度，不再像管道调用一样看起来“静默卡住”。
+          Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save') -Activity 'Bun / OpenTUI 依赖下载'
+          $installed = $true
+          break
+        } catch {
+          $lastRegistryError = $_.Exception.Message
+          Write-Host "[切换] $($registrySource.Name) 安装失败：$lastRegistryError" -ForegroundColor Yellow
+        }
+      }
+    } finally {
+      Pop-Location
+      if ($null -eq $previousRegistry) { Remove-Item Env:BUN_CONFIG_REGISTRY -ErrorAction SilentlyContinue }
+      else { $env:BUN_CONFIG_REGISTRY = $previousRegistry }
+    }
+    if (-not $installed) { throw "OpenTUI 依赖安装失败；已尝试所有 npm registry。最后错误：$lastRegistryError" }
   }
 
   if (-not (Test-XmaOpenTuiDependencies $openTuiHome)) { throw "Xiaoyu OpenTUI 依赖准备后版本仍不完整：$openTuiHome" }
@@ -878,6 +1176,7 @@ Write-Host '====================================================================
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
 Write-Host '说明：Bun/OpenTUI 与 Rust/Cargo 如果尚未安装，会先询问 Y/N；选择 N 只跳过对应组件，不中断其余准备。' -ForegroundColor DarkGray
 Write-Host '说明：默认依赖根跟随当前项目的 xma-path；不会主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。' -ForegroundColor DarkGray
+Write-Host '说明：下载源默认 auto：官方/镜像做快速测速，下载停滞或失败会自动切换；可用 XMA_DOWNLOAD_SOURCE=official|mirror 覆盖。' -ForegroundColor DarkGray
 Write-Host "说明：不会下载 Electron $ElectronVersion Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。" -ForegroundColor DarkGray
 Write-Host ''
 Refresh-XmaPath
