@@ -269,18 +269,15 @@ function Invoke-XmaVisibleProcess {
 
   $display = if ($ArgumentList.Count -gt 0) { "$FilePath $($ArgumentList -join ' ')" } else { $FilePath }
   Write-Host "> $display" -ForegroundColor DarkGray
-  $watch = [Diagnostics.Stopwatch]::StartNew()
-  $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -PassThru
-  try {
-    while (-not $process.WaitForExit(1000)) {
-      Write-Progress -Activity $Activity -Status ("正在下载/安装，已用 {0}s；子进程日志会继续实时输出。" -f [int]$watch.Elapsed.TotalSeconds) -PercentComplete -1
-      $process.Refresh()
-    }
-  } finally {
-    $watch.Stop()
-    Write-Progress -Activity $Activity -Completed
-  }
-  if ($process.ExitCode -ne 0) { throw "$FilePath failed with exit code $($process.ExitCode)" }
+  Write-Host "[进行中] $Activity；以下直接显示上游实时输出。" -ForegroundColor DarkCyan
+  # Windows PowerShell 5.1 下，Start-Process 后自行轮询 Process.WaitForExit(timeout) 可能出现
+  # 子进程已成功结束但 ExitCode 仍未稳定回填的情况，最终把成功安装误判成“failed with exit code <空>”。
+  # 这里使用 Start-Process 自身的 -Wait 契约：保留 -NoNewWindow 让 Bun/rustup 直接继承当前终端，
+  # 同时由 PowerShell 等待并回填稳定 ExitCode。下载文件本身仍由 curl progress-bar 提供百分比/速度。
+  $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru
+  $exitCode = $process.ExitCode
+  if ($null -eq $exitCode) { throw "$FilePath 进程已结束，但 Windows PowerShell 未返回退出码。" }
+  if ([int]$exitCode -ne 0) { throw "$FilePath failed with exit code $exitCode" }
 }
 
 function Get-XmaNpmRegistrySources {
@@ -1066,12 +1063,19 @@ function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
         $env:BUN_CONFIG_REGISTRY = [string]$registrySource.Url
         Write-Host "[下载源] OpenTUI npm registry：$($registrySource.Name) · $($registrySource.Url)" -ForegroundColor DarkCyan
         try {
-          # Start-Process -NoNewWindow 让 Bun 直接继承真实终端，保留 resolving/downloading 的原生实时进度，不再像管道调用一样看起来“静默卡住”。
+          # Start-Process -NoNewWindow -Wait 让 Bun 继承真实终端并由 PowerShell 稳定等待退出；保留上游实时输出，同时可靠读取退出码。
           Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save') -Activity 'Bun / OpenTUI 依赖下载'
           $installed = $true
           break
         } catch {
           $lastRegistryError = $_.Exception.Message
+          # 真值优先：如果 Bun 已经把固定版本依赖完整落盘，即使 Windows Host 在读取子进程状态时异常，
+          # 也不能把“实体已完整”误判成安装失败并重复切换 registry。
+          if (Test-XmaOpenTuiDependencies $openTuiHome) {
+            Write-Host "[通过] $($registrySource.Name) 已形成完整 OpenTUI 依赖；按实体真值继续。" -ForegroundColor Green
+            $installed = $true
+            break
+          }
           Write-Host "[切换] $($registrySource.Name) 安装失败：$lastRegistryError" -ForegroundColor Yellow
         }
       }

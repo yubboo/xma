@@ -67,6 +67,9 @@ const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 for (const marker of [
   "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
   "function Invoke-XmaVisibleProcess",
+  "Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -NoNewWindow -Wait -PassThru",
+  '$exitCode = $process.ExitCode',
+  '已形成完整 OpenTUI 依赖；按实体真值继续。',
   "Invoke-XmaVisibleProcess -FilePath $BunExecutable -ArgumentList @('install','--no-save')",
   "Invoke-XmaVisibleProcess -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path')",
   "Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal')",
@@ -74,6 +77,8 @@ for (const marker of [
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`PowerShell live-process / value-return isolation regression: missing ${marker}`)
 }
+
+if (prepareSource.includes('WaitForExit(1000)')) throw new Error('PowerShell visible child process must not manually poll WaitForExit(timeout); Windows PowerShell 5.1 can leave ExitCode unresolved. Use Start-Process -Wait -PassThru.')
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
 for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)

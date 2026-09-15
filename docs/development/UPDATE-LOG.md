@@ -539,3 +539,13 @@
 - 修复：Bun/Rust 发现结果统一通过 `List<T>.ToArray()` 返回，发现/候选去重改为 PowerShell 原生大小写不敏感 hashtable，避开 Windows PowerShell generic binder 差异。`Import-XmaBunEnvironment` / `Import-XmaRustEnvironment` 新增显式 `-DiscoverExternal`；普通控制台/准备器脚本顶层只恢复已知状态，不扫描盘符。只有 `[1]/[4]/[7]/[8]/[9]` 等真正解析依赖的路径以及明确的 Tauri 构建才允许离线发现。
 - 边界：外部发现仍只检查 XMA 自管固定布局并执行 `bun/cargo/rustc --version`，不下载依赖；多套候选继续 fail loud。即使将来盘符扫描再次出现异常，也不得阻断 `xma-dev.bat` 主菜单启动。
 - 回归：Windows Gate 锁定 `-DiscoverExternal` 显式入口、禁止 discovery helper 用 `return @($results)`，并要求脚本顶层 Import 不带外部发现开关。版本保持 `0.1.0`。
+
+
+##47 · Bun/OpenTUI 成功安装误判与 Windows 子进程退出码修复
+
+- 日期：2026-09-15
+- 现象：`[1] -> [4/9] Bun/OpenTUI` 使用 npmmirror 时已经明确输出 `179 packages installed`，但 XMA 随后仍打印 `failed with exit code`（退出码为空），继续错误切换 npm 官方源/镜像并最终宣告安装失败。
+- 根因：##45 为显示实时安装进度新增 `Start-Process -PassThru` + `Process.WaitForExit(timeout)` 轮询。在 Windows PowerShell 5.1 + 当前 Windows Terminal Host 下，子进程实际成功退出后 `Process.ExitCode` 仍可能没有稳定回填；空值与 0 比较后被当成非零失败，因此实体已经完整却被控制层误判。
+- 修复：可见安装进程统一改为 `Start-Process -NoNewWindow -Wait -PassThru`，由 PowerShell 自身负责等待并稳定填充 ExitCode；Bun/rustup 继续直接继承当前终端并输出上游安装日志，Bun ZIP/rustup-init 文件下载仍由 curl progress bar 显示百分比/速度。移除 `WaitForExit(1000)` + `Write-Progress` 轮询，避免为了额外计时破坏退出码真值。
+- OpenTUI 真值：registry 安装异常分支新增实体复检；只要固定 OpenTUI/Solid/Bun 依赖已经完整落盘，就按实体真值成功继续，不会因为 Host/退出码读取异常重复切换 registry。只有实体仍不完整时才切备用源。
+- 回归：Windows Gate 锁定 `Start-Process -Wait -PassThru`、稳定 ExitCode、OpenTUI 实体真值兜底，并禁止重新引入 `WaitForExit(1000)` 轮询。版本保持 `0.1.0`，继续覆盖同名正式源码包与 SHA-256。
