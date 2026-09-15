@@ -17,6 +17,8 @@ Set-Location $Root
 [void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $ElectronVersion = '41.2.0'
 $BunVersion = '1.3.14'
+$BunWindowsX64Sha256 = '0a0620930b6675d7ba440e81f4e0e00d3cfbe096c4b140d3fff02205e9e18922'
+$BunWindowsAarch64Sha256 = '89841f5a57f2348b67ec0839b718f4bf4ea7d07c371c9ba4b77b6c790f918953'
 $OpenTuiVersion = '0.1.101'
 $SolidJsVersion = '1.9.11'
 $BunTypesVersion = '1.3.11'
@@ -161,7 +163,11 @@ function Measure-XmaDownloadProbe([string]$Url) {
   $watch = [Diagnostics.Stopwatch]::StartNew()
   $result = [double]::PositiveInfinity
   try {
-    & $curl.Source '--fail' '--location' '--silent' '--show-error' '--connect-timeout' '3' '--max-time' '5' '--range' '0-0' '--output' 'NUL' $Url *> $null
+    $curlTlsArgs = @()
+    # Windows 自带 curl 使用 Schannel；当本机/网络无法访问证书吊销服务器时，默认会把“无法检查吊销”当成 TLS 失败。
+    # best-effort 仍保留证书链验证，只在吊销服务离线时继续；Bun ZIP 之后还有固定 SHA-256 真值校验。
+    if ($env:OS -eq 'Windows_NT') { $curlTlsArgs += '--ssl-revoke-best-effort' }
+    & $curl.Source @curlTlsArgs '--fail' '--location' '--silent' '--show-error' '--connect-timeout' '3' '--max-time' '5' '--range' '0-0' '--output' 'NUL' $Url *> $null
     if ($LASTEXITCODE -eq 0) { $result = [math]::Round($watch.Elapsed.TotalMilliseconds) }
   } catch {
     $result = [double]::PositiveInfinity
@@ -234,7 +240,11 @@ function Invoke-XmaDownloadFile {
     try {
       if ($curl) {
         # `--progress-bar` 把百分比/速度/剩余时间直接画到当前终端；连续 20 秒低于 2 KiB/s 视为停滞并自动切换下一源。
-        & $curl.Source '--fail' '--location' '--show-error' '--progress-bar' '--connect-timeout' '10' '--speed-limit' '2048' '--speed-time' '20' '--retry' '1' '--retry-delay' '1' '--output' $Destination ([string]$source.Url)
+        # Windows Schannel 在吊销服务器离线时可能返回 CRYPT_E_REVOCATION_OFFLINE。best-effort 只放宽“吊销服务不可达”，
+        # 不关闭 TLS 证书链验证；Bun/Rust 下载仍执行固定版本哈希校验。
+        $curlTlsArgs = @()
+        if ($env:OS -eq 'Windows_NT') { $curlTlsArgs += '--ssl-revoke-best-effort' }
+        & $curl.Source @curlTlsArgs '--fail' '--location' '--show-error' '--progress-bar' '--connect-timeout' '10' '--speed-limit' '2048' '--speed-time' '20' '--retry' '1' '--retry-delay' '1' '--output' $Destination ([string]$source.Url)
         if ($LASTEXITCODE -ne 0) { throw "curl exit $LASTEXITCODE" }
       } else {
         Write-Host '[提示] 当前没有 curl.exe，回退 PowerShell Invoke-WebRequest；下载期间使用 PowerShell 自带进度显示。' -ForegroundColor DarkYellow
@@ -560,7 +570,7 @@ function Install-XmaBunRuntime([switch]$PromptIfMissing) {
     $assetArch = if ($arch -eq 'arm64') { 'aarch64' } else { 'x64' }
     $assetName = "bun-windows-$assetArch.zip"
     $zip = Join-Path $cacheRoot "bun-windows-$assetArch-$BunVersion.zip"
-    $checksumFile = Join-Path $cacheRoot "SHASUMS256-$BunVersion.txt"
+    $expectedBunSha256 = if ($assetArch -eq 'aarch64') { $BunWindowsAarch64Sha256 } else { $BunWindowsX64Sha256 }
     $extract = Join-Path $cacheRoot "extract-$BunVersion-$assetArch"
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
     if (Test-Path $extract) { Remove-Item $extract -Recurse -Force }
@@ -570,45 +580,26 @@ function Install-XmaBunRuntime([switch]$PromptIfMissing) {
         Kind = 'official'
         Name = 'Bun GitHub 官方'
         Url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/$assetName"
-        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
+        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/$assetName"
       },
       [pscustomobject]@{
         Kind = 'mirror'
         Name = 'SourceForge Bun 镜像'
         Url = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/$assetName/download"
-        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
+        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/$assetName/download"
       }
     )
-    $bunChecksumSources = @(
-      [pscustomobject]@{
-        Kind = 'official'
-        Name = 'Bun GitHub 官方校验清单'
-        Url = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
-        ProbeUrl = "https://github.com/oven-sh/bun/releases/download/bun-v$BunVersion/SHASUMS256.txt"
-      },
-      [pscustomobject]@{
-        Kind = 'mirror'
-        Name = 'SourceForge Bun 镜像校验清单'
-        Url = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
-        ProbeUrl = "https://sourceforge.net/projects/bun.mirror/files/bun-v$BunVersion/SHASUMS256.txt/download"
-      }
-    )
-
     Write-Host "[下载] 正在准备固定 Bun $BunVersion（Xiaoyu OpenTUI Runtime）..." -ForegroundColor Yellow
     Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
     Write-Host "[安装位置] $bunHome" -ForegroundColor Cyan
     try {
-      [void](Invoke-XmaDownloadFile -Sources $bunChecksumSources -Destination $checksumFile -Label "Bun $BunVersion SHA-256 清单")
       [void](Invoke-XmaDownloadFile -Sources $bunSources -Destination $zip -Label "Bun $BunVersion Windows $assetArch")
 
-      $escapedAsset = [regex]::Escape($assetName)
-      $checksumLine = Get-Content -LiteralPath $checksumFile -Encoding ASCII | Where-Object { $_ -match "^\s*([0-9a-fA-F]{64})\s+\*?$escapedAsset\s*$" } | Select-Object -First 1
-      if (-not $checksumLine) { throw "Bun SHA-256 清单中没有找到 $assetName。" }
-      [void]($checksumLine -match "^\s*([0-9a-fA-F]{64})")
-      $expected = $Matches[1].ToLowerInvariant()
+      # 固定版本的官方 GitHub Release asset digest 是源码真值，不再为校验额外下载 SHASUMS256.txt。
+      # 这样 GitHub/SourceForge 的校验清单端点被重置、CRL 服务离线时，也不会让首次 clone 的 `[1]` 在 ZIP 下载前就失败。
       $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-      if ($expected -ne $actual) { throw "Bun ZIP SHA-256 校验失败：期望 $expected，实际 $actual。" }
-      Write-Host '[验证] Bun ZIP SHA-256 校验通过。' -ForegroundColor DarkCyan
+      if ($expectedBunSha256 -ne $actual) { throw "Bun ZIP SHA-256 校验失败：期望 $expectedBunSha256，实际 $actual。" }
+      Write-Host "[验证] Bun ZIP SHA-256 校验通过：$assetName" -ForegroundColor DarkCyan
 
       Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
       $downloaded = Get-ChildItem -Path $extract -Filter 'bun.exe' -File -Recurse | Select-Object -First 1
@@ -616,7 +607,6 @@ function Install-XmaBunRuntime([switch]$PromptIfMissing) {
       Copy-Item -LiteralPath $downloaded.FullName -Destination $bunExe -Force
     } finally {
       Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-      Remove-Item -LiteralPath $checksumFile -Force -ErrorAction SilentlyContinue
       Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
     }
   }

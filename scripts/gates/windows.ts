@@ -79,6 +79,7 @@ for (const marker of [
 }
 
 if (prepareSource.includes('WaitForExit(1000)')) throw new Error('PowerShell visible child process must not manually poll WaitForExit(timeout); Windows PowerShell 5.1 can leave ExitCode unresolved. Use Start-Process -Wait -PassThru.')
+if (prepareSource.includes('SHASUMS256-$BunVersion') || prepareSource.includes('Bun $BunVersion SHA-256 清单')) throw new Error('Pinned Bun runtime must validate against embedded official release digest; do not add a second checksum-manifest download dependency.')
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
 for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
@@ -103,7 +104,9 @@ for (const marker of [
   "'--progress-bar'",
   "'--speed-time'",
   'SourceForge Bun 镜像',
-  'SHASUMS256.txt',
+  'BunWindowsX64Sha256',
+  'BunWindowsAarch64Sha256',
+  "'--ssl-revoke-best-effort'",
   'function Get-XmaNpmRegistrySources',
   'https://registry.npmmirror.com',
   'function Get-XmaRustupSource',

@@ -549,3 +549,14 @@
 - 修复：可见安装进程统一改为 `Start-Process -NoNewWindow -Wait -PassThru`，由 PowerShell 自身负责等待并稳定填充 ExitCode；Bun/rustup 继续直接继承当前终端并输出上游安装日志，Bun ZIP/rustup-init 文件下载仍由 curl progress bar 显示百分比/速度。移除 `WaitForExit(1000)` + `Write-Progress` 轮询，避免为了额外计时破坏退出码真值。
 - OpenTUI 真值：registry 安装异常分支新增实体复检；只要固定 OpenTUI/Solid/Bun 依赖已经完整落盘，就按实体真值成功继续，不会因为 Host/退出码读取异常重复切换 registry。只有实体仍不完整时才切备用源。
 - 回归：Windows Gate 锁定 `Start-Process -Wait -PassThru`、稳定 ExitCode、OpenTUI 实体真值兜底，并禁止重新引入 `WaitForExit(1000)` 轮询。版本保持 `0.1.0`，继续覆盖同名正式源码包与 SHA-256。
+
+
+##48 · 首次 Clone 的 Bun 下载校验与 Windows Schannel 容错
+
+- 日期：2026-09-15
+- 现象：全新 `git clone -> xma-dev.bat -> [1]` 在 Bun 1.3.14 首次准备时，GitHub `SHASUMS256.txt` 连接被重置；切 SourceForge 后 Windows curl/Schannel 又因 `CRYPT_E_REVOCATION_OFFLINE` 退出，导致 Bun ZIP 尚未下载就直接失败。
+- 根因：##45 为 Bun ZIP 增加了 SHA-256 安全校验，但实现成“先额外下载一份校验清单，再下载 ZIP”，把一次 Runtime 下载变成两次独立网络依赖；Windows Schannel 又会在证书吊销服务器离线时把 TLS 连接判失败。
+- 修复：Bun 1.3.14 Windows x64/aarch64 的 SHA-256 直接固定为 Bun 官方 GitHub Release asset digest；GitHub/SourceForge 只负责下载同一个 ZIP，下载完成后统一对固定官方 digest 校验，不再联网获取 `SHASUMS256.txt`。当前固定值来源于 `oven-sh/bun` 的 `bun-v1.3.14` GitHub Release assets。
+- Schannel：Windows curl 的测速和真实下载增加 `--ssl-revoke-best-effort`。它只允许“吊销服务不可达”时继续，不关闭正常证书链验证；Bun ZIP 仍必须通过固定 SHA-256，Rust 下载仍保留既有哈希校验。
+- 行为：官方源连接重置时仍自动切 SourceForge；SourceForge 遇到 `CRYPT_E_REVOCATION_OFFLINE` 不再仅因吊销服务器离线失败。`[4]/[7]` 依旧不联网，本修改只作用于显式准备入口 `[1]/[8]/[9]`。
+- 回归：Windows Gate 要求 x64/aarch64 固定 Bun digest、`--ssl-revoke-best-effort`，并禁止重新引入 Bun `SHASUMS256.txt` 额外下载依赖。版本保持 `0.1.0`。
