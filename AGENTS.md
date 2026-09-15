@@ -362,3 +362,5 @@ XMA Agent Platform 采用 **Upstream-first Development Rule** 与 **No Blind Rei
 当前 0.1.x **先做 Agent Runtime 与真实模型能力，不继续大规模堆 UI**。完整 Desktop UI 目标固定为现代三栏 Workbench：左栏默认展开，中间大 Workspace（Chat/Work），右栏 Inspector 默认收起，左右支持吸附拉伸，中央底部 Terminal 可展开，左下为用户/设置；详见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
 完整 Workbench 开工前至少应具备：Session/Turn/Step durable Runtime、两个不同协议族真实 Provider、ToolPlan/Approval/Native Capability、Workspace persistence、App Protocol/Event Stream、PTY/Process Native 能力和 Xiaoyu Code 最小真实闭环。UI 不得反向成为 Agent 状态源。
+
+- Windows `[4]/[7]` 在 checkout 状态缺失但外部 `xma-path` 实体仍存在时，必须允许离线真实再发现：只扫描 XMA 自管固定布局并执行版本探针；唯一命中可补写 checkout 状态，多套命中禁止猜测。

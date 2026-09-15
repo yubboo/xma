@@ -71,7 +71,7 @@ XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默�
 
 默认项目依赖布局只包含实体依赖：`xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`。其中 OpenTUI 的真实 `node_modules` 存在对应依赖根的 `opentui/`；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做一次迁移，不再作为当前控制目录。
 
-删除/清理依赖后的行为也按真实文件状态判断：如果删除整个项目默认 `xma-path/`，下一次 `[1]` 会在 `[4/9]` 把 Bun/OpenTUI 视为缺失并重新询问 Y/N；如果只删 `xma-path/opentui/`，同样会把 Bun/OpenTUI **整组件**判定为不完整并询问是否修复。Rust/Cargo 如果原本就是项目默认 `xma-path/rust/`，删除后 `[5/9]` 会重新询问 Y/N；如果你此前明确装在 `D:\XMA\Rust` 等外部位置且实体仍真实存在，删除旧项目状态或 checkout 状态后会自动重新发现并接管，不会假装“依赖不存在”也不会重复安装。`[4]`/`[7]` 只校验和运行，不会偷偷修复或联网安装；缺失时会明确引导 `[8]`/`[9]` 或重新运行 `[1]`。
+删除/清理依赖后的行为也按真实文件状态判断：如果删除整个项目默认 `xma-path/`，下一次 `[1]` 会在 `[4/9]` 把 Bun/OpenTUI 视为缺失并重新询问 Y/N；如果只删 `xma-path/opentui/`，同样会把 Bun/OpenTUI **整组件**判定为不完整并询问是否修复。Rust/Cargo 如果原本就是项目默认 `xma-path/rust/`，删除后 `[5/9]` 会重新询问 Y/N；如果你此前明确装在 `D:\XMA\Rust` 等外部位置且实体仍真实存在，删除旧项目状态或 checkout 状态后会自动重新发现并接管，不会假装“依赖不存在”也不会重复安装。`[4]`/`[7]` 只校验和运行，不会偷偷修复或联网安装；缺失时会明确引导 `[8]`/`[9]` 或重新运行 `[1]`。 如果脚本升级或旧状态清理导致 `.git/xma-state` 暂时缺失，但某个已挂载盘符下仍存在唯一一套 `xma-path/bun`、`xma-path/rust`（或旧 `XMA/Rust`）且真实版本探针通过，`[4]/[7]` 会离线重新发现并补写 checkout 状态；找到多套候选时拒绝猜测，要求回 `[1]/[8]/[9]` 明确选择。
 
 开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
 

@@ -498,3 +498,22 @@
 - 控制状态：延续 ##41，state/prepare/source-sync/dev-bin 使用 `.git/xma-state`（非 Git 树 `.cache/xma-state`），外部依赖位置不再为了控制状态生成项目根空壳 `xma-path`；旧 `xma-path/state|dev-bin` 迁移后清理。
 - 摘要：`[1]` 结束不再只打印“默认依赖根”。Bun/OpenTUI 和 Rust/Cargo 分别打印本轮真实依赖根，例如都选择 `[2]` 时显示 `D:/xma-path`；另行打印 checkout 控制状态路径，避免把项目默认位置误认为实际安装位置。
 - 回归：Windows Gate 锁定三行原位高亮、禁止独立“当前选择”状态行、禁止 `rustup override set stable`、要求已有 rustup repair + PATH-check 隔离，并继续锁定 `.git/xma-state` 控制状态。版本仍为 `0.1.0`，覆盖生成正式同名源码包与 SHA-256。
+
+##43 · Windows 依赖位置菜单 RawUI 原位选择修复
+
+- 日期：2026-09-15
+- 目的：修复 Windows 实机中依赖安装位置菜单出现“高亮 `[1]` + 下面又重复一套 `[1]/[2]/[3]` + `Read-Host`”的双菜单问题，以及 ↑/↓ 在 Windows Terminal 中没有真正接管选择的回归。
+- 根因：上一版使用 `System.Console.SetCursorPosition/ReadKey` 做重绘；在当前 PowerShell + Windows Terminal Host 下，Console API 在动态绘制阶段抛异常后进入 fallback。由于异常发生前已经输出了一部分动态菜单，fallback 又重新打印静态选项并 `Read-Host`，因此既重复显示，又失去方向键输入。
+- 修复：交互式 Windows Host 改用 PowerShell `$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')` 与 RawUI `CursorPosition`；菜单只顺序输出一次三条真实选项，然后 ↑/↓ 仅原位重绘这三行，Enter 确认，数字 1/2/3 直达。若 Host 不支持 RawUI，fallback 只在从未完整渲染动态菜单时打印选项；若动态菜单已经显示，则只补数字输入提示，绝不复制三行菜单。
+- 回归：Windows Gate 禁止安装位置菜单重新使用 `System.Console.ReadKey/SetCursorPosition`，锁定 RawUI VK_UP/VK_DOWN/VK_RETURN 与“fallback 不重复打印选项”合同。Bun/OpenTUI 与 Rust/Cargo 继续共用同一选择器。
+- 交付：版本仍为 `0.1.0`，继续覆盖正式 `xma-0.1.0.zip` 与 SHA-256。
+
+##44 · 全量检查外部依赖离线再发现
+
+- 日期：2026-09-15
+- 目的：修复 `[1]` 已把 Bun/OpenTUI、Rust/Cargo 安装到 `D:/xma-path` 等外部依赖根，但脚本升级后 checkout 控制状态从旧 `xma-path/state` 迁到 `.git/xma-state` 时，直接运行 `[7]` 会误报“未检测到 Bun Runtime”的假缺失。
+- Bun：`Import-XmaBunEnvironment` 在状态、项目默认、旧环境均未命中时，会枚举当前已挂载且 ready 的文件系统盘符，仅检查 `<盘符>:/xma-path/bun/<固定版本>/bun.exe`，真实执行 `bun --version`。唯一命中时自动重新接管并补写 `.git/xma-state/bun-environment.json`；多套命中不自动猜测，由 `[1]/[8]` 明确选择。
+- Rust：同样离线检查 `<盘符>:/xma-path/rust`，并兼容 0.1.0 早期 `<盘符>:/XMA/Rust`；候选必须真实通过 `cargo --version` 与 `rustc --version`。唯一命中时恢复 `CARGO_HOME/RUSTUP_HOME`、PATH 并补写 checkout 状态。
+- `[4]/[7]` 边界：再发现只读取本机现有文件并执行版本探针，不下载 Bun、不运行 `cargo fetch`、不安装组件；Rust crates 仍由既有 offline preflight 决定是否允许继续。多套依赖候选时 fail loud，不擅自改变用户选择。
+- 回归：Windows Gate 锁定 `DriveInfo.GetDrives()`、Bun/Rust drive-scan、状态补写和 Console 恢复提示；版本继续保持 `0.1.0`。
+

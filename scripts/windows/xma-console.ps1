@@ -68,7 +68,10 @@ function Assert-CoreDependencies {
 }
 
 function Resolve-XmaCargoRuntime {
-  [void](Import-XmaRustEnvironment -ProjectRoot $Root)
+  $importedRust = Import-XmaRustEnvironment -ProjectRoot $Root
+  if ($importedRust -and $importedRust.Source -eq 'drive-scan') {
+    Write-Host "[恢复] checkout 状态缺失；已从现有磁盘自动重新接管 Rust/Cargo：$($importedRust.CargoHome)" -ForegroundColor DarkCyan
+  }
   $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
   if (-not $cargoCommand) {
     throw '未检测到 Rust/Cargo。请运行主菜单 [9] 单独安装 Rust/Cargo，或重新运行 [1]。'
@@ -95,7 +98,14 @@ function Assert-XmaCargoOfflineReady {
 function Resolve-XmaBunRuntime {
   $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
   if (-not $bunRuntime) {
+    $discovered = @(Get-XmaDiscoveredBunHomes -ProjectRoot $Root -ExpectedVersion $BunVersion)
+    if ($discovered.Count -gt 1) {
+      throw "检测到多套 Bun $BunVersion Runtime（$($discovered -join '；')），无法安全自动选择。请运行主菜单 [8] 或 [1] 明确选择依赖位置；[4]/[7] 不会偷偷改选。"
+    }
     throw "未检测到 Bun $BunVersion Runtime。请运行主菜单 [8] 单独安装 Bun/OpenTUI，或重新运行 [1]。"
+  }
+  if ($bunRuntime.Source -eq 'drive-scan') {
+    Write-Host "[恢复] checkout 状态缺失；已从现有磁盘自动重新接管 Bun $BunVersion：$($bunRuntime.BunHome)" -ForegroundColor DarkCyan
   }
   return $bunRuntime
 }

@@ -71,15 +71,19 @@ if (existsSync('XMA.bat') || existsSync('xma.bat')) {
 }
 
 if (/\[string\[\]\]\$Args\b/i.test(prepareSource)) throw new Error('xma-prepare.ps1 must not use PowerShell automatic variable $args as a parameter')
+if (prepareSource.includes('[Console]::ReadKey') || prepareSource.includes('[Console]::SetCursorPosition')) {
+  throw new Error('Dependency arrow menu must use PowerShell Host RawUI; System.Console cursor/read APIs regress in Windows Terminal hosts.')
+}
 for (const marker of [
   'function Invoke-XmaProbe',
   'function Read-XmaArrowMenuChoice',
-  '[Console]::ReadKey($true)',
-  '[ConsoleKey]::UpArrow',
-  '[ConsoleKey]::DownArrow',
-  '[ConsoleKey]::Enter',
+  "$rawUi.ReadKey('NoEcho,IncludeKeyDown')",
+  '$key.VirtualKeyCode -eq 38',
+  '$key.VirtualKeyCode -eq 40',
+  '$key.VirtualKeyCode -eq 13',
   '↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达',
-  '[Console]::SetCursorPosition(0, $menuTop + $index)',
+  '$rawUi.CursorPosition = $position',
+  '若三行动态菜单已经完整显示，只补一个输入提示，绝不再次打印选项',
   "$prefix = if ($number -eq $selected) { '  > ' } else { '    ' }",
   "Read-XmaArrowMenuChoice -Prompt '请选择' -Items",
   'function Select-XmaDependencyRoot',
@@ -184,10 +188,26 @@ for (const forbidden of ['scripts/release/cli.ts', "@('run','build')", 'build:cl
 }
 
 
+const commonWindowsSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
+for (const marker of [
+  'function Get-XmaDiscoveredBunHomes',
+  '[IO.DriveInfo]::GetDrives()',
+  "Source = 'drive-scan'",
+  'Save-XmaBunEnvironmentState -ProjectRoot $ProjectRoot -BunHome $bunHome -Version $ExpectedVersion',
+  'function Get-XmaDiscoveredRustHomes',
+  "Join-Path $driveRoot 'xma-path\\rust'",
+  "Join-Path $driveRoot 'XMA\\Rust'",
+  'Save-XmaRustEnvironmentState -ProjectRoot $ProjectRoot -CargoHome $cargoHome -RustupHome $rustupHome',
+]) {
+  if (!commonWindowsSource.includes(marker)) throw new Error(`XMA offline dependency rediscovery contract missing: ${marker}`)
+}
+
 const cliConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
   'function Assert-CliJsDependencies',
   'function Resolve-XmaBunRuntime',
+  'Get-XmaDiscoveredBunHomes -ProjectRoot $Root -ExpectedVersion $BunVersion',
+  "Source -eq 'drive-scan'",
   'Get-XmaOpenTuiHomeFromBunHome -BunHome $bunRuntime.BunHome',
   "Join-Path $openTuiHome 'node_modules\\@opentui\\core\\package.json'",
   "Join-Path $openTuiHome 'node_modules\\@opentui\\solid\\package.json'",

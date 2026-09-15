@@ -146,71 +146,85 @@ function Read-XmaArrowMenuChoice {
   if ($Items.Count -lt 1) { throw '菜单至少需要一个选项。' }
   if ($DefaultChoice -lt 1 -or $DefaultChoice -gt $Items.Count) { $DefaultChoice = 1 }
 
-  # 中文说明：安装位置菜单直接在 `[1]/[2]/[3]` 三行上移动高亮，不额外打印“当前选择”状态行。
-  # Windows Terminal / ConsoleHost 用 ↑/↓ 循环移动、Enter 确认；数字键仍可直达。特殊 Host/重定向输入自动退回 Read-Host。
+  # 中文说明：安装位置菜单必须只有一份 `[1]/[2]/[3]` 选项。Windows Terminal / ConsoleHost 下由 RawUI
+  # 直接接管 ↑/↓/Enter/数字键；旧 Read-Host 只能作为不支持 RawUI 的 fallback，绝不能与动态菜单重复打印。
   $interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
+  $renderedInteractiveMenu = $false
   if ($interactive) {
     try {
-      $menuTop = [Console]::CursorTop
-      $bufferWidth = [Math]::Max(40, [Console]::BufferWidth - 1)
+      $rawUi = $Host.UI.RawUI
+      if ($null -eq $rawUi) { throw '当前 PowerShell Host 不提供 RawUI。' }
       $selected = $DefaultChoice
-      $directChoice = $null
+
+      # 先顺序输出一次完整菜单。这样即使后续 ReadKey 不受 Host 支持，fallback 也只补输入提示，不再复制三行选项。
+      for ($index = 0; $index -lt $Items.Count; $index++) {
+        $number = $index + 1
+        $prefix = if ($number -eq $selected) { '  > ' } else { '    ' }
+        $line = "$prefix[$number] $($Items[$index])"
+        if ($number -eq $selected) { Write-Host $line -ForegroundColor Green }
+        else { Write-Host $line -ForegroundColor Gray }
+      }
+      Write-Host '    ↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达' -ForegroundColor DarkGray
+      $renderedInteractiveMenu = $true
+
+      # 以已经完成输出后的真实 CursorPosition 反推菜单起点，避免窗口接近底部滚动后 menuTop 失真。
+      $resumePosition = $rawUi.CursorPosition
+      $menuTop = $resumePosition.Y - ($Items.Count + 1)
 
       while ($true) {
-        for ($index = 0; $index -lt $Items.Count; $index++) {
-          [Console]::SetCursorPosition(0, $menuTop + $index)
-          Write-Host (' ' * $bufferWidth) -NoNewline
-          [Console]::SetCursorPosition(0, $menuTop + $index)
-          $number = $index + 1
-          $prefix = if ($number -eq $selected) { '  > ' } else { '    ' }
-          $line = "$prefix[$number] $($Items[$index])"
-          if ($number -eq $selected) { Write-Host $line -NoNewline -ForegroundColor Green }
-          else { Write-Host $line -NoNewline -ForegroundColor Gray }
-        }
+        $key = $rawUi.ReadKey('NoEcho,IncludeKeyDown')
+        $next = $selected
+        $confirm = $false
 
-        [Console]::SetCursorPosition(0, $menuTop + $Items.Count)
-        Write-Host (' ' * $bufferWidth) -NoNewline
-        [Console]::SetCursorPosition(0, $menuTop + $Items.Count)
-        Write-Host '    ↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达' -NoNewline -ForegroundColor DarkGray
-
-        if ($null -ne $directChoice) {
-          [Console]::SetCursorPosition(0, $menuTop + $Items.Count + 1)
-          return [string]$directChoice
-        }
-
-        $key = [Console]::ReadKey($true)
-        if ($key.Key -eq [ConsoleKey]::UpArrow) {
-          $selected = if ($selected -le 1) { $Items.Count } else { $selected - 1 }
-          continue
-        }
-        if ($key.Key -eq [ConsoleKey]::DownArrow) {
-          $selected = if ($selected -ge $Items.Count) { 1 } else { $selected + 1 }
-          continue
-        }
-        if ($key.Key -eq [ConsoleKey]::Enter) {
-          [Console]::SetCursorPosition(0, $menuTop + $Items.Count + 1)
-          return [string]$selected
-        }
-
-        $digitText = [string]$key.KeyChar
-        if ($digitText -match '^\d$') {
-          $digit = [int]$digitText
-          if ($digit -ge 1 -and $digit -le $Items.Count) {
-            $selected = $digit
-            $directChoice = $digit
-            # 数字键属于“直达”：先把目标行高亮一帧，再立即确认，保持旧 1/2/3 操作速度。
-            continue
+        if ($key.VirtualKeyCode -eq 38) { # VK_UP
+          $next = if ($selected -le 1) { $Items.Count } else { $selected - 1 }
+        } elseif ($key.VirtualKeyCode -eq 40) { # VK_DOWN
+          $next = if ($selected -ge $Items.Count) { 1 } else { $selected + 1 }
+        } elseif ($key.VirtualKeyCode -eq 13) { # VK_RETURN
+          $confirm = $true
+        } else {
+          $digitText = [string]$key.Character
+          if ($digitText -match '^\d$') {
+            $digit = [int]$digitText
+            if ($digit -ge 1 -and $digit -le $Items.Count) {
+              $next = $digit
+              $confirm = $true
+            }
           }
+        }
+
+        if ($next -ne $selected) {
+          $selected = $next
+          # 只重绘三条真实选项行；不额外创建“当前选择”行，也不重复输出静态菜单。
+          for ($index = 0; $index -lt $Items.Count; $index++) {
+            $position = $rawUi.CursorPosition
+            $position.X = 0
+            $position.Y = $menuTop + $index
+            $rawUi.CursorPosition = $position
+            $number = $index + 1
+            $prefix = if ($number -eq $selected) { '  > ' } else { '    ' }
+            $line = "$prefix[$number] $($Items[$index])"
+            if ($number -eq $selected) { Write-Host $line -NoNewline -ForegroundColor Green }
+            else { Write-Host $line -NoNewline -ForegroundColor Gray }
+          }
+          $rawUi.CursorPosition = $resumePosition
+        }
+
+        if ($confirm) {
+          $rawUi.CursorPosition = $resumePosition
+          return [string]$selected
         }
       }
     } catch {
-      # Console API 在 ISE/某些重定向 Host 中不可用时，落回传统数字输入。
-      try { Write-Host '' } catch {}
+      # RawUI 不可用时退回数字输入。若三行动态菜单已经完整显示，只补一个输入提示，绝不再次打印选项。
+      try { if ($renderedInteractiveMenu) { Write-Host '[兼容] 当前终端不支持方向键菜单，请输入数字选择。' -ForegroundColor DarkGray } } catch {}
     }
   }
 
-  for ($index = 0; $index -lt $Items.Count; $index++) {
-    Write-Host ("    [{0}] {1}" -f ($index + 1), $Items[$index]) -ForegroundColor Gray
+  if (-not $renderedInteractiveMenu) {
+    for ($index = 0; $index -lt $Items.Count; $index++) {
+      Write-Host ("    [{0}] {1}" -f ($index + 1), $Items[$index]) -ForegroundColor Gray
+    }
   }
   while ($true) {
     $fallback = (Read-Host "$Prompt [$DefaultChoice]").Trim()
