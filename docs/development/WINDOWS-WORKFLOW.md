@@ -60,8 +60,9 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 `[1] 一键准备开发环境` 是首次运行和项目依赖变化后的统一入口。目标是把当前 XMA 源码要求的全部开发/运行依赖自动准备到可用状态：
 
 - Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 都先真实探测；缺失或不满足项目硬要求时自动安装/修正，已经满足要求则直接复用，不为了追新强制升级。`[1]` 的 Rust 首次缺失时自动使用 `<checkout>\xma-path` 默认依赖根；主菜单 `[9]` 仍可用于单独修复/重装并选择 D 盘或自定义真实盘符；
-- JavaScript 依赖下载统一交给 pnpm 与用户当前 npm registry 配置；`[1]` 不再测速/强切 npm 官方或 npmmirror。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间做 Rust 自身下载容错，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
-- `[1]` 的 Workspace JavaScript 同步固定为项目根原生 `pnpm install`，不附加 XMA 自定义 registry、reporter、prefer-offline 或 lockfile 参数。pnpm 自己负责解析/复用/下载/链接并直接显示原生进度；项目新增/调整依赖后重新运行 `[1]` 即同步。`[8]` 才调用 `scripts/runtime/update.mjs` 定向更新 Bun 与 OpenTUI/Solid latest。
+- JavaScript 依赖下载统一交给 pnpm；`[1]` 先验证当前 registry 的 npm ping 与 Bun/OpenTUI 实际 metadata。当前源是 npm 官方或批准的 npmmirror 时，可在二者之间仅对本次 install 临时切换；用户自定义/企业 registry 不自动切到公共源。所有临时 registry/timeout 配置在命令结束后恢复，不写入 npmrc。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间做 Rust 自身下载容错，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
+- `[1]` 的 Workspace JavaScript 同步固定为项目根**每次无条件执行一次原生 `pnpm install`**，与开发者手工在 PowerShell 中运行同一命令的行为一致。不得附加 `--reporter`、`--prefer-offline`、`--no-frozen-lockfile`、`confirmModulesPurge` 或 XMA 自定义 registry/timeout 参数，也不得用 prepare stamp/fingerprint 或 `node_modules` 是否存在来跳过。删除 `node_modules` 后重新运行 `[1]` 必须由 pnpm 重新创建；项目新增/调整依赖后同样由这一条命令自动同步。`[8]` 才调用 `scripts/runtime/update.mjs` 定向更新 Bun 与 OpenTUI/Solid latest。
+- PowerShell 输出流边界固定：Bootstrap 动作函数（`pnpm install`、`cargo fetch`、`npm/winget` 安装等）不得通过函数返回值向上层传递 native stdout，也不得把包含 native command 的函数直接赋值给业务变量。`pnpm install` 属于终端进度型命令，必须直接继承当前控制台 stdout/stderr，禁止 `Out-Host` 或其他 PowerShell pipeline，确保 `Scope / Packages / Progress`、同行刷新、Unicode/ANSI 与开发者手工执行完全一致；Runtime/路径等业务对象由独立 `Get-*`/探针函数读取。
 - `[8]` 的定向更新保留 manifest/lockfile 事务回滚；`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准。
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
@@ -141,6 +142,11 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作 pnpm Workspace Runtime：依赖声明继续使用 `latest`，但 `[1]` 只安装当前 lockfile/package 所需版本；只有 `[8]` 主动刷新 registry latest。依赖全部落在 `node_modules`。根 `node_modules/bun` 提供 Bun executable，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types-bun；不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除 `node_modules` 后回 `[1]`/`[8]` 重建。
+`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作 pnpm Workspace Runtime：依赖声明固定为当前 XMA 已验收稳定版本；只有 `[8]` 主动刷新 registry latest 并更新 manifest/lockfile。依赖全部落在 `node_modules`。根 `node_modules/bun` 提供 Bun executable，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types-bun；不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除 `node_modules` 后回 `[1]`/`[8]` 重建。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。
+
+
+### `[1]` Workspace JavaScript 依赖真值
+
+Windows `xma-dev.bat → [1]` **每次运行都必须在仓库根目录无条件执行一次原生 `pnpm install`**。不得因为 `node_modules` 已存在、prepare stamp/fingerprint 命中、工具探针通过或缓存存在而跳过；也不得给该命令套 registry/reporter/timeout 等 XMA 私有安装策略。`node_modules` 被删除时，pnpm 必须像开发者手工运行 `pnpm install` 一样重新创建并从 store/registry 恢复依赖；项目新增或调整依赖时，同一命令负责自动同步。

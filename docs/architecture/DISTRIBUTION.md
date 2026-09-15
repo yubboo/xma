@@ -159,3 +159,10 @@ Windows 源码开发的 JavaScript Runtime 全部位于 pnpm Workspace `node_mod
 ## Source-development JavaScript Runtime Bootstrap（0.1.0）
 
 源码开发首次准备与 CI/Release 都只执行一次 Workspace `pnpm install`，消费当前项目依赖；不会在准备/构建时顺便追 Runtime latest。`scripts/runtime/update.mjs` 只服务用户明确选择的 `[8]`，定向刷新 Bun 与 OpenTUI/Solid。普通用户安装仍只消费已构建 portable/release 资产，不需要 pnpm、Bun 或源码 Runtime updater。Electron Chromium Runtime 仍只能由 Desktop Electron 安装器在用户明确选择后下载。
+
+
+### `[1]` Workspace JavaScript 依赖真值
+
+Windows `xma-dev.bat → [1]` **每次运行都必须在仓库根目录无条件执行一次原生 `pnpm install`**。不得因为 `node_modules` 已存在、prepare stamp/fingerprint 命中、工具探针通过或缓存存在而跳过；也不得给该命令套 registry/reporter/timeout 等 XMA 私有安装策略。`node_modules` 被删除时，pnpm 必须像开发者手工运行 `pnpm install` 一样重新创建并从 store/registry 恢复依赖；项目新增或调整依赖时，同一命令负责自动同步。
+
+Windows PowerShell Bootstrap 还锁定“动作与返回值分离”：执行 `pnpm/cargo/npm/winget` 的动作函数只负责真实执行与实时终端输出，不返回业务对象；native success stream 必须送入 Host，避免上层 `$value = Function` 把安装进度捕获进变量。版本/路径/Runtime 信息必须由独立探针读取。

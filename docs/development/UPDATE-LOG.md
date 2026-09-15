@@ -633,3 +633,40 @@
 - 版本原则：项目硬要求不满足时脚本负责自动修正；已经满足要求时不为了“最新”强制升级。可选稳定版更新不得成为 `[1]` 的阻塞网络前置条件。
 - 边界：Electron Chromium Runtime 与 Tauri Rust crates 仍属于用户明确选择 Desktop 后的按需依赖，不进入通用 `[1]`；`[4]/[7]` 继续只消费已准备依赖，不偷偷联网。
 
+
+##56 · [1] pnpm 网络卡死根因修复
+
+- 根因：上一轮把 `[1]` 简化为原生 `pnpm install` 后，同时删除了所有 registry 可达性处理；在 npm 官方 registry 被当前网络阻断的 Windows 环境中，pnpm 会在首批 metadata 请求阶段长时间无进度。与此同时正式源码的 lockfile 仍需与 Bun/OpenTUI Workspace 声明保持同步，否则首次安装还会额外解析缺失 importer。
+- 修复：`[1]` 仍然只执行一次项目根 `pnpm install`，不追加 reporter/prefer-offline/lockfile 参数、不重复安装。若用户/项目已显式配置 registry 则完全尊重；只有未配置自定义 registry 且 npm 官方快速探针不可达时，才对该次 install 临时设置 `npm_config_registry=https://registry.npmmirror.com`，命令结束立即恢复，不写入 User/Machine/npmrc。
+- 依赖锁定：正式源码必须提交与 `package.json` / `pnpm-workspace.yaml` / `apps/cli/opentui-runtime/package.json` 一致的完整 `pnpm-lock.yaml`；`[1]` 负责安装当前项目依赖，不负责替仓库维护者现场生成缺失的正式 lockfile。
+
+##57 · pnpm install 无输出等待与 Runtime 版本边界修复
+
+- 现象：Windows `[1] -> [4/8]` 打印 `> pnpm.cmd install` 后可能长期没有 `resolved/reused/downloaded/added` 输出。实机同时存在用户 registry=npmmirror、反复测试产生的旧 `node_modules`，而 pnpm 11 在 modules purge 场景存在交互等待边界。
+- Runtime 边界：根 Bun 与 `apps/cli/opentui-runtime` 不再使用 `latest` manifest；固定当前已验收版本 Bun 1.4.2、OpenTUI 0.5.11、Solid 1.9.15、@types/bun 1.4.2。`[1]` 只安装项目已声明版本；`[8]` 才执行 `pnpm update --latest` 并更新 manifest/lockfile。
+- 安装可见性：`[1]` 仍然只有一次 Workspace `pnpm install`，增加 `--reporter=append-only` 让 PowerShell 5.1/Windows Terminal 稳定输出进度，并通过 `--config.confirmModulesPurge=false` 自动确认 pnpm 11 的 node_modules 重建提示，避免隐藏等待。
+- 网络失败：registry 不再只看 `/-/ping`，同时探测 Bun 与 OpenTUI metadata。npm 官方/npmmirror 可在探针失败时仅对本次 install 临时互相回退；自定义/企业 registry 不自动切公共源。fetch timeout=20s、retries=1，失败明确报错而不是无限黑屏；所有环境变量在 install 后恢复。
+- 边界：不引入第二遍 install，不恢复独立 Bun/OpenTUI 下载器，不使用 `--prefer-offline` / `--no-frozen-lockfile`，Electron Chromium 与 Tauri Rust crates 仍按 Desktop 选择后下载。
+
+##58 · `[1]` 原生 pnpm install 与 node_modules 恢复语义纠正
+
+- 现象：Windows 实机手工在项目根执行 `pnpm install` 能正常显示 `Scope / Packages / Progress: resolved/reused/downloaded/added` 并在删除 `node_modules` 后重新创建依赖；而 XMA `[1]` 的多轮修正曾引入 registry 探针、reporter/timeout/purge 参数和 Workspace prepare stamp，职责边界偏离 pnpm 原生安装语义，导致“环境检查通过”与“真实 node_modules 已安装”容易混淆。
+- 修复：`xma-dev.bat → [1]` 的 Workspace JavaScript 阶段固定为**每次运行无条件在项目根执行一次 `pnpm install`**。XMA 不再替 pnpm 判断“是否需要安装”，不使用 `workspace-js` stamp/fingerprint 跳过，不注入 registry/reporter/timeout/purge 参数。`node_modules` 不存在时明确提示由 pnpm 重新创建；已存在时由 pnpm 自己复用 store 并补齐新增/变更依赖。
+- Gate：Windows Gate 锁死唯一且精确的 `Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')`，禁止重新引入 `workspace-js` prepare stamp、Workspace fingerprint、registry 探针或 install 包装 flags。这样以后项目新增任意 Workspace/npm 依赖，用户重新运行 `[1]` 就与手工 `pnpm install` 得到同一安装行为。
+- 边界：`[8]` 仍是显式 JavaScript Runtime latest 刷新入口；`[4]/[7]/build` 继续只消费 `[1]` 已准备的 `node_modules`，不得偷偷联网安装。
+
+##59 · Windows Bootstrap 输出流重构
+
+- 日期：2026-09-15
+- 根因：实机在项目根手工执行 `pnpm install` 能立即显示 `Scope / Packages / Progress`，但 `[1]` 打印 `> pnpm.cmd install` 后看似卡住。原因不是 pnpm、registry 或依赖体积，而是 PowerShell success output stream 被上层赋值捕获：`$jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies` 会把函数内部 native stdout 一并收进 `$jsRuntime`，导致 pnpm 实时进度不进入终端，同时污染业务返回对象。`xma-common.ps1` 早已有“返回对象场景需 `Out-Host`”约束，但准备器没有落实。
+- 重构：`xma-prepare.ps1` 新增 Bootstrap 专用 `Invoke-XmaPrepareExternal`，统一把非交互准备命令的 native success stream 送到 Host；所有 `pnpm/npm/cargo/winget` 准备动作通过该边界执行。Workspace JS 进一步拆成 `Install-XmaWorkspaceJavaScriptDependencies`（只执行原生 `pnpm install`）、`Assert-XmaWorkspaceJavaScriptDependencies`（只验证）与 `Get-XmaWorkspaceJavaScriptRuntimeInfo`（只返回对象），禁止动作函数与对象读取混在同一个可赋值函数里。
+- 用户语义：`[1]` 每次仍无条件只执行一次项目根原生 `pnpm install`，不增加 registry/reporter/timeout/purge 参数。删除 `node_modules` 后重新运行 `[1]` 时，用户必须直接看到与手工命令相同的 pnpm 原生 `Scope / Packages / Progress`，随后再进入工具链验证与 Rust/MSVC 阶段。
+- Gate：Windows Gate 锁定 `Invoke-XmaPrepareExternal ... @('install')` 的唯一原生 install、`Out-Host` 输出边界、动作/读取分离，并禁止把 JS 安装动作函数赋值给 `$jsRuntime`。
+- 验证边界：Linux 构建环境无法冒充 Windows PowerShell 5.1 实机；完成 Runtime 单测、静态 Gate、PowerShell BOM+CRLF、Source Manifest/ZIP 完整性后，仍以 Windows 删除 `node_modules` 后执行 `[1]` 为最终 E2E。
+
+##60 · Windows pnpm 原生终端输出与乱码修复
+
+- 实机确认：`[1]` 已能下载依赖，但上一批为避免 native stdout 被业务变量捕获，在 Bootstrap 动作层统一使用 `| Out-Host`。这会让 Windows PowerShell 5.1 接管 pnpm stdout，把 pnpm 用 carriage return (`\r`) 实现的同一行 `Progress` 刷新拆成逐行输出，同时引入额外的文本解码/再编码边界，出现 Unicode/ANSI 乱码。
+- 修复：`[1]` 的唯一 Workspace 安装改为直接 `Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')`，不再经过 `Invoke-XmaPrepareExternal -> Out-Host`。安装动作与 Runtime 读取仍严格分离，因此 stdout 不会被赋值捕获；pnpm 直接继承 Windows Terminal，显示行为与开发者在项目根手工执行 `pnpm install` 一致。
+- Gate：Windows Gate 明确禁止 `pnpm install` 所在函数出现 `Out-Host`/`ForEach-Object`/管道式 `Write-Host`，并继续要求 `[1]` 只有一次完全原生 `pnpm install`。其它确实需要隔离返回值的非交互 Bootstrap 命令保持现有动作边界。版本仍为 `0.1.0`。
+

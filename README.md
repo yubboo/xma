@@ -69,7 +69,7 @@ XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默�
 
 首次进入菜单选择 `[1] 一键准备开发环境`。它的职责只有一个：**把当前这份 XMA 源码需要的开发/运行工具与依赖全部准备到可用状态**。Windows 会检查 Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 与 Cargo crates；缺失或低于项目硬要求时自动安装/修正，已经满足要求的稳定可用版本直接复用，不为了追“最新”强制升级。Bun、OpenTUI、Solid 与 `@types/bun` 已并入 pnpm Workspace，JavaScript 依赖同步就是在项目根直接执行标准 `pnpm install`。以后项目新增 package、Workspace 或调整依赖版本，用户更新源码后重新运行一次 `[1]` 即会自动补齐。
 
-`[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析完全交给 pnpm 及用户当前 npm registry 配置；XMA 不再为 `[1]` 做 npm/npmmirror 测速、强制切源、隐藏 reporter 或重复 install。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
+`[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析交给 pnpm；`[1]` 只执行一次 `pnpm install`。若用户/项目没有自定义 registry 且 npm 官方快速探针不可达，本次安装会临时回退 npmmirror，结束后立即恢复环境，不写入用户 pnpm/npm 配置；不会隐藏 reporter 或重复 install。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
 
 JavaScript 依赖统一位于 Workspace `node_modules/`：根 `node_modules/bun` 提供 Bun Runtime，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types/bun。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/bun`、`xma-path/opentui`、`xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做清理/迁移兼容，不再作为当前 JavaScript Runtime。
 

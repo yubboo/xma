@@ -96,7 +96,7 @@ if (prepareSource.includes("New-Object 'System.Collections.Generic.HashSet[strin
   throw new Error('PowerShell 5.1 preparation path/source dedupe must use native hashtables instead of fragile generic HashSet constructor binding.')
 }
 
-// Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. [1] installs current dependencies once; [8] alone refreshes latest; [4]/[7]/build only consume installed files.
+// Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. Every [1] runs one plain root pnpm install; [8] alone refreshes latest; [4]/[7]/build only consume installed files.
 const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }
 const openTuiRuntimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
 if (rootRuntimePackage.devDependencies?.bun !== 'latest') throw new Error('Root Bun dependency must use registry tag latest; [8] owns the explicit refresh boundary.')
@@ -123,10 +123,17 @@ for (const marker of [
   'function Get-XmaWorkspaceJavaScriptRuntimeInfo',
   "Join-Path $Root 'node_modules\\bun\\package.json'",
   "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
+  'function Invoke-XmaPrepareExternal',
+  'pnpm install 直接继承当前控制台 stdout/stderr，不经过 Out-Host 或其他 PowerShell pipeline',
   'function Install-XmaWorkspaceJavaScriptDependencies',
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')",
+  '[状态] node_modules 不存在；pnpm 将重新创建并恢复当前 Workspace 全部依赖。',
+  '[状态] node_modules 已存在；仍执行 pnpm install，由 pnpm 自己复用 store、补齐新增/变更依赖。',
+  'function Assert-XmaWorkspaceJavaScriptDependencies',
+  'function Prepare-XmaCurrentJavaScriptDependencies',
+  '动作与读取严格分离',
   'function Invoke-XmaManagedJavaScriptLatestUpdate',
-  "Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
+  "Invoke-XmaPrepareExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
   '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
   'Workspace JavaScript 依赖直接执行原生 pnpm install',
   'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules',
@@ -139,11 +146,31 @@ for (const marker of [
   if (!prepareSource.includes(marker)) throw new Error(`pnpm Workspace JS Runtime contract regression: missing ${marker}`)
 }
 if (prepareSource.includes('baseline install → Bun latest')) throw new Error('Windows [1] must not use the old five-stage Runtime bootstrap.')
-for (const forbidden of ['--no-frozen-lockfile','--prefer-offline','--reporter=append-only']) {
-  const installLine = prepareSource.split('\n').find((line) => line.includes("Invoke-XmaExternal -FilePath 'pnpm.cmd'") && line.includes("'install'")) ?? ''
-  if (installLine.includes(forbidden)) throw new Error(`Windows [1] must delegate dependency sync to plain pnpm install; forbidden wrapper flag: ${forbidden}`)
+const installLines = prepareSource.split('\n').filter((line) => line.includes("Invoke-XmaExternal -FilePath 'pnpm.cmd'") && line.includes("'install'"))
+if (installLines.length !== 1) throw new Error('Windows [1] must execute exactly one Workspace pnpm install.')
+if (installLines[0].trim() !== "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')") {
+  throw new Error(`Windows [1] must delegate dependency sync to the exact plain pnpm install command; got: ${installLines[0].trim()}`)
 }
-if (!prepareSource.includes("if ($Component -eq 'js') { [void](Ensure-XmaWorkspaceJavaScriptDependencies); exit 0 }")) throw new Error('Windows js component must install current Workspace dependencies only.')
+const pnpmInstallFunction = prepareSource.slice(
+  prepareSource.indexOf('function Install-XmaWorkspaceJavaScriptDependencies'),
+  prepareSource.indexOf('function Invoke-XmaManagedJavaScriptLatestUpdate'),
+)
+if (pnpmInstallFunction.includes('Out-Host') || pnpmInstallFunction.includes('| ForEach-Object') || pnpmInstallFunction.includes('| Write-Host')) {
+  throw new Error('Windows [1] pnpm install must inherit the console directly; PowerShell pipelines break same-line progress rendering and can corrupt Unicode output.')
+}
+for (const forbidden of ['--no-frozen-lockfile','--prefer-offline','--reporter=append-only','--config.confirmModulesPurge','npm_config_registry','Resolve-XmaWorkspaceInstallRegistry','Test-XmaWorkspaceRegistry']) {
+  if (prepareSource.includes(forbidden)) throw new Error(`Windows [1] must not wrap plain pnpm install with custom dependency/download policy: ${forbidden}`)
+}
+if (prepareSource.includes("Test-XmaPrepareStamp -Name 'workspace-js'") || prepareSource.includes("Set-XmaPrepareStamp -Name 'workspace-js'")) {
+  throw new Error('Windows [1] must never use a workspace-js prepare stamp to skip pnpm install; pnpm itself is the dependency truth.')
+}
+if (prepareSource.includes('Get-XmaWorkspaceDependencyFingerprint')) {
+  throw new Error('Windows [1] must not maintain a second Workspace dependency fingerprint; every [1] runs pnpm install.')
+}
+if (prepareSource.includes('$jsRuntime = Prepare-XmaCurrentJavaScriptDependencies') || prepareSource.includes('$jsRuntime = Install-XmaWorkspaceJavaScriptDependencies')) {
+  throw new Error('Windows bootstrap must not capture an action function that executes native commands; native stdout must remain visible in the Host.')
+}
+if (!prepareSource.includes("if ($Component -eq 'js') { Prepare-XmaCurrentJavaScriptDependencies; exit 0 }")) throw new Error('Windows js component must install and validate current Workspace dependencies only.')
 if (!prepareSource.includes("if ($Component -eq 'bun') { Prepare-XmaJavaScriptOnly; exit 0 }")) throw new Error('Windows bun component must remain the explicit latest refresh path.')
 const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
 for (const marker of ['JavaScript Runtime · Windows PowerShell 5.1', 'shell: powershell', '.\\scripts\\windows\\xma-prepare.ps1 -Component js', 'pnpm build:cli', 'pnpm smoke:cli']) {
@@ -191,7 +218,6 @@ if (prepareSource.includes('[Console]::ReadKey') || prepareSource.includes('[Con
   throw new Error('Dependency arrow menu must use PowerShell Host RawUI; System.Console cursor/read APIs regress in Windows Terminal hosts.')
 }
 for (const marker of [
-  'https://registry.npmmirror.com',
   'function Get-XmaRustupSource',
   'https://rsproxy.cn',
   'RUSTUP_DIST_SERVER',
@@ -211,7 +237,6 @@ for (const marker of [
   '请输入真实盘符，例如 E',
   'function Ensure-XmaRustToolchain',
   'function Install-XmaRustStable',
-  '主菜单 [9] 单独安装',
   'rustup-init SHA-256 校验通过',
   'RUSTUP_INIT_SKIP_PATH_CHECK',
   "@('toolchain','install','stable','--profile','minimal')",
@@ -225,7 +250,7 @@ for (const marker of [
   '[JS Runtime] Bun ',
   '[Rust/Cargo] 依赖根：',
   '[控制状态]',
-  "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
+  "Invoke-XmaPrepareExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime',
   'function Install-XmaDevelopmentCommands',
@@ -236,7 +261,6 @@ for (const marker of [
   '[8/8] 开发态 Xiaoyu 命令',
   'Cargo 指纹未变化；仍验证实际 crate 缓存',
   'cargo fetch 完成后 offline 复检通过',
-  '选择 N 会跳过',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -282,7 +306,7 @@ for (const marker of [
   'function Assert-XmaCargoOfflineReady',
   'Rust/Cargo 环境已恢复：CARGO_HOME=',
   '[8] 刷新 · JavaScript Runtime',
-  '[9] 单独安装 · Rust / Cargo',
+  '[9] 单独准备 · Rust / Cargo',
   '[10] 更新项目',
   "'js' { Prepare-JavaScriptRuntime }",
   "'bun' { Prepare-JavaScriptRuntime }",
@@ -337,7 +361,7 @@ for (const marker of [
   if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
 }
 if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
-if (!commonSource.includes('调用非交互安装命令必须显式 `| Out-Host`')) throw new Error('Invoke-XmaExternal pipeline-output contract documentation missing')
+if (!commonSource.includes('终端进度型命令（尤其 pnpm install）必须直接调用本函数')) throw new Error('Invoke-XmaExternal native-terminal output contract documentation missing')
 
 for (const file of ['scripts/windows/xma-prepare.ps1','scripts/windows/xma-github.ps1','scripts/windows/xma-console.ps1','scripts/windows/xma-build-release.ps1']) {
   const text = readFileSync(file, 'utf8')

@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：[1] 自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript 依赖、Rust/Cargo、MSVC 与 Native crates 全部就绪；JavaScript 依赖直接执行原生 pnpm install，项目新增/调整依赖后重新运行 [1] 即同步；已满足项目版本要求的工具直接复用，不为追新强制升级；[8] 仅用于用户明确要求的 Bun/OpenTUI/Solid latest 刷新；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：[1] 自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript 依赖、Rust/Cargo、MSVC 与 Native crates 全部就绪；JavaScript 每次运行 [1] 都在项目根无条件执行一次原生 pnpm install，native stdout 通过 Host 实时显示，安装动作与 Runtime 对象读取严格分离；node_modules 缺失时重新创建、存在时由 pnpm 自行校验/复用/补齐；已满足项目版本要求的工具直接复用，不为追新强制升级；[8] 仅用于用户明确要求的 Bun/OpenTUI/Solid latest 刷新；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -33,22 +33,6 @@ function Get-XmaFingerprint([string[]]$Paths, [string]$Salt = '') {
   $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
   $sha = [Security.Cryptography.SHA256]::Create()
   try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
-}
-
-function Get-XmaWorkspaceDependencyFingerprint {
-  $files = @((Join-Path $Root 'package.json'), (Join-Path $Root 'pnpm-lock.yaml'), (Join-Path $Root 'pnpm-workspace.yaml'))
-  foreach ($group in @('apps','agents','packages','plugins')) {
-    $groupRoot = Join-Path $Root $group
-    if (-not (Test-Path -LiteralPath $groupRoot -PathType Container)) { continue }
-    foreach ($directory in (Get-ChildItem -LiteralPath $groupRoot -Directory -ErrorAction SilentlyContinue)) {
-      $packageFile = Join-Path $directory.FullName 'package.json'
-      if (Test-Path -LiteralPath $packageFile -PathType Leaf) { $files += $packageFile }
-    }
-  }
-  $corePackage = Join-Path $Root 'core\package.json'
-  if (Test-Path -LiteralPath $corePackage -PathType Leaf) { $files += $corePackage }
-  $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-  return Get-XmaFingerprint -Paths $files -Salt "pnpm=11.17.0;os=windows;arch=$arch"
 }
 
 function Get-XmaCargoDependencyFingerprint {
@@ -125,6 +109,18 @@ function Ensure-XmaWinget {
   if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
     throw '未检测到 winget。请先安装或更新 Microsoft App Installer，再重新运行 XMA。'
   }
+}
+
+function Invoke-XmaPrepareExternal {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @(),
+    [switch]$QuietCommand
+  )
+
+  # 仅供行式输出的 Bootstrap 动作使用：Out-Host 消费 success stream，避免这些命令的 stdout 污染业务返回对象。
+  # 禁止用本包装器执行 pnpm install 等终端进度型命令；PowerShell pipeline 会破坏 carriage-return 同行刷新并可能触发转码乱码。
+  Invoke-XmaExternal -FilePath $FilePath -ArgumentList $ArgumentList -QuietCommand:$QuietCommand | Out-Host
 }
 
 
@@ -723,7 +719,7 @@ function Ensure-XmaMsvc {
   Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools；这是 XMA Windows Native 构建必需工具，正在自动安装。' -ForegroundColor Yellow
   Ensure-XmaWinget
   Write-Host '[安装] 正在安装 Visual Studio 2022 Build Tools + C++ Toolchain，这一步可能需要几分钟...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @(
+  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @(
     'install','--id','Microsoft.VisualStudio.2022.BuildTools','--exact',
     '--accept-source-agreements','--accept-package-agreements',
     '--override','--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
@@ -748,7 +744,7 @@ function Ensure-XmaCargoCrates($RustRuntime) {
   }
   Write-Host "[同步] 当前 CARGO_HOME 缺少 Cargo.lock 所需 crates：$cargoHome" -ForegroundColor Yellow
   Write-Host '[同步] 准备入口允许联网，现在开始 cargo fetch --locked...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')
+  Invoke-XmaPrepareExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')
   if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $RustRuntime.CargoExe)) {
     throw "Rust crates 下载后仍无法离线解析。请检查 CARGO_HOME/网络/代理：$cargoHome"
   }
@@ -891,41 +887,42 @@ function Get-XmaWorkspaceJavaScriptRuntimeInfo {
 }
 
 function Install-XmaWorkspaceJavaScriptDependencies {
-  Write-Host '[安装] 正在同步 XMA 当前源码所需的全部 Workspace JavaScript 依赖...' -ForegroundColor Cyan
-  Write-Host '[pnpm] 直接执行项目根 pnpm install；依赖新增、删除或版本调整后重新运行 [1] 即可同步。' -ForegroundColor DarkGray
-  Write-Host '[进度] 以下为 pnpm 原生实时输出；XMA 不接管 registry、不隐藏 reporter、不重复执行 install。' -ForegroundColor DarkCyan
+  Write-Host '[安装] 正在项目根执行原生 pnpm install...' -ForegroundColor Cyan
+  if (-not (Test-Path -LiteralPath (Join-Path $Root 'node_modules') -PathType Container)) {
+    Write-Host '[状态] node_modules 不存在；pnpm 将重新创建并恢复当前 Workspace 全部依赖。' -ForegroundColor Yellow
+  } else {
+    Write-Host '[状态] node_modules 已存在；仍执行 pnpm install，由 pnpm 自己复用 store、补齐新增/变更依赖。' -ForegroundColor DarkCyan
+  }
+  Write-Host '[pnpm] 以下直接交给 pnpm/Windows Terminal 原生渲染；不经过 PowerShell pipeline，保持同一行进度刷新与原始字符编码。' -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')
-  Write-Host '[完成] Workspace JavaScript 依赖已按当前项目声明同步。' -ForegroundColor Green
+  Write-Host '[完成] pnpm install 已完成。' -ForegroundColor Green
 }
 
 function Invoke-XmaManagedJavaScriptLatestUpdate {
   Write-Host '[更新] 正在刷新 XMA JS Runtime：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
-  Write-Host '[策略] [8] 是显式升级入口；使用 pnpm 当前配置的 registry，不修改用户 registry。' -ForegroundColor DarkGray
-  Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')
+  Write-Host '[策略] [8] 是显式升级入口；使用 pnpm 当前配置，不改变 [1] 的普通安装语义。' -ForegroundColor DarkGray
+  Invoke-XmaPrepareExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')
   Write-Host '[完成] Workspace JavaScript Runtime latest 刷新完成。' -ForegroundColor Green
 }
 
-function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
-  if ($RefreshLatest) { Invoke-XmaManagedJavaScriptLatestUpdate }
-  else { Install-XmaWorkspaceJavaScriptDependencies }
-
-  Write-Host '[安全] pnpm lifecycle 仅允许 bun + esbuild；electron/electron-winstaller/koffi 显式拒绝，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
-
+function Assert-XmaWorkspaceJavaScriptDependencies {
   $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
   $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
   $tsc = Join-Path $Root 'node_modules\.bin\tsc.cmd'
   $tsup = Join-Path $Root 'node_modules\.bin\tsup.cmd'
-  foreach ($tool in @($tsx,$vite,$tsc,$tsup)) { if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Workspace JavaScript 工具缺失：$tool" } }
+  foreach ($tool in @($tsx,$vite,$tsc,$tsup)) {
+    if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "Workspace JavaScript 工具缺失：$tool" }
+  }
 
   $runtime = Get-XmaWorkspaceJavaScriptRuntimeInfo
-  if (-not $runtime) { throw 'Bun/OpenTUI Workspace Runtime 未完整进入 node_modules。请检查 pnpm install 输出后重试。' }
+  if (-not $runtime) { throw 'Bun/OpenTUI Workspace Runtime 未完整进入 node_modules。请检查上方 pnpm install 原生输出。' }
 
   Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
+  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
+  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
+  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
+  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
+  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
 
   $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
   $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
@@ -937,14 +934,22 @@ function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
   Write-Host "[通过] Workspace JS Runtime：Bun $($runtime.BunVersion) · OpenTUI core $($runtime.OpenTuiCoreVersion) / solid $($runtime.OpenTuiSolidVersion) · Solid $($runtime.SolidJsVersion)" -ForegroundColor Green
   Write-Host "[Bun] $($runtime.BunExe)" -ForegroundColor DarkGray
   Write-Host '[位置] Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules。' -ForegroundColor DarkGray
-  return $runtime
+}
+
+function Prepare-XmaCurrentJavaScriptDependencies {
+  # 动作与读取严格分离：pnpm install 直接继承当前控制台 stdout/stderr，不经过 Out-Host 或其他 PowerShell pipeline。
+  # 这样 pnpm 的 carriage-return 进度条与 Unicode/ANSI 输出和开发者手工执行 pnpm install 保持一致。
+  # 禁止把本动作函数赋值给变量；Runtime 对象必须在安装完成后由 Get-* 单独读取。
+  Install-XmaWorkspaceJavaScriptDependencies
+  Assert-XmaWorkspaceJavaScriptDependencies
 }
 
 function Prepare-XmaJavaScriptOnly {
   Write-Host '====================================================================' -ForegroundColor DarkCyan
   Write-Host '  XMA · 刷新 JavaScript Runtime' -ForegroundColor Cyan
   Write-Host '====================================================================' -ForegroundColor DarkCyan
-  [void](Ensure-XmaWorkspaceJavaScriptDependencies -RefreshLatest)
+  Invoke-XmaManagedJavaScriptLatestUpdate
+  Assert-XmaWorkspaceJavaScriptDependencies
   Remove-XmaLegacyLocalDirectory
   Remove-XmaLegacyProjectControlState
   Remove-XmaPackageMetadataFromGitWorktree
@@ -966,7 +971,7 @@ function Prepare-XmaRustOnly {
   Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
-if ($Component -eq 'js') { [void](Ensure-XmaWorkspaceJavaScriptDependencies); exit 0 }
+if ($Component -eq 'js') { Prepare-XmaCurrentJavaScriptDependencies; exit 0 }
 if ($Component -eq 'bun') { Prepare-XmaJavaScriptOnly; exit 0 }
 if ($Component -eq 'rust') { Prepare-XmaRustOnly; exit 0 }
 
@@ -986,7 +991,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) { Write-Host "[通过] �
 else {
   Write-Host '[缺少] 当前没有检测到 Git；这是 XMA 源码开发必需工具，正在自动安装稳定版。' -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
   if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw 'Git 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
   Write-Host "[完成] Git 安装完成：$(& git.exe --version)" -ForegroundColor Green
@@ -998,7 +1003,7 @@ Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js；XMA 要求 Node.js 22+，正在自动安装 Node.js LTS。' -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
 }
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { throw 'Node.js 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
@@ -1007,7 +1012,7 @@ $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
 if ($major -lt 22) {
   Write-Host "[过旧] 当前 $nodeVersion，低于 XMA 硬要求 Node.js 22+；正在自动升级到受支持的 LTS。" -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
   $nodeVersion = (& node.exe --version).Trim(); $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
   if ($major -lt 22) { throw "Node.js 升级后仍低于 22：$nodeVersion。" }
@@ -1031,7 +1036,7 @@ if (-not $pnpmCompatible) {
   } else {
     Write-Host '[缺少] 当前没有检测到 pnpm；正在自动安装项目基准稳定版 11.17.0。' -ForegroundColor Yellow
   }
-  Invoke-XmaExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
+  Invoke-XmaPrepareExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
   Refresh-XmaPath
   $pnpmVersion = (& pnpm.cmd --version).Trim()
   try {
@@ -1045,10 +1050,9 @@ Write-Host '[版本策略] 兼容的 pnpm 11.x 直接复用；只有缺失、低
 
 Write-Host ''
 Write-Host '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain' -ForegroundColor Cyan
-Write-Host '[检查] 正在执行项目标准 pnpm install，同步当前 XMA Workspace 全部 JavaScript 依赖...' -ForegroundColor DarkCyan
-$jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies
-$workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
-Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
+Write-Host '[同步] 每次 [1] 都在项目根无条件执行一次原生 pnpm install；依赖状态完全交给 pnpm。' -ForegroundColor DarkCyan
+Prepare-XmaCurrentJavaScriptDependencies
+$jsRuntime = Get-XmaWorkspaceJavaScriptRuntimeInfo
 
 Write-Host ''
 Write-Host '[5/8] Rust / Cargo' -ForegroundColor Cyan
