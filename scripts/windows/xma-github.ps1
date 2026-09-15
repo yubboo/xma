@@ -68,7 +68,7 @@ function Ensure-GitRepo {
 }
 
 function Test-ForbiddenGitPath([string]$Path) {
-  $normalized = $Path.Replace('\','/').TrimStart('./')
+  $normalized = $Path.Replace('\','/').TrimStart([char[]]@('.','/'))
   $directoryRules = @(
     'node_modules/', '.pnpm-store/', '.cache/', '.turbo/',
     'dist/', 'build/', 'coverage/', '.xma/', '.xma-package/', 'xma-path/',

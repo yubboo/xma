@@ -82,7 +82,7 @@ function Refresh-XmaPath {
     foreach ($entry in ([string]$source -split ';')) {
       $candidate = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
       if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
-      $normalized = $candidate.TrimEnd([char[]]@('\\','/'))
+      $normalized = $candidate.TrimEnd([char[]]@('\','/'))
       $seenKey = $normalized.ToLowerInvariant()
       if (-not $seen.ContainsKey($seenKey)) {
         $seen[$seenKey] = $true
@@ -227,7 +227,7 @@ function Ensure-XmaRustToolchain {
   Write-Host "[通过] $((($cargoProbe.Output -join ' ').Trim()))" -ForegroundColor Green
   Write-Host "[通过] $((($rustfmtProbe.Output -join ' ').Trim()))" -ForegroundColor Green
   Write-Host '[版本策略] 项目本地 stable 可用即复用；只有缺失/损坏时才自动修复，不为了追新强制升级。' -ForegroundColor DarkGray
-  Write-Host "[位置] runtime\\rust · CARGO_HOME=$($runtime.CargoHome) · RUSTUP_HOME=$($runtime.RustupHome)" -ForegroundColor DarkGray
+  Write-Host "[位置] runtime\rust · CARGO_HOME=$($runtime.CargoHome) · RUSTUP_HOME=$($runtime.RustupHome)" -ForegroundColor DarkGray
   return $runtime
 }
 
@@ -330,7 +330,7 @@ function Remove-XmaLegacyLocalDirectory {
     (Join-Path $legacyRoot 'tools'),
     (Join-Path $legacyRoot 'dev-bin'),
     (Join-Path $legacyRoot 'state\prepare'),
-    (Join-Path $legacyRoot 'state\bun-environment.json'),
+    (Join-Path $legacyRoot 'state\bun-environment.json')
   )) { Remove-Item -LiteralPath $legacy -Recurse -Force -ErrorAction SilentlyContinue }
   try {
     $children = @(Get-ChildItem -LiteralPath $legacyRoot -Force -ErrorAction SilentlyContinue)

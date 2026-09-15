@@ -50,22 +50,14 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 
-// Rust/Cargo 使用标准 rustup 用户工具链。Windows Gate 只锁定真实命令解析、winget/rustup 安装与当前会话 PATH；禁止恢复私有盘符扫描/状态机。
+// Rust/Cargo 使用 checkout 本地 runtime/rust；旧用户目录/盘符扫描/状态机不得恢复。
 const discoveryCommonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
-for (const marker of [
-  'function Resolve-XmaRustRuntime',
-  "Join-Path $env:USERPROFILE '.cargo'",
-  'Add-XmaProcessPathFront -Directory $cargoBin',
-  'Invoke-XmaProbe -FilePath $cargoExe',
-  'Invoke-XmaProbe -FilePath $rustcExe',
-]) {
-  if (!discoveryCommonSource.includes(marker)) throw new Error(`XMA standard Rust resolver contract regression: missing ${marker}`)
-}
 for (const forbidden of [
   'function Get-XmaDiscoveredRustHomes', 'function Import-XmaRustEnvironment', 'function Save-XmaRustEnvironmentState',
   "Join-Path $driveRoot 'xma-path\\rust'", "Join-Path $driveRoot 'XMA\\Rust'", "Source = 'drive-scan'",
+  "Join-Path $env:USERPROFILE '.cargo'", "Join-Path $env:USERPROFILE '.rustup'",
 ]) {
-  if (discoveryCommonSource.includes(forbidden)) throw new Error(`XMA must not restore private Rust state/drive scanning: ${forbidden}`)
+  if (discoveryCommonSource.includes(forbidden)) throw new Error(`XMA must not restore legacy/user-profile Rust state: ${forbidden}`)
 }
 for (const legacyBunState of ['Import-XmaBunEnvironment', 'Save-XmaBunEnvironmentState', 'Get-XmaDiscoveredBunHomes', 'Get-XmaBunEnvironmentStatePath', 'XMA_BUN_HOME']) {
   if (discoveryCommonSource.includes(legacyBunState)) throw new Error(`Bun must be pnpm/node_modules-managed; legacy Bun state helper remains in xma-common.ps1: ${legacyBunState}`)
@@ -338,6 +330,27 @@ const windowsPowerShellFiles = readdirSync('scripts/windows')
   .filter(file => file.endsWith('.ps1'))
   .map(file => `scripts/windows/${file}`)
 const windowsPowerShellSources = windowsPowerShellFiles.map(file => readFileSync(file, 'utf8')).join('\n')
+const danglingPowerShellComma = /,\s*\r?\n\s*[)\]}]+(?:\s*\{|\s*$)/m
+for (const file of windowsPowerShellFiles) {
+  const text = readFileSync(file, 'utf8')
+  if (danglingPowerShellComma.test(text)) {
+    throw new Error(`PowerShell syntax regression: dangling comma before closing delimiter: ${file}`)
+  }
+
+  // Windows PowerShell 5.1 中，反斜杠不是字符串转义符：'\\\\' 是两个字符，不能被转为 System.Char。
+  // 所有显式 [char[]] 数组元素都必须是单字符字面量；TrimStart/TrimEnd 若要裁剪多个字符，必须显式传 char[]。
+  for (const match of text.matchAll(/\[char\[\]\]@\(([^)]*)\)/g)) {
+    for (const literal of match[1]!.matchAll(/'([^']*)'/g)) {
+      if ([...literal[1]!].length !== 1) {
+        throw new Error(`PowerShell char-array literal must contain exactly one character per item: ${file}: '${literal[1]}'`)
+      }
+    }
+  }
+  const multiCharTrim = text.match(/\.Trim(?:Start|End)\(\s*'([^']{2,})'\s*\)/)
+  if (multiCharTrim) {
+    throw new Error(`PowerShell TrimStart/TrimEnd multi-character literal must use explicit [char[]]: ${file}: '${multiCharTrim[1]}'`)
+  }
+}
 const xmaFunctionDefinitions = new Set(
   Array.from(windowsPowerShellSources.matchAll(/^\s*function\s+([A-Za-z][A-Za-z0-9-]+)/gim), match => match[1]),
 )

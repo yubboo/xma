@@ -29,6 +29,7 @@
 - Terminal 主命令固定为 `xiaoyu`，`xma` 仅兼容；普通用户只安装预构建资产，installer 不得 clone 源码或要求 pnpm/cargo/MSVC。
 - 不提交 Secret、node_modules、target、dist、根 runtime、用户 Workspace 或发布包。
 - Windows 外部命令统一走 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
+- Windows PowerShell 5.1 源码在正式封包前必须通过静态语法合同；数组/参数列表最后一项禁止遗留尾逗号（逗号后直接闭合 `)`/`]`/`}`），避免脚本加载阶段直接失败。
 - Windows 短命令版本/能力探测统一复用 `xma-common.ps1 -> Invoke-XmaProbe` 返回 `{ ExitCode, Output }`；只允许用于 `--version`/`fmt --version` 等静默探测，禁止拿它执行 `pnpm install`/下载/构建等需要实时终端输出的动作。
 - 公共源码开发和维护者 Source Sync 都必须支持任意本地目录/盘符：Windows canonical 流程固定 `git clone https://github.com/yubboo/xma.git` → `cd xma` → `.\xma-dev.bat`，Linux/macOS 同一 clone 后使用 `./xma-dev`；`XMA-Sync.bat` 只复用已存在、origin 正确的 XMA Git 工作目录；唯一候选可自动复用，多候选/无候选必须让维护者选择或输入已 clone 仓库路径，禁止自动创建 `xma/xma-worktree-*`，`XMA_TARGET_ROOT` 只用于显式指定现有仓库；源码开发入口与安装后的正式 `xma` 产品命令必须严格区分。
 - 命名遵循 XMA 统一规则：目录/TS 用小写 kebab-case，Rust 用 snake_case，`.` 只用于 test/config/d 等语义角色；普通名字 1～3 个核心词，父目录去重，同逻辑不碎拆，完成前运行 `pnpm gate:naming`。

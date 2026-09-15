@@ -726,3 +726,22 @@
 - 运行：Windows `[4]/[7]/Desktop Tauri` 只解析当前项目 `runtime/rust/cargo/bin/{cargo,rustc,rustup}.exe`，不回退系统 PATH、用户 `%USERPROFILE%\.cargo` 或旧 checkout state；Cargo crates 也进入项目本地 CARGO_HOME，构建 target 继续进入 `.cache/cargo-target`。
 - 清理：删除旧 Rust 安装/恢复/盘符选择/整盘扫描/`Get-XmaLocalPathRoot` 运行逻辑；`[1]/[9]` 若发现当前项目根旧 `xma-path/rust` 与 Rust state 文件会安全删除，随后只使用 `runtime/rust`。`xma-path/` 的 Git ignore 仅用于防止历史本地目录误提交，不再承担 Rust 功能。
 - 版本：保持 `0.1.0`。
+
+##67 · Windows PowerShell 5.1 尾逗号语法修复
+
+- 日期：2026-09-15
+- 实机现象：`xma-dev.bat → [1]` 在进入任何准备步骤之前，Windows PowerShell 5.1 解析 `scripts/windows/xma-prepare.ps1` 失败，定位到旧目录清理数组末项 `(Join-Path $legacyRoot 'state\bun-environment.json'),`，报“`,` 后面缺少表达式”。
+- 根因：Rust 项目本地 Runtime 收口时删除了后续旧清理项，却遗留数组最后一个元素的尾逗号。Windows PowerShell 5.1 不接受这种尾逗号，因此脚本在加载阶段直接失败，和 Git/Node/pnpm/Rust 实际安装流程无关。
+- 修复：移除 `Remove-XmaLegacyLocalDirectory` 数组末项尾逗号；Windows Gate 新增所有 `scripts/windows/*.ps1` 的“逗号后直接闭合分隔符”静态检查，后续同类编辑会在封包前直接失败。
+- 验证：PowerShell 源码继续保持 UTF-8 BOM + CRLF；Windows helper 闭包、Runtime 定向测试、Source Manifest/ZIP 完整性继续纳入正式包回归。版本保持 `0.1.0`。
+
+
+
+##68 · Windows PowerShell 5.1 路径字符字面量修复
+
+- 日期：2026-09-15
+- 实机现象：`xma-dev.bat → [1]` 在打印准备说明后、进入 `[1/8] Git` 之前立即失败，报“无法将值 `\\` 转换为 `System.Char`，字符串的长度只能为一个字符”。
+- 根因：`Refresh-XmaPath` 使用 `[char[]]@('\\','/')`。PowerShell 的单引号字符串不把反斜杠作为转义符，因此 `'\\'` 实际包含两个反斜杠；强制转换到 `System.Char` 时直接抛错。该函数在阶段输出前执行，所以整个 `[1]` 尚未开始就终止。
+- 修复：路径尾部分隔符统一改为单字符数组 `[char[]]@('\','/')`；同时把 `xma-github.ps1` 的 `.TrimStart('./')` 改为显式 `[char[]]@('.','/')`，避免另一处多字符 Trim 参数在 Windows PowerShell 5.1 上产生绑定差异。
+- Gate：Windows Gate 现在扫描全部 `scripts/windows/*.ps1` 的显式 `[char[]]` 字面量，要求每个元素恰好一个字符；并禁止 `TrimStart/TrimEnd` 直接传入长度大于 1 的单字符串。旧的用户目录 Rust Gate 同步删除，Gate 与当前 `runtime/rust` 项目本地 Rust 架构保持一致。
+- 验证：在最终源码树上直接使用 Node 22 TypeScript strip-types 执行 9 项 Gate；`gate:windows` 必须真实执行并通过，不能再以人工“看起来通过”替代。当前容器没有 Windows PowerShell 5.1，因此 Windows 实机仍用于最终 E2E。
