@@ -614,3 +614,12 @@
 - 可观测性：pnpm stdout/stderr 边执行边透传，同时收集用于识别 `ERR_PNPM_IGNORED_BUILDS` / 未决 lifecycle 包，不再只显示包装器 exit code。
 - CI：新增 Windows PowerShell 5.1 JavaScript Runtime lane，执行 `xma-prepare.ps1 -Component js` 后运行 `pnpm check → build:cli → smoke:cli`；Ubuntu CI/Release 移除重复 install/rebuild。
 - 回归：Runtime updater 脱网事务测试覆盖五阶段成功路径和 `mystery-native` lifecycle 失败回滚；OpenTUI/9 Gates 与真实 GitHub Windows/Ubuntu 网络安装仍需在修复进入可写 ref 后完成最终远端验收。版本保持 `0.1.0`。
+
+##54 · 首次准备回归单次 pnpm install
+
+- 日期：2026-09-15
+- 现象：`xma-dev.bat -> [1]` 为了同时承担“首次安装 + latest 刷新 + 一致性修复”，需要依次执行 baseline install、Bun latest、OpenTUI/Solid latest、consistency install，首次准备出现长时间依赖解析/下载，明显比普通项目安装更慢。
+- 调整：恢复项目正常职责边界。`[1]` 只执行一次 Workspace `pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only`，目标只有一个：把当前 XMA 源码所需依赖装全并可运行；不再在首次准备时主动追 latest。
+- `[8]`：保留显式升级能力，但只执行 `Bun latest -> OpenTUI/Solid latest` 两个定向阶段；不再 baseline install / consistency install / esbuild rebuild。更新失败仍恢复受管 manifest/lockfile。
+- CI/Release：与 `[1]` 一样只安装当前 Workspace，不调用 `runtime:update`，避免构建过程隐式升级依赖。`[4]/[7]/build` 继续只消费已安装依赖，不联网。
+- 生命周期安全：`strictDepBuilds: true` 与 `bun/esbuild=true`、`electron/electron-winstaller/koffi=false` 保持不变；Electron Chromium Runtime 仍只能在明确选择 Desktop Electron 后下载。版本继续保持 `0.1.0`。

@@ -158,4 +158,4 @@ Windows 源码开发的 JavaScript Runtime 全部位于 pnpm Workspace `node_mod
 
 ## Source-development JavaScript Runtime Bootstrap（0.1.0）
 
-源码开发与 CI/Release 的 JavaScript Runtime 准备统一委托 `scripts/runtime/update.mjs`。它只影响源码工作树的 pnpm Workspace 与 lockfile；普通用户安装仍只消费已构建 portable/release 资产，不需要 pnpm、Bun 或源码 Runtime updater。Updater 采用事务式五阶段并严格拒绝未审核 lifecycle package，Electron Chromium Runtime 仍只能由 Desktop Electron 安装器在用户明确选择后下载。
+源码开发首次准备与 CI/Release 都只执行一次 Workspace `pnpm install`，消费当前项目依赖；不会在准备/构建时顺便追 Runtime latest。`scripts/runtime/update.mjs` 只服务用户明确选择的 `[8]`，定向刷新 Bun 与 OpenTUI/Solid。普通用户安装仍只消费已构建 portable/release 资产，不需要 pnpm、Bun 或源码 Runtime updater。Electron Chromium Runtime 仍只能由 Desktop Electron 安装器在用户明确选择后下载。

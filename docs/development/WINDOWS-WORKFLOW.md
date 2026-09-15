@@ -59,10 +59,10 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 `[1] 一键准备开发环境` 是首次运行的推荐入口。JavaScript Runtime 由 pnpm Workspace 统一管理；Rust/Cargo 仍可由用户明确跳过后再单独补装：
 
-- Git、Node.js、pnpm 与基础系统工具照常检查。Bun/OpenTUI/Solid/@types-bun 不再走独立安装位置：`[1]` 通过 pnpm 查询 registry `latest`、更新 lockfile，并安装到 Workspace `node_modules`。Rust/Cargo 仍先真实探测，缺失才询问 Y/N；选择 N 只跳过 Rust 并继续。Rust 安装位置仍可选 `[1] <checkout>\xma-path`、`[2] D:\xma-path`、`[3] 自定义真实盘符`，并使用原位 ↑/↓ 菜单；
-- JavaScript Runtime 下载统一交给 pnpm/npm registry；`[1]/[8]` 可在 npm 官方与 `registry.npmmirror.com` 间切换，不再维护 Bun platform tgz/ZIP、SourceForge 或独立 checksum 下载器。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间选择，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
-- `[1]/[8]` 的 JavaScript Runtime 只调用 `scripts/runtime/update.mjs`。固定五阶段为 `baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild`；fresh clone 不再先执行可能被 lifecycle policy 拦截的单独 `pnpm update --latest bun`。
-- Runtime 更新是事务式的：执行前保存根 `package.json`、OpenTUI package、`pnpm-workspace.yaml` 与 `pnpm-lock.yaml`；任一步失败都恢复。`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准；真实 pnpm stdout/stderr 直接透传，registry 切换前先由 updater 回滚到完整干净状态；
+- Git、Node.js、pnpm 与基础系统工具照常检查。Bun/OpenTUI/Solid/@types-bun 不再走独立安装位置：`[1]` 只执行一次 Workspace `pnpm install`，安装当前源码需要的依赖到 `node_modules`；需要主动升级时使用 `[8]`。Rust/Cargo 仍先真实探测，缺失才询问 Y/N；选择 N 只跳过 Rust 并继续。Rust 安装位置仍可选 `[1] <checkout>\xma-path`、`[2] D:\xma-path`、`[3] 自定义真实盘符`，并使用原位 ↑/↓ 菜单；
+- JavaScript 依赖下载统一交给 pnpm/npm registry；`[1]/[8]` 可在 npm 官方与 `registry.npmmirror.com` 间切换，不再维护 Bun platform tgz/ZIP、SourceForge 或独立 checksum 下载器。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间选择，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
+- `[1]` 只执行一次 `pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only`；不会主动执行 `update --latest`。`[8]` 才调用 `scripts/runtime/update.mjs`，只定向更新 Bun 与 OpenTUI/Solid 两组受管 Runtime。
+- `[8]` 的定向更新保留 manifest/lockfile 事务回滚；`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准。
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
@@ -71,7 +71,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 - `[2] Web`：直接启动，不再次安装依赖；
 - `[4] Xiaoyu CLI`：不再次安装依赖；Bun/OpenTUI 直接从 Workspace `node_modules` 读取并真实验证当前已安装版本，Rust/Cargo 从 checkout `.git/xma-state/rust-environment.json`（非 Git 树回退 `.cache/xma-state`）恢复。随后执行 Cargo offline preflight 与 `cargo build --package xma-native-runtime --offline`；缺依赖时明确提示 `[1]/[8]/[9]`，不得静默联网；
 - `[7] 全量检查`：先恢复 `[1]` 记录的 Rust Home，并在 TypeScript/CLI 测试之前做 Cargo offline preflight + rustfmt preflight；缺失立即提示回 `[1]`。随后 Rust check/test 使用 `--offline`；
-- `[8] 刷新 · JavaScript Runtime`：执行与 `[1]` 相同的 pnpm latest 刷新，只处理 Workspace Bun/OpenTUI/Solid/@types-bun 与 JavaScript 工具链；
+- `[8] 刷新 · JavaScript Runtime`：与 `[1]` 分离，只主动刷新 Workspace Bun/OpenTUI/Solid/@types-bun 到 registry latest；
 - `[9] 单独安装 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates；项目内 Rust 删除后重新询问，外部 Rust 实体仍存在时真实探针通过即可重新接管；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
@@ -141,6 +141,6 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作 pnpm Workspace Runtime：依赖声明使用 `latest`，`[1]` 与 `[8]` 主动刷新 registry/lockfile，然后全部落在 `node_modules`。根 `node_modules/bun` 提供 Bun executable，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types-bun；不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除 `node_modules` 后回 `[1]`/`[8]` 重建。
+`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作 pnpm Workspace Runtime：依赖声明继续使用 `latest`，但 `[1]` 只安装当前 lockfile/package 所需版本；只有 `[8]` 主动刷新 registry latest。依赖全部落在 `node_modules`。根 `node_modules/bun` 提供 Bun executable，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types-bun；不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除 `node_modules` 后回 `[1]`/`[8]` 重建。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。

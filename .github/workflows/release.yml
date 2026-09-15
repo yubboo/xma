@@ -31,8 +31,8 @@ jobs:
         with:
           components: rustfmt
       - run: npm install -g pnpm@11.17.0
-      - name: Refresh managed JavaScript Runtime
-        run: pnpm run runtime:update
+      - name: Install Workspace JavaScript dependencies
+        run: pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only
       - run: pnpm check
       - run: pnpm build
       - run: pnpm smoke:cli
@@ -76,7 +76,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install -g pnpm@11.17.0
-      - run: pnpm run runtime:update
+      - run: pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only
       - uses: actions/download-artifact@v4
         with:
           pattern: portable-*

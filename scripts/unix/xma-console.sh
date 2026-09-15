@@ -64,14 +64,20 @@ assert_workspace_js_runtime() {
   done
 }
 
-refresh_workspace_js_runtime() {
-  printf '%s\n' '[更新] Refreshing managed JavaScript Runtime through scripts/runtime/update.mjs...'
-  node scripts/runtime/update.mjs
+install_workspace_js_dependencies() {
+  printf '%s\n' '[安装] Installing current XMA Workspace JavaScript dependencies once...'
+  pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only
   assert_workspace_js_runtime
   bun_version="$(package_version "$ROOT/node_modules/bun/package.json")"
   opentui_version="$(package_version "$RUNTIME_ROOT/node_modules/@opentui/core/package.json")"
   solid_version="$(package_version "$RUNTIME_ROOT/node_modules/solid-js/package.json")"
   printf '[通过] Workspace JS Runtime · Bun %s · OpenTUI %s · Solid %s\n' "$bun_version" "$opentui_version" "$solid_version"
+}
+
+refresh_workspace_js_runtime() {
+  printf '%s\n' '[更新] Refreshing only managed Bun / OpenTUI / Solid latest versions...'
+  node scripts/runtime/update.mjs
+  assert_workspace_js_runtime
 }
 
 ensure_rust() {
@@ -112,7 +118,7 @@ prepare_environment() {
   printf '[通过] pnpm %s\n' "$(pnpm --version)"
 
   printf '%s\n' '[3/5] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain'
-  refresh_workspace_js_runtime
+  install_workspace_js_dependencies
 
   printf '%s\n' '[4/5] Rust / Cargo'
   ensure_rust

@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+import { readFile, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, unlink, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
 
-const root = resolve(process.env.XMA_RUNTIME_ROOT || process.cwd());
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const managedFiles = [
   'package.json',
   'apps/cli/opentui-runtime/package.json',
@@ -48,10 +48,9 @@ async function restoreFiles(baseRoot, snapshots) {
 }
 
 async function validateLifecyclePolicy(baseRoot) {
-  const workspacePath = resolve(baseRoot, 'pnpm-workspace.yaml');
-  const workspace = await readFile(workspacePath, 'utf8');
+  const workspace = await readFile(resolve(baseRoot, 'pnpm-workspace.yaml'), 'utf8');
   if (/set this to true or false/i.test(workspace)) {
-    throw new Error('pnpm-workspace.yaml contains unresolved allowBuilds decisions. Resolve every lifecycle package explicitly before updating runtime.');
+    throw new Error('pnpm-workspace.yaml contains unresolved allowBuilds decisions.');
   }
   const required = [
     /^\s*strictDepBuilds:\s*true\s*$/m,
@@ -62,7 +61,7 @@ async function validateLifecyclePolicy(baseRoot) {
     /^\s*koffi:\s*false\s*$/m,
   ];
   if (required.some((pattern) => !pattern.test(workspace))) {
-    throw new Error('pnpm lifecycle policy is incomplete. Expected strictDepBuilds=true, bun/esbuild=true, electron/electron-winstaller/koffi=false.');
+    throw new Error('pnpm lifecycle policy is incomplete.');
   }
 }
 
@@ -82,16 +81,6 @@ function extractLifecyclePackages(output) {
     if (name) packages.add(name);
   }
   return [...packages];
-}
-
-async function unresolvedLifecyclePolicyPackages(baseRoot) {
-  const workspace = await readFile(resolve(baseRoot, 'pnpm-workspace.yaml'), 'utf8');
-  const packages = [];
-  for (const line of workspace.split(/\r?\n/)) {
-    const match = line.match(/^\s*([^:#]+):\s*set this to true or false\s*$/i);
-    if (match) packages.push(match[1].trim());
-  }
-  return packages;
 }
 
 function runCommand(command, args, options = {}) {
@@ -126,6 +115,7 @@ async function main() {
     process.stdout.write('Usage: node scripts/runtime/update.mjs [--registry <url>] [--pnpm <path>] [--root <path>]\n');
     return;
   }
+
   const baseRoot = resolve(args.root || root);
   await validateLifecyclePolicy(baseRoot);
   const snapshots = await snapshotFiles(baseRoot);
@@ -133,36 +123,27 @@ async function main() {
   if (args.registry) env.npm_config_registry = args.registry;
 
   const stages = [
-    ['1/5', 'baseline install', ['install', '--no-frozen-lockfile', '--reporter=append-only']],
-    ['2/5', 'Bun latest', ['--workspace-root', 'update', '--latest', 'bun', '--reporter=append-only']],
-    ['3/5', 'OpenTUI / Solid latest', ['--filter', '@xma/cli-opentui-runtime', 'update', '--latest', '@opentui/core', '@opentui/solid', 'solid-js', '@types/bun', '--reporter=append-only']],
-    ['4/5', 'consistency install', ['install', '--no-frozen-lockfile', '--reporter=append-only']],
-    ['5/5', 'esbuild rebuild', ['rebuild', 'esbuild']],
+    ['1/2', 'Bun latest', ['--workspace-root', 'update', '--latest', 'bun', '--reporter=append-only']],
+    ['2/2', 'OpenTUI / Solid latest', ['--filter', '@xma/cli-opentui-runtime', 'update', '--latest', '@opentui/core', '@opentui/solid', 'solid-js', '@types/bun', '--reporter=append-only']],
   ];
 
+  process.stdout.write('[runtime] Refreshing only XMA managed JavaScript Runtime packages. Workspace install belongs to [1].\n');
   try {
     for (const [position, label, commandArgs] of stages) {
       process.stdout.write(`[runtime ${position}] ${label}\n`);
       const result = await runCommand(args.pnpm, commandArgs, { cwd: baseRoot, env });
-      const lifecyclePackages = [...new Set([
-        ...extractLifecyclePackages(result.output),
-        ...await unresolvedLifecyclePolicyPackages(baseRoot),
-      ])];
+      const lifecyclePackages = extractLifecyclePackages(result.output);
       if (lifecyclePackages.length > 0) {
         process.stderr.write(`[runtime policy] lifecycle packages requiring an explicit decision: ${lifecyclePackages.join(', ')}\n`);
       }
-      if (result.code !== 0 || lifecyclePackages.length > 0) {
-        const suffix = lifecyclePackages.length > 0 ? `; lifecycle packages: ${lifecyclePackages.join(', ')}` : '';
-        throw new Error(`${args.pnpm} ${commandArgs.join(' ')} failed with exit code ${result.code}${suffix}`);
-      }
-      if (/ERR_PNPM_IGNORED_BUILDS/i.test(result.output)) {
-        throw new Error(`pnpm reported ERR_PNPM_IGNORED_BUILDS${lifecyclePackages.length ? `: ${lifecyclePackages.join(', ')}` : ''}`);
+      if (result.code !== 0 || lifecyclePackages.length > 0 || /ERR_PNPM_IGNORED_BUILDS/i.test(result.output)) {
+        throw new Error(`${args.pnpm} ${commandArgs.join(' ')} failed with exit code ${result.code}${lifecyclePackages.length ? `; lifecycle packages: ${lifecyclePackages.join(', ')}` : ''}`);
       }
     }
-    process.stdout.write('[runtime] JavaScript Runtime update completed successfully.\n');
+    process.stdout.write('[runtime] Managed JavaScript Runtime refresh completed successfully.\n');
   } catch (error) {
     await restoreFiles(baseRoot, snapshots);
-    process.stderr.write('[runtime] update failed; restored package/runtime/workspace/lockfile transaction snapshot.\n');
+    process.stderr.write('[runtime] refresh failed; restored package/runtime/workspace/lockfile transaction snapshot.\n');
     throw error;
   }
 }

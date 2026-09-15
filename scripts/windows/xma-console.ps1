@@ -34,7 +34,7 @@ function Prepare-Environment {
 }
 
 function Prepare-JavaScriptRuntime {
-  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component js
+  & (Join-Path $PSScriptRoot 'xma-prepare.ps1') -Component bun
   if ($LASTEXITCODE -ne 0) { throw 'Workspace JavaScript Runtime 刷新失败。' }
 }
 
@@ -429,7 +429,7 @@ if ($Command -ne 'menu') {
 while ($true) {
   Write-Header
   Write-Host '  [1] 一键准备开发环境                   ← 推荐首次运行' -ForegroundColor Green
-  Write-Host '      系统工具 + Workspace JS Runtime；Bun/OpenTUI 由 pnpm/node_modules 统一管理' -ForegroundColor DarkGray
+  Write-Host '      系统工具 + Workspace JS 依赖；一次 pnpm install，装完即可运行' -ForegroundColor DarkGray
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
   Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'

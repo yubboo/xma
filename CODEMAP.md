@@ -31,7 +31,7 @@
 | --- | --- |
 | Windows 源码开发控制台 / 项目更新 | `xma-dev.bat` → `scripts/windows/xma-console.ps1`（[10] 安全更新 / 强制恢复） |
 | Windows 开发态 `xiaoyu / xma` PATH shim | `scripts/windows/xma-prepare.ps1` → checkout `.git/xma-state/dev-bin/`（非 Git 树回退 `.cache/xma-state/dev-bin/`；本地生成，不提交） |
-| Windows / Unix JavaScript Runtime 更新 | `scripts/runtime/update.mjs` 是 Bun/OpenTUI/Solid + Workspace install/rebuild 的唯一事务入口；Windows `xma-prepare.ps1`、Unix console、CI、Release 只委托它，不重复拼 pnpm 阶段 |
+| JavaScript 依赖安装 / Runtime 刷新 | `[1]` / Unix prepare 直接执行一次 Workspace `pnpm install`；`scripts/runtime/update.mjs` 只负责 `[8]` 的 Bun/OpenTUI/Solid 定向 latest 刷新；CI/Release 也只安装当前 Workspace |
 | Windows 源码依赖 | JavaScript Runtime（Bun/OpenTUI/Solid）由 pnpm 安装到 Workspace `node_modules/`；Rust/Cargo 由 `scripts/windows/xma-common.ps1` + `xma-prepare.ps1` 管理，可位于所选 `xma-path/rust`；checkout 状态位于 `.git/xma-state/`（本地生成，不提交） |
 | Linux/macOS 源码开发控制台 | `xma-dev` → `scripts/unix/xma-console.sh` |
 | Windows 普通用户安装器 | `scripts/install/xma-install.ps1` |

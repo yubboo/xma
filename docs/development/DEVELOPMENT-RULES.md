@@ -353,8 +353,8 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 
 ## JavaScript Runtime Bootstrap 补充规则（0.1.0）
 
-- `scripts/runtime/update.mjs` 是 Bun/OpenTUI/Solid latest、Workspace install 与 esbuild rebuild 的唯一跨平台变更入口。Windows [1]/[8]、Linux/macOS prepare、CI、Release 禁止自行重新拼装这些 pnpm 阶段。
-- fresh clone 固定顺序：baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild。
-- updater 必须事务保存并在失败时恢复 `package.json`、`apps/cli/opentui-runtime/package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；registry 切换只能发生在回滚之后。
+- `[1]` / Linux/macOS prepare / CI / Release 只安装当前 Workspace 依赖，不主动追 latest；首次准备固定为一次 `pnpm install`。
+- `scripts/runtime/update.mjs` 只服务显式 `[8]` Runtime 刷新，固定两阶段：Bun latest → OpenTUI/Solid latest。
+- `[8]` updater 必须事务保存并在失败时恢复 `package.json`、`apps/cli/opentui-runtime/package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；registry 切换只能发生在回滚之后。
 - pnpm lifecycle policy 必须显式：`bun/esbuild=true`，`electron/electron-winstaller/koffi=false`，并启用 `strictDepBuilds: true`；发现新的 lifecycle package 必须打印包名并失败，禁止自动批准。
 - Runtime updater 必须透传真实 pnpm stdout/stderr；禁止重新退化成只显示“pnpm failed with exit code 1”的黑盒错误。

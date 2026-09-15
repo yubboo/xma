@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；Bun/OpenTUI/Solid 作为 pnpm Workspace 依赖统一进入 node_modules，[1]/[8] 会刷新这些受管 JS Runtime 依赖到 registry latest 并更新 lockfile；Rust 仍支持 ↑/↓ + Enter 或数字键选择独立安装位置；准备 esbuild 与 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；Bun/OpenTUI/Solid 作为 pnpm Workspace 依赖统一进入 node_modules，[1] 只执行一次 Workspace install，[8] 才定向刷新受管 JS Runtime latest；Rust 仍支持 ↑/↓ + Enter 或数字键选择独立安装位置；准备 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -908,10 +908,34 @@ function Get-XmaWorkspaceJavaScriptRuntimeInfo {
   }
 }
 
+function Install-XmaWorkspaceJavaScriptDependencies {
+  Write-Host '[安装] 正在安装 XMA 当前源码所需 Workspace JavaScript 依赖...' -ForegroundColor Cyan
+  Write-Host '[策略] [1] 只执行一次 pnpm install；不会主动刷新 Bun/OpenTUI/Solid latest。需要升级请使用主菜单 [8]。' -ForegroundColor DarkGray
+
+  $registrySources = @(Get-XmaNpmRegistrySources)
+  $lastError = ''
+  foreach ($registry in $registrySources) {
+    Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
+    $previousRegistry = $env:npm_config_registry
+    try {
+      $env:npm_config_registry = [string]$registry.Url
+      Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--no-frozen-lockfile','--prefer-offline','--reporter=append-only')
+      Write-Host '[完成] Workspace JavaScript 依赖已安装。' -ForegroundColor Green
+      return
+    } catch {
+      $lastError = $_.Exception.Message
+      Write-Host "[切换] $($registry.Name) 安装失败：$lastError" -ForegroundColor Yellow
+    } finally {
+      if ($null -eq $previousRegistry) { Remove-Item Env:npm_config_registry -ErrorAction SilentlyContinue }
+      else { $env:npm_config_registry = $previousRegistry }
+    }
+  }
+  throw "XMA Workspace JavaScript 依赖安装失败；已尝试可用 npm registry。最后错误：$lastError"
+}
+
 function Invoke-XmaManagedJavaScriptLatestUpdate {
-  Write-Host '[更新] 正在检查 XMA JS Runtime 最新稳定版本：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
-  Write-Host '[策略] 唯一入口 scripts/runtime/update.mjs 固定执行 baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild。' -ForegroundColor DarkGray
-  Write-Host '[进度] 统一 Runtime updater 会逐阶段透传 pnpm stdout/stderr；失败自动回滚受管 manifest/lockfile。' -ForegroundColor DarkCyan
+  Write-Host '[更新] 正在刷新 XMA JS Runtime：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
+  Write-Host '[策略] [8] 只做两个定向 latest 更新；不重复执行整 Workspace install。' -ForegroundColor DarkGray
 
   $registrySources = @(Get-XmaNpmRegistrySources)
   $lastError = ''
@@ -919,11 +943,11 @@ function Invoke-XmaManagedJavaScriptLatestUpdate {
     Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
     try {
       Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs','--registry',[string]$registry.Url)
-      Write-Host '[完成] Workspace JavaScript Runtime 已完成事务式 latest 刷新与一致性安装。' -ForegroundColor Green
+      Write-Host '[完成] Workspace JavaScript Runtime latest 刷新完成。' -ForegroundColor Green
       return
     } catch {
       $lastError = $_.Exception.Message
-      Write-Host "[切换] $($registry.Name) Runtime updater 失败；受管 manifest/lockfile 已由 updater 回滚：$lastError" -ForegroundColor Yellow
+      Write-Host "[切换] $($registry.Name) Runtime 刷新失败；受管 manifest/lockfile 已回滚：$lastError" -ForegroundColor Yellow
     }
   }
   throw "XMA JS Runtime latest 更新失败；已尝试可用 npm registry。最后错误：$lastError"
@@ -931,11 +955,9 @@ function Invoke-XmaManagedJavaScriptLatestUpdate {
 
 function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
   if ($RefreshLatest) { Invoke-XmaManagedJavaScriptLatestUpdate }
+  else { Install-XmaWorkspaceJavaScriptDependencies }
 
-  if (-not $RefreshLatest) {
-    Write-Host '[验证] 未请求 latest 刷新；本路径只验证当前 lockfile/node_modules，不隐式联网安装。' -ForegroundColor DarkCyan
-  }
-  Write-Host '[安全] Runtime updater 仅允许 bun + esbuild lifecycle；electron/electron-winstaller/koffi 显式拒绝，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
+  Write-Host '[安全] pnpm lifecycle 仅允许 bun + esbuild；electron/electron-winstaller/koffi 显式拒绝，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
 
   $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
   $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'
@@ -992,14 +1014,15 @@ function Prepare-XmaRustOnly {
   Write-Host '[完成] Rust / Cargo / rustfmt / Native crates 已准备，可返回菜单运行 [4] 或 [7]。' -ForegroundColor Green
 }
 
-if ($Component -in @('js','bun')) { Prepare-XmaJavaScriptOnly; exit 0 }
+if ($Component -eq 'js') { [void](Ensure-XmaWorkspaceJavaScriptDependencies); exit 0 }
+if ($Component -eq 'bun') { Prepare-XmaJavaScriptOnly; exit 0 }
 if ($Component -eq 'rust') { Prepare-XmaRustOnly; exit 0 }
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：Bun/OpenTUI/Solid 已并入 pnpm Workspace；[1] 会检查 registry latest 并统一安装到 node_modules，不再维护独立 Bun xma-path。' -ForegroundColor DarkGray
+Write-Host '说明：Bun/OpenTUI/Solid 已并入 pnpm Workspace；[1] 只安装当前源码所需依赖到 node_modules，[8] 才主动刷新 latest。' -ForegroundColor DarkGray
 Write-Host '说明：Rust/Cargo 仍是 Native Toolchain；缺失时会询问 Y/N，选择 N 只跳过 Rust，不中断 JavaScript 开发环境准备。' -ForegroundColor DarkGray
 Write-Host '说明：不会下载 Electron Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。' -ForegroundColor DarkGray
 Write-Host ''
@@ -1056,8 +1079,8 @@ Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
 
 Write-Host ''
 Write-Host '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain' -ForegroundColor Cyan
-Write-Host '[检查] 正在通过 pnpm 刷新受管 JS Runtime latest 并同步整个 Workspace node_modules...' -ForegroundColor DarkCyan
-$jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies -RefreshLatest
+Write-Host '[检查] 正在通过 pnpm 一次安装当前 XMA Workspace 所需 JavaScript 依赖...' -ForegroundColor DarkCyan
+$jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies
 $workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
 Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 
@@ -1087,7 +1110,7 @@ Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
 Write-Host "[JS Runtime] Bun $($jsRuntime.BunVersion) · OpenTUI $($jsRuntime.OpenTuiCoreVersion) · Solid $($jsRuntime.SolidJsVersion) · node_modules" -ForegroundColor Cyan
-Write-Host '[JS 更新] 重新运行 [1] 或主菜单 [8] 会再次查询 registry latest；[4]/[7] 只使用已安装 lock/node_modules，不自动联网升级。' -ForegroundColor DarkGray
+Write-Host '[JS 更新] [1] 只安装当前依赖；只有主菜单 [8] 会主动查询 registry latest。[4]/[7] 不自动联网升级。' -ForegroundColor DarkGray
 if ($rustRuntime) {
   $rustInstallRootSummary = Split-Path -Parent ([IO.Path]::GetFullPath($rustRuntime.CargoHome))
   $rustDependencyRootSummary = Split-Path -Parent $rustInstallRootSummary

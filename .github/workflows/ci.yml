@@ -15,8 +15,8 @@ jobs:
         with:
           node-version: '22'
       - run: npm install -g pnpm@11.17.0
-      - name: Refresh managed JavaScript Runtime
-        run: pnpm run runtime:update
+      - name: Install Workspace JavaScript dependencies
+        run: pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only
       - run: pnpm check
       - run: pnpm build:web
       - run: pnpm build:cli
