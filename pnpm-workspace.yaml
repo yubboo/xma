@@ -11,7 +11,10 @@ packages:
 # 因此 electron 不进入 allowBuilds，防止普通 pnpm install 意外下载 Chromium。
 allowBuilds:
   bun: true
+  electron: set this to true or false
+  electron-winstaller: set this to true or false
   esbuild: true
+  koffi: set this to true or false
 
 # pnpm 11 的 workspace 级依赖覆盖必须写在这里，而不是 package.json -> pnpm.overrides。
 # 当前用于保证 Electron Builder / 非 Windows ZIP 链使用新版 yauzl。

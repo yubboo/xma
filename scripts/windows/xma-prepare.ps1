@@ -110,7 +110,7 @@ function Refresh-XmaPath {
     $env:Path
   )
   $entries = New-Object System.Collections.Generic.List[string]
-  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $seen = @{}
   foreach ($source in $sources) {
     if ($null -eq $source) { continue }
     foreach ($value in @($source)) {
@@ -119,7 +119,11 @@ function Refresh-XmaPath {
         $candidate = [Environment]::ExpandEnvironmentVariables($entry.Trim().Trim('"'))
         if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
         $normalized = $candidate.TrimEnd([char[]]@('\','/'))
-        if ($seen.Add($normalized)) { [void]$entries.Add($candidate) }
+        $seenKey = $normalized.ToLowerInvariant()
+        if (-not $seen.ContainsKey($seenKey)) {
+          $seen[$seenKey] = $true
+          [void]$entries.Add($candidate)
+        }
       }
     }
   }
@@ -179,19 +183,29 @@ function Get-XmaOrderedDownloadSources {
   $mirrors = @($Sources | Where-Object { $_.Kind -eq 'mirror' })
   $mode = Get-XmaDownloadSourceMode
 
+  # Windows PowerShell 5.1 会把单元素属性枚举（例如 `$ready.Source`）退化成单个 PSObject；
+  # 对该对象直接使用 `+` 会触发 `PSObject.op_Addition`。所有源顺序都通过显式 foreach 组装为真正的 Object[]。
+  $composeSources = {
+    param([object[]]$First, [object[]]$Second)
+    $ordered = @()
+    foreach ($entry in @($First)) { $ordered += $entry }
+    foreach ($entry in @($Second)) { $ordered += $entry }
+    return $ordered
+  }
+
   if ($mode -eq 'official') {
     Write-Host '[下载源] official · 只使用官方源。' -ForegroundColor DarkCyan
     return @($official)
   }
   if ($mode -eq 'mirror') {
     Write-Host '[下载源] mirror · 加速镜像优先，失败后回退官方源。' -ForegroundColor DarkCyan
-    return @($mirrors + $official)
+    return @(& $composeSources $mirrors $official)
   }
 
   $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
   if (-not $curl -or $Sources.Count -lt 2) {
     Write-Host '[下载源] auto · 无法执行快速测速，官方源优先，失败后自动切换镜像。' -ForegroundColor DarkCyan
-    return @($official + $mirrors)
+    return @(& $composeSources $official $mirrors)
   }
 
   $measured = @()
@@ -212,7 +226,12 @@ function Get-XmaOrderedDownloadSources {
     "$($_.Source.Name)=$latencyText"
   }) -join ' · '
   Write-Host "[下载源] auto · $summary · 优先 $($ready[0].Source.Name)" -ForegroundColor DarkCyan
-  return @($ready.Source + $failed.Source)
+
+  $readySources = @()
+  foreach ($entry in @($ready)) { $readySources += $entry.Source }
+  $failedSources = @()
+  foreach ($entry in @($failed)) { $failedSources += $entry.Source }
+  return @(& $composeSources $readySources $failedSources)
 }
 
 function Invoke-XmaCurlDownloadStable {

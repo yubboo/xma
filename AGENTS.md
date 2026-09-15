@@ -268,6 +268,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 - `xma-prepare.ps1`、`xma-github.ps1`、`xma-console.ps1`、`xma-build-release.ps1` 必须复用 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`。
 - 禁止自行定义 `Run(..., $Args)`、`Invoke-External(..., $Args)` 或任何 `$Args/@Args` 参数转发。PowerShell 的 `$args` 是自动变量且大小写不敏感，曾导致 `pnpm check` 和 `rustup` 参数丢失。
 - 新增 Git、pnpm、cargo、rustup、winget 等外部命令时，必须使用命名参数 `-FilePath` 与 `-ArgumentList`。
+- Windows PowerShell 5.1 中，单元素属性枚举（例如 `$items.Source`）可能退化为单个 `PSObject`；禁止对这类投影结果直接使用 `+` 拼接。需要稳定数组时必须通过 `@(...) + foreach`/显式 `foreach` 组装原始对象数组，并由 Windows Gate 锁定。
 
 
 - Windows PowerShell 所有外部命令必须统一复用 `scripts/windows/xma-common.ps1` 的 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`；禁止私自实现 `Run(..., $Args)`、`Invoke-External(..., $Args)` 等包装器。
@@ -275,7 +276,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ## Windows 依赖准备硬规则
 
 - Windows 源码开发首次运行推荐 `xma-dev.bat -> [1] 一键准备开发环境`；Linux/macOS 使用 `./xma-dev prepare`。两者只服务源码开发，不能与正式 `xma` 产品命令混淆。
-- `[1]` 使用 `pnpm install --ignore-scripts`，因此可以准备 Electron/Tauri 的 JavaScript package，但**不得**触发 Electron Chromium Runtime 下载。
+- `[1]` 的 JavaScript Runtime 统一由 pnpm Workspace 管理；Bun/OpenTUI/Solid 位于 `node_modules`，`pnpm-workspace.yaml -> allowBuilds` 只允许已审核的 `bun + esbuild` lifecycle，**不得**触发 Electron Chromium Runtime 下载。
 - Web / CLI 在 `[1]` 成功后不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。`[4] Xiaoyu Terminal` 例外必须在启动前执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建：Source Sync 会保留 `.cache/`，因此严禁直接信任缓存中可能来自上一版源码的 Native 可执行文件。Windows CLI 构建必须使用 `.cache/cargo-target/cli/` 独立 target，并把构建结果复制到 `.cache/native-runtime/runs/` 的唯一 staging exe 后再启动，禁止直接运行/覆盖 Cargo target 中可能被旧进程锁定的 exe。该构建只使用 `[1]` 已预取 crates，不允许偷偷联网下载。
 - TypeScript Host 启动 Native Runtime 后必须核对当前产品依赖的 capability 集；缓存/portable Native 缺少 `credential.*` 等必需能力时必须 fail loud 并给出重建/升级提示，禁止降级成“OS Credentials 不可用”后让用户在配置流程里无提示失败。
 - Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/electron/install-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。

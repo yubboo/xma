@@ -80,6 +80,22 @@ for (const marker of [
 }
 if (prepareSource.includes('WaitForExit(1000)')) throw new Error('PowerShell visible child process must not manually poll WaitForExit(timeout); use Start-Process -Wait -PassThru.')
 
+// Windows PowerShell 5.1 单元素属性枚举可能返回单个 PSObject；禁止把 `.Source` 等属性结果直接用 `+` 拼接。
+// registry/download source ordering 必须显式 foreach 组装 Object[]，否则会触发 PSObject.op_Addition。
+for (const marker of [
+  'foreach ($entry in @($ready)) { $readySources += $entry.Source }',
+  'foreach ($entry in @($failed)) { $failedSources += $entry.Source }',
+  'return @(& $composeSources $readySources $failedSources)',
+]) {
+  if (!prepareSource.includes(marker)) throw new Error(`PowerShell 5.1 source-ordering compatibility regression: missing ${marker}`)
+}
+if (/\$[A-Za-z_][A-Za-z0-9_]*\.Source\s*\+\s*\$[A-Za-z_][A-Za-z0-9_]*\.Source/.test(prepareSource)) {
+  throw new Error('PowerShell 5.1 source ordering must not concatenate projected PSObject properties with +; normalize to arrays via foreach first.')
+}
+if (prepareSource.includes("New-Object 'System.Collections.Generic.HashSet[string]'")) {
+  throw new Error('PowerShell 5.1 preparation path/source dedupe must use native hashtables instead of fragile generic HashSet constructor binding.')
+}
+
 // Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. [1]/[8] refresh registry latest; [4]/[7]/build only consume installed files.
 const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string> }
 const openTuiRuntimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }

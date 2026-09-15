@@ -593,3 +593,12 @@
 - 边界：`latest` 更新仍只发生在 `[1]/[8]`；`[4]/[7]/build:cli` 继续只消费当前 lockfile/node_modules，不联网升级。registry `auto` 的 npm 官方/npmmirror 选择与失败切源逻辑保持不变。
 - 回归：Distribution/Windows Gate 与 OpenTUI 定向测试锁定 `runtime:update` 的 append-only reporter、Windows 两阶段可见更新和 Workspace install append-only。版本继续保持 `0.1.0`。
 
+##52 · pnpm Registry 排序 PowerShell 5.1 兼容修复
+
+- 日期：2026-09-15
+- 现象：`xma-dev.bat -> [1] -> [4/8] Workspace JavaScript Runtime` 已完成 npm/npmmirror 探针并打印 `npm 官方=不可达 · npmmirror=78ms · 优先 npmmirror` 后，尚未进入真正 `pnpm update` 就报 `System.Management.Automation.PSObject` 不包含 `op_Addition`。
+- 根因：下载源排序函数使用 `return @($ready.Source + $failed.Source)`。Windows PowerShell 5.1 的单元素属性枚举会把 `$ready.Source` / `$failed.Source` 退化为单个 `PSObject`，此时 `+` 被解析为对象运算而不是数组拼接，直接抛 `op_Addition`。
+- 修复：官方/镜像/测速成功/测速失败四类源全部先通过显式 `foreach` 组装真实 Object[]，再按顺序返回；不再对 `.Source` 投影结果使用 `+`。`Refresh-XmaPath` 的 generic `HashSet[string]` 同时改为 PowerShell 原生 hashtable，减少 Windows PowerShell 5.1 binder 差异。
+- 回归：Windows Gate 新增 `PSObject.op_Addition` 静态合同，要求 ready/failed source 显式数组化，并禁止准备器重新引入 generic HashSet；`[4/8]` 的两阶段 append-only pnpm 可见进度、registry 自动切换与 `[4]/[7]` 不联网边界保持不变。
+- 验证边界：当前构建环境没有 Windows PowerShell 5.1，不能冒充 Windows 实机 E2E；通过 TypeScript/OpenTUI 定向测试、9 项 Gate、脚本编码/Source Manifest/ZIP 完整性后仍需 Windows 实机重新执行 `[1]` 验收。
+
