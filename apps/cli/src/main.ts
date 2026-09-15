@@ -180,9 +180,9 @@ function doctorItems(
   const native = nativeExecutable()
   const nativeExists = native !== undefined && existsSync(native)
   const credentialReady = active !== undefined && (activeView?.credentialReady ?? true)
-  const brainReady = credentialReady && brainProbeReady
+  const brainReady = credentialReady
   const brainDetail = active
-    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : brainProbeReady ? ' · 模型就绪已验证' : ' · 模型就绪未验证/未通过'}`
+    ? `${brainLabel(active)}${activeView?.credentialReady === false ? ' · 凭据未就绪' : brainProbeReady ? ' · 模型已就绪 · 连接测试通过' : ' · 模型已就绪 · 连接测试可选'}`
     : '未配置提供方'
   const skillHome = skillsRoot()
   const skillReady = [
@@ -385,8 +385,9 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       return Boolean(activeProfile)
     },
     get providerReady() {
-      const key = activeProbeKey()
-      return Boolean(activeProfile) && (activeView()?.credentialReady ?? true) && Boolean(key && brainProbeReadiness.get(key) === true)
+      // 产品就绪 = 当前有真实 Provider/Profile/Model 配置，并且其凭据当前可读取。
+      // Brain Probe 保留为“连接测试/doctor”诊断能力，不再要求用户手动 Probe 才能显示已就绪。
+      return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)
     },
     get reasoningSupported() {
       return activeProfile?.options?.reasoning === true
@@ -518,14 +519,6 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     async sendMessage(message, mode: TerminalAgentMode, onEvent, signal, approve) {
       const profile = requireActiveProfile()
       if (!model || !await ensureCredentialReady(profile)) throw new Error(`模型未配置或凭据未就绪：${credentialMissingMessage(profile)}`)
-      const probeKey = `${profile.id}\u0000${profile.model}`
-      if (brainProbeReadiness.get(probeKey) !== true) {
-        const probe = await providerRegistry.probe(profile.id, profile.model, AbortSignal.timeout(20_000))
-        brainProbeReadiness.set(probeKey, probe.ready)
-        if (!probe.ready) {
-          throw new Error(`模型就绪测试失败：${probe.error?.code ?? 'unknown'} · ${probe.error?.message ?? '真实提供方 Probe 未通过'}`)
-        }
-      }
       const listener = (event: RuntimeLiveEvent): void => {
         if (event.type === 'model/text-delta' && event.sessionId === session.id) {
           onEvent({ type: 'text-delta', stepId: event.stepId, text: event.text })

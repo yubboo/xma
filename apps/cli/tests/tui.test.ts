@@ -112,6 +112,13 @@ test('TUI home renders the canonical xiaoyu identity and current runtime facts',
   assert.doesNotMatch(output, /┌─/)
 })
 
+test('configured model readiness depends on credential availability, not a mandatory connection probe', () => {
+  const main = readFileSync('apps/cli/src/main.ts', 'utf8')
+  assert.match(main, /return Boolean\(activeProfile\) && \(activeView\(\)\?\.credentialReady \?\? true\)/)
+  assert.doesNotMatch(main, /get providerReady\(\) \{[\s\S]{0,300}brainProbeReadiness/)
+  assert.match(main, /模型已就绪 · 连接测试可选/)
+})
+
 test('TUI home falls back to a compact identity on narrow terminals', () => {
   const output = renderHome({
     version: '0.1.0',
@@ -206,7 +213,7 @@ test('TUI home tips rotate when ready and become provider-aware when setup is in
   assert.equal(terminalHomeTip(0, true, true), 'Ctrl+P 打开命令面板')
   assert.equal(terminalHomeTip(1, true, true), 'Ctrl+K 直接搜索命令')
   assert.match(terminalHomeTip(0, false, false), /模型未配置.*\/provider/)
-  assert.match(terminalHomeTip(0, true, false), /模型已配置.*尚未就绪.*连接测试/)
+  assert.match(terminalHomeTip(0, true, false), /模型已配置.*凭据未就绪.*检查凭据/)
 })
 
 test('TUI captures ordinary mouse drag while active and releases terminal state on exit', () => {

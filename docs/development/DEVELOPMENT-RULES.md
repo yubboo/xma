@@ -138,7 +138,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Provider-specific JSON/headers/auth 不得散落 Agent Loop。
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
-- “Brain Ready”必须有真实请求证据；fixture/mock 不能改变产品 Ready 状态。
+- 产品 UI 的“模型已就绪”表示当前 Provider/Profile/Model 已保存且凭据引用当前可读取；`Brain Ready Probe / 连接测试` 是可选的真实连接诊断与 Provider 验收证据，fixture/mock 不能伪造 Probe 通过。Probe 未执行/失败不得把一个已配置且凭据可用的模型重新标成“尚未就绪”；真实发送失败必须原样暴露 auth/network/model 错误。
 - Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → 模型 / 提供方` 必须始终可用，并与首次 Setup 复用同一配置实现。工作区信任选择“否，退出”是正常取消，CLI 必须干净退出，不得向开发包装层返回错误状态。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
@@ -147,7 +147,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - 同一 Turn 的 Tool Result 必须回到当前真实模型继续推理；Policy/Approval/Native 只负责权限与副作用安全。
 - 有 models/catalog API 时以实时目录为可用模型事实来源；静态默认模型只允许作为 bootstrap。
 - 未完成真实 endpoint/auth/protocol 的品牌不得进入可用 Provider Catalog；不做“先画卡片、后补实现”的假产品面。
-- 声明 native tool calling 的 Provider，Brain Ready 至少验证一次真实 `model → tool call → observation → same model → final` round trip。
+- 声明 native tool calling 的 Provider，其可选 Brain Ready Probe / 发布验收至少验证一次真实 `model → tool call → observation → same model → final` round trip。
 - thinking+tools 若要求回传隐藏协议状态，Adapter 必须产生 opaque `providerContinuation`；Core 只能持久 round-trip，不能解析为自己的 Planner/Reasoning，redacted export 必须移除。
 
 ## 6. Tool / Permission / Native 规则

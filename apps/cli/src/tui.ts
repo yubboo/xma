@@ -47,7 +47,7 @@ const HOME_TIPS = [
 
 export function terminalHomeTip(index: number, providerConfigured: boolean, providerReady: boolean): string {
   if (!providerConfigured) return '模型未配置 · Ctrl+P → 模型 / 提供方，或输入 /provider'
-  if (!providerReady) return '模型已配置 · 尚未就绪 · Ctrl+P → 模型 / 提供方 → 连接测试'
+  if (!providerReady) return '模型已配置 · 凭据未就绪 · Ctrl+P → 模型 / 提供方检查凭据'
   const normalized = ((index % HOME_TIPS.length) + HOME_TIPS.length) % HOME_TIPS.length
   return HOME_TIPS[normalized]!
 }
@@ -730,6 +730,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
   const previousRaw = Boolean(input.isRaw)
   let selected: WorkspaceTrustSelection = workspaceTrustDefaultSelection(risk)
   let settled = false
+  let accepted = false
 
   const draw = (): void => {
     output.write(`${clearScreen}${setTitle('Xiaoyu · Workspace Trust')}${renderWorkspaceTrustPrompt(workspace, risk, selected)}`)
@@ -743,7 +744,7 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
     // 因此 raw 选择界面期间显式隐藏硬件光标，避免出现蓝色上下标记；退出 Trust 后立即恢复。
     output.write(`${terminalMouseCaptureSequence}${hideHardwareCursor}`)
     draw()
-    return await new Promise<boolean>(resolve => {
+    accepted = await new Promise<boolean>(resolve => {
       const finish = (value: boolean): void => {
         if (settled) return
         settled = true
@@ -773,10 +774,13 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
       }
       input.on('data', onData)
     })
+    return accepted
   } finally {
     input.setRawMode(previousRaw)
     if (!previousRaw) input.pause()
-    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${showHardwareCursor}`)
+    // 接受后马上进入 OpenTUI，继续隐藏 hardware cursor，避免 Windows Text Cursor Indicator 在两套界面切换间闪现。
+    // 取消/退出时恢复 cursor，保证把终端完整交还给父 shell。
+    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${accepted ? hideHardwareCursor : showHardwareCursor}`)
   }
 }
 
@@ -1426,15 +1430,10 @@ class XiaoyuSurface {
     return this.initialBrainSetupActive ? { anchor: 'center' } : { row: defaultRow, col: '50%' }
   }
 
-  private completeInitialBrainSetup(probe: BrainProbeView): void {
-    if (this.initialBrainSetupActive && probe.ready) this.initialBrainSetupActive = false
-    this.notice = `${probe.ready ? '模型就绪' : '模型未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+  private completeInitialBrainSetup(message = '模型已配置 · 已就绪'): void {
+    if (this.initialBrainSetupActive) this.initialBrainSetupActive = false
+    this.notice = message
     this.tui.requestRender()
-    if (this.initialBrainSetupActive && !probe.ready) {
-      queueMicrotask(() => {
-        if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
-      })
-    }
   }
 
   private resumeInitialBrainSetup(message: string): void {
@@ -1502,7 +1501,7 @@ class XiaoyuSurface {
     ]
     if (active) {
       items.push(
-        { value: 'probe', label: '模型就绪测试', description: `${active.displayName} · ${active.model}` },
+        { value: 'probe', label: '连接测试', description: `${active.displayName} · ${active.model}` },
         { value: 'models', label: '选择模型', description: `当前 ${active.model}` },
         ...(this.backend.reasoningSupported ? [{ value: 'reasoning', label: '推理强度', description: `当前 ${this.backend.reasoningEffort}` }] : []),
       )
@@ -1537,12 +1536,12 @@ class XiaoyuSurface {
         return
       }
       if (value === 'probe') {
-        this.notice = '正在执行模型就绪测试…'
+        this.notice = '正在执行连接测试…'
         this.tui.requestRender()
         const result = await this.backend.probeBrain()
-        if (this.initialBrainSetupActive) this.completeInitialBrainSetup(result)
+        if (this.initialBrainSetupActive && result.ready) this.completeInitialBrainSetup(`模型已配置 · 已就绪 · 连接测试通过 · ${result.latencyMs}ms`)
         else {
-          this.notice = `${result.ready ? '模型就绪' : '模型未就绪'} · ${result.latencyMs}ms · ${result.message}`
+          this.notice = `${result.ready ? '连接测试通过' : '连接测试失败'} · ${result.latencyMs}ms · ${result.message}`
           this.tui.requestRender()
         }
         return
@@ -1557,14 +1556,9 @@ class XiaoyuSurface {
       }
       if (value.startsWith('select:')) {
         const profile = await this.backend.selectBrain(value.slice('select:'.length))
-        this.notice = `模型配置已切换 · ${profile.displayName} · ${profile.model} · 正在验证…`
+        this.notice = `模型配置已切换 · ${profile.displayName} · ${profile.model} · 已就绪`
         this.tui.requestRender()
-        const probe = await this.backend.probeBrain()
-        if (this.initialBrainSetupActive) this.completeInitialBrainSetup(probe)
-        else {
-          this.notice = `${probe.ready ? '模型就绪' : '模型未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
-          this.tui.requestRender()
-        }
+        if (this.initialBrainSetupActive) this.completeInitialBrainSetup()
       }
     } catch (error) {
       this.notice = `模型配置操作失败 · ${error instanceof Error ? error.message : String(error)}`
@@ -1608,7 +1602,7 @@ class XiaoyuSurface {
         this.tui.requestRender()
         if (this.initialBrainSetupActive) {
           if (this.backend.reasoningSupported) this.openReasoningSelector(true)
-          else this.completeInitialBrainSetup(await this.backend.probeBrain())
+          else this.completeInitialBrainSetup()
         }
         return
       }
@@ -1620,10 +1614,9 @@ class XiaoyuSurface {
             afterSelect(profile)
             return
           }
-          const probe = await this.backend.probeBrain()
-          if (this.initialBrainSetupActive) this.completeInitialBrainSetup(probe)
+          if (this.initialBrainSetupActive) this.completeInitialBrainSetup()
           else {
-            this.notice = `${probe.ready ? '模型就绪' : '模型已切换但未就绪'} · ${probe.latencyMs}ms · ${probe.message}`
+            this.notice = `模型已切换 · ${profile.displayName} · ${profile.model} · 已就绪`
             this.tui.requestRender()
           }
         }).catch(error => {
@@ -1672,8 +1665,7 @@ class XiaoyuSurface {
         this.notice = `推理强度已切换 · ${profile.model} · ${this.backend.reasoningEffort}`
         this.tui.requestRender()
         if (!afterSetup) return
-        const probe = await this.backend.probeBrain()
-        this.completeInitialBrainSetup(probe)
+        this.completeInitialBrainSetup()
       }).catch(error => {
         const message = `推理强度切换失败 · ${error instanceof Error ? error.message : String(error)}`
         if (this.initialBrainSetupActive) {
@@ -1704,7 +1696,7 @@ class XiaoyuSurface {
       model = await this.showInputOverlay('默认模型 ID', '请输入 endpoint 实际支持的 model ID', '')
       if (model === undefined) { this.resumeInitialBrainSetup('首次模型配置尚未完成。'); return }
     }
-    // 品牌 Provider 的主流程固定为：API Key → 真实模型 → 推理强度 → Probe，减少无关表单打断。
+    // 品牌 Provider 的主流程固定为：API Key → 真实模型 → 推理强度；连接测试保留为可选诊断，不阻塞“已就绪”。
     const credentialInput = credentialMode === 'os'
       ? await this.showInputOverlay('API Key', provider.credentialRequired
           ? '安全写入系统凭据库；输入内容不会回显'
@@ -1743,25 +1735,11 @@ class XiaoyuSurface {
         this.openReasoningSelector(true)
         return
       }
-      void this.backend.probeBrain().then(result => {
-        if (this.initialBrainSetupActive) this.completeInitialBrainSetup(result)
-        else {
-          this.notice = `${result.ready ? '模型就绪' : '模型未就绪'} · ${result.latencyMs}ms · ${result.message}`
-          this.tui.requestRender()
-        }
-      }).catch(error => {
-        const message = `模型就绪测试失败 · ${error instanceof Error ? error.message : String(error)}`
-        if (this.initialBrainSetupActive) {
-          this.notice = message
-          this.tui.requestRender()
-          queueMicrotask(() => {
-            if (!this.overlayOpen && this.initialBrainSetupActive) this.openProviderManager('配置 Xiaoyu 模型')
-          })
-        } else {
-          this.notice = message
-          this.tui.requestRender()
-        }
-      })
+      if (this.initialBrainSetupActive) this.completeInitialBrainSetup()
+      else {
+        this.notice = `模型已配置 · ${profile.displayName} · ${profile.model} · 已就绪`
+        this.tui.requestRender()
+      }
     })
   }
 

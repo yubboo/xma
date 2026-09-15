@@ -491,6 +491,7 @@ function ListDialog(props: {
               placeholderColor={COLOR.faint}
               textColor={COLOR.text}
               focusedTextColor={COLOR.text}
+              showCursor={false}
               cursorColor={COLOR.orange}
               onContentChange={() => {
                 setQuery(searchInput?.plainText ?? '')
@@ -633,6 +634,7 @@ function InputDialog(props: {
             placeholderColor={COLOR.faint}
             textColor={COLOR.text}
             focusedTextColor={COLOR.text}
+            showCursor={false}
             cursorColor={COLOR.orange}
             onSubmit={() => props.onDone(field?.plainText ?? '')}
             onKeyDown={(event: KeyEvent) => {
@@ -703,7 +705,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
   const [setupFlow, setSetupFlow] = createSignal({ active: false, message: '' })
   const [phase, setPhase] = createSignal(0)
-  const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
@@ -762,7 +763,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
   const refocusPrompt = () => queueMicrotask(() => {
     if (setupFlow().active || dialog() !== undefined) return
-    setPromptCursorVisible(true)
     prompt?.focus()
   })
   const setSetupStage = (message: string) => {
@@ -958,14 +958,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
 
   const probe = async (): Promise<boolean> => {
-    tell('正在执行模型就绪测试…', 30_000)
+    tell('正在执行连接测试…', 30_000)
     try {
       const result = await props.backend.probeBrain()
-      tell(`${result.ready ? '模型就绪' : '模型未就绪'} · ${result.latencyMs}ms · ${result.message}`, 8000)
+      tell(`${result.ready ? '连接测试通过' : '连接测试失败'} · ${result.latencyMs}ms · ${result.message}`, 8000)
       refresh()
       return result.ready
     } catch (error) {
-      tell(`模型就绪测试失败 · ${error instanceof Error ? error.message : String(error)}`)
+      tell(`连接测试失败 · ${error instanceof Error ? error.message : String(error)}`)
       return false
     }
   }
@@ -1005,12 +1005,13 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       if (initialSetup) setSetupStage('API Key 已保存 · 下一步选择模型')
       const modelSelected = await selectModel(initialSetup)
       if (!modelSelected) return false
-      if (!initialSetup) {
-        const reasoningSelected = await selectReasoning(false)
-        if (!reasoningSelected) return false
-      }
-      if (initialSetup) setSetupStage('模型已选择 · 正在验证连接…')
-      return await probe()
+      if (initialSetup) setSetupStage('模型已选择 · 下一步选择推理强度')
+      const reasoningSelected = await selectReasoning(initialSetup)
+      if (!reasoningSelected) return false
+      if (initialSetup) setSetupStage('模型已配置 · 已就绪')
+      tell(`模型已就绪 · ${profile.displayName} · ${props.backend.providerLabel}`, 5200)
+      refresh()
+      return true
     } catch (error) {
       tell(`提供方保存失败 · ${error instanceof Error ? error.message : String(error)}`)
       return false
@@ -1053,10 +1054,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         if (value === 'reasoning') { await selectReasoning(initialSetup); continue }
         if (value.startsWith('select:')) {
           const profile = await props.backend.selectBrain(value.slice('select:'.length))
-          tell(`模型配置已切换 · ${profile.displayName} · ${profile.model}`)
+          tell(`模型配置已切换 · ${profile.displayName} · ${profile.model} · 已就绪`)
           refresh()
-          const ready = await probe()
-          if (initialSetup && ready) return
+          if (initialSetup) return
         }
       } catch (error) {
         tell(`模型配置操作失败 · ${error instanceof Error ? error.message : String(error)}`)
@@ -1361,23 +1361,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
+    renderer.setCursorPosition(0, 0, false)
     const animation = setInterval(() => {
       setPhase(value => value + 1)
-      // 中文说明：OpenTUI 装饰层动画会产生独立 dirty frame；若主 textarea 本帧没有重绘，
-      // Windows Terminal 的真实硬件 cursor 可能停在最后写入的星点/流星 cell。强制让已聚焦 Prompt 同帧参与渲染，
-      // 由 TextareaRenderable.renderCursor() 在前景层最后重新提交真实 cursor 坐标，装饰层永远不能“带走”光标。
-      if (!setupFlow().active && dialog() === undefined) prompt?.requestRender()
+      // 中文说明：Xiaoyu 在 OpenTUI 工作台内永久隐藏 terminal hardware cursor。
+      // Windows Text Cursor Indicator 因此不会被星星/流星 dirty frame 带到背景 cell；输入焦点仍由 TextareaRenderable 负责。
+      renderer.setCursorPosition(0, 0, false)
     }, 50)
-    const promptCursor = setInterval(() => {
-      if (setupFlow().active || dialog() !== undefined) return
-      setPromptCursorVisible(value => !value)
-    }, 800)
     const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
     const clockTimer = setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => {
       clearInterval(animation)
-      clearInterval(promptCursor)
       clearInterval(streamPump)
       clearInterval(tips)
       clearInterval(clockTimer)
@@ -1476,11 +1471,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
                   placeholderColor={COLOR.faint}
                   textColor={COLOR.text}
                   focusedTextColor={COLOR.text}
-                  showCursor={promptCursorVisible()}
+                  showCursor={false}
                   cursorColor={COLOR.text}
                   cursorStyle={{ style: 'block', blinking: false }}
-                  onContentChange={() => setPromptCursorVisible(true)}
-                  onCursorChange={() => setPromptCursorVisible(true)}
                   onSubmit={() => { void submit(prompt?.plainText ?? '') }}
                   onKeyDown={(event: KeyEvent) => {
                     if (event.name !== 'tab') return
@@ -1549,7 +1542,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           <box width={Math.min(66, dimensions().width - 6)} flexDirection="column" gap={1} padding={2} backgroundColor={COLOR.background}>
             <text fg={COLOR.text}><strong>配置 Xiaoyu 模型</strong></text>
             <text fg={COLOR.soft}>{setupFlow().message}</text>
-            <text fg={COLOR.faint}>完成模型选择与连接验证后进入主工作台</text>
+            <text fg={COLOR.faint}>完成模型选择后进入主工作台</text>
           </box>
         </box>
       </Show>

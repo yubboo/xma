@@ -75,15 +75,30 @@ for (const marker of ['openTuiContentWidth', 'openTuiSidePadding']) {
   if (!openTuiLayout.includes(marker)) throw new Error(`XMA OpenTUI responsive layout marker missing: ${marker}`)
 }
 for (const marker of [
-  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}',
+  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}', 'showCursor={false}',
   "event.name === 'tab'", "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
-  'commandPaletteOptions()', '模型 / 提供方', '模型就绪测试', '选择真实模型', '终端设置', 'Tool Approval',
+  'commandPaletteOptions()', '模型 / 提供方', '连接测试', '选择真实模型', '终端设置', 'Tool Approval',
   'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: false', 'useMouse: true',
 ]) {
   if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI marker missing: ${marker}`)
 }
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
+}
+if (!openTui.includes('renderer.setCursorPosition(0, 0, false)') || /showCursor=\{true\}/.test(openTui)) {
+  throw new Error('XMA active OpenTUI must keep the hardware cursor hidden; Windows Text Cursor Indicator must not follow animated decoration.')
+}
+if (!/accepted \? hideHardwareCursor : showHardwareCursor/.test(tui)) {
+  throw new Error('Workspace Trust must keep the hardware cursor hidden after acceptance before handing control to OpenTUI.')
+}
+if (!cli.includes('return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)')) {
+  throw new Error('Terminal model readiness must be based on configured active profile + credential readiness, not a mandatory connection probe.')
+}
+if (/get providerReady\(\) \{[\s\S]{0,320}brainProbeReadiness/.test(cli)) {
+  throw new Error('Connection probe state must not gate the user-facing model-ready status.')
+}
+if (/const modelSelected = await selectModel\(initialSetup\)[\s\S]{0,900}await probe\(\)/.test(openTui)) {
+  throw new Error('First-run Provider setup must not require a connection probe after model selection.')
 }
 const bunRunner = text('scripts/cli/bun.ts')
 for (const marker of [
@@ -223,7 +238,7 @@ for (const marker of [
 }
 
 const architecture = text('docs/architecture/DISTRIBUTION.md')
-for (const marker of ['xiaoyu', '%LOCALAPPDATA%\\Programs\\Xiaoyu', '~/.local/share/xiaoyu', '.cache', 'dist/release', 'Build/Plan/Compose(legacy)', 'API Key → 真实远程模型选择 → 推理强度 → Brain Ready']) {
+for (const marker of ['xiaoyu', '%LOCALAPPDATA%\\Programs\\Xiaoyu', '~/.local/share/xiaoyu', '.cache', 'dist/release', 'Build/Plan/Compose(legacy)', 'API Key → 真实远程模型选择 → 推理强度 → 已就绪']) {
   if (!architecture.includes(marker)) throw new Error(`XMA Distribution architecture doc marker missing: ${marker}`)
 }
 

@@ -40,13 +40,13 @@ test('Bun and OpenTUI runtime dependencies live in the root package and avoid a 
   assert.equal(rootPackage.scripts?.['runtime:update'], 'node scripts/runtime/update.mjs')
 })
 
-test('Workspace Trust hides the hardware cursor during raw selection and restores it before OpenTUI starts', () => {
+test('Workspace Trust hides the hardware cursor during raw selection and keeps it hidden when handing off to OpenTUI', () => {
   const source = readFileSync('apps/cli/src/tui.ts', 'utf8')
   const start = source.indexOf('export async function confirmWorkspaceTrust(')
   const end = source.indexOf('export function approvalDecision(', start)
   const trustSource = source.slice(start, end)
   assert.match(trustSource, /terminalMouseCaptureSequence\}\$\{hideHardwareCursor/)
-  assert.match(trustSource, /terminalMouseReleaseSequence\}\$\{reset\}\$\{clearScreen\}\$\{showHardwareCursor/)
+  assert.match(trustSource, /accepted \? hideHardwareCursor : showHardwareCursor/)
 })
 
 test('Active OpenTUI source uses native textarea focus and never reintroduces legacy manual cursor control', () => {
@@ -276,8 +276,10 @@ test('OpenTUI first-run provider wizard stays modal from API Key through model s
   assert.match(source, /API Key 已保存 · 正在读取最新模型/)
   assert.match(source, /const modelSelected = await selectModel\(initialSetup\)/)
   assert.match(source, /if \(!modelSelected\) return false/)
-  assert.match(source, /if \(!initialSetup\) \{[\s\S]*selectReasoning\(false\)/)
-  assert.match(source, /完成模型选择与连接验证后进入主工作台/)
+  assert.match(source, /const reasoningSelected = await selectReasoning\(initialSetup\)/)
+  assert.match(source, /模型已配置 · 已就绪/)
+  assert.doesNotMatch(source, /const modelSelected = await selectModel\(initialSetup\)[\s\S]{0,900}await probe\(\)/)
+  assert.match(source, /完成模型选择后进入主工作台/)
   assert.match(source, /void runInitialSetup\(\)/)
 })
 
@@ -309,13 +311,12 @@ test('official Provider UI never renders DeepSeek plus DeepSeek 2 as stacked pro
 })
 
 
-test('main prompt keeps native cursor cadence and re-anchors the hardware cursor on animated frames', () => {
+test('OpenTUI keeps the Windows hardware cursor hidden so animated decoration cannot move the text cursor indicator', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
-  assert.match(source, /const \[promptCursorVisible, setPromptCursorVisible\] = createSignal\(true\)/)
-  assert.match(source, /showCursor=\{promptCursorVisible\(\)\}/)
-  assert.match(source, /cursorStyle=\{\{ style: 'block', blinking: false \}\}/)
-  assert.match(source, /setPromptCursorVisible\(value => !value\)[\s\S]{0,80}, 800\)/)
-  assert.match(source, /setPhase\(value => value \+ 1\)[\s\S]{0,420}prompt\?\.requestRender\(\)/)
+  assert.match(source, /showCursor=\{false\}/)
+  assert.match(source, /renderer\.setCursorPosition\(0, 0, false\)/)
+  assert.doesNotMatch(source, /promptCursorVisible|setPromptCursorVisible/)
+  assert.doesNotMatch(source, /prompt\?\.requestRender\(\)/)
   assert.match(source, /targetFps: 30/)
   assert.match(source, /maxFps: 30/)
   assert.match(source, /enableMouseMovement: false/)

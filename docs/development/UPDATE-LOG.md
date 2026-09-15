@@ -75,7 +75,7 @@
 
 - 日期：2026-09-13
 - 目的：让正式/开发 Terminal 的第一次使用更自然，同时让 Windows 开发者在 `[1]` 准备完成后可从任意 Workspace 直接运行当前源码 `xiaoyu / xma`。
-- 首次启动：Workspace Trust 仍发生在进入 TUI 之前；进入 TUI 后仅当当前没有已配置 Brain/Profile 时自动打开“首次配置 Xiaoyu Brain”，沿用现有 API Key → 真实模型目录 → Reasoning → Brain Ready 流程。已有 Profile 的后续启动不再重复弹出。 Workspace 风险识别同时覆盖 Windows 系统目录（例如 `C:\Windows\System32`），默认仍为退出。
+- 首次启动：Workspace Trust 仍发生在进入 TUI 之前；进入 TUI 后仅当当前没有已配置 Brain/Profile 时自动打开“首次配置 Xiaoyu Brain”，沿用现有 API Key → 真实模型目录 → Reasoning → 已就绪流程。已有 Profile 的后续启动不再重复弹出。 Workspace 风险识别同时覆盖 Windows 系统目录（例如 `C:\Windows\System32`），默认仍为退出。
 - 长期配置：`Ctrl+P → Brain / Provider` 完整保留，继续负责新增账号/Profile、切换 Provider/Model、修改 Reasoning 与重新 Probe；首次引导不是替代入口。
 - Windows 开发命令：`xma-dev.bat → [1]` 新增第 8 步，在仓库忽略状态 `.xma\dev-bin` 生成 `xiaoyu.cmd / xma.cmd`，并自动写入当前用户 **User PATH**。不修改 Machine PATH，也不把整个 Git 仓库加入 PATH。
 - Workspace 语义：开发 shim 在任意目录调用时把调用者当前目录传给 `xma-dev.bat cli`，因此 `xiaoyu` 从 `D:\Project\foo` 启动就绑定 `D:\Project\foo`，不会被开发控制台切换到 XMA 仓库根。
@@ -91,7 +91,7 @@
 - 日期：2026-09-13
 - 目的：锁定仓库根目录长期卫生规则，并纠正 Terminal onboarding 语义：Workspace Trust 是每次启动的第一层；首次 Brain Setup 是仅无 Profile 时出现的第二层。
 - Workspace Trust：`xiaoyu / xma` 每次交互式启动都解析调用者当前目录并显示信任确认；普通项目也必须显式确认，本次授权不持久化为下次跳过。Home、文件系统根与 Windows 系统目录继续显示额外高风险提示并默认选择退出。
-- Brain Setup：Trust 通过后，仅当当前没有已配置 Brain/Profile 时，在**同一个 Xiaoyu TUI** 中以居中 modal 启动 Provider → API Key → 真实 Model Catalog → Reasoning → Brain Ready 流程；已有 Profile 后续启动跳过第二层。
+- Brain Setup：Trust 通过后，仅当当前没有已配置 Brain/Profile 时，在**同一个 Xiaoyu TUI** 中以居中 modal 启动 Provider → API Key → 真实 Model Catalog → Reasoning → 已就绪流程；已有 Profile 后续启动跳过第二层。
 - 长期管理：`Ctrl+P → Brain / Provider` 始终保留；首次 Setup 与 Ctrl+P 共享同一 Provider/Profile/Credential/Model/Probe 实现，禁止维护两套配置业务逻辑。首次 Setup 未完成时不能通过 Esc 静默绕过进入无 Brain 工作台；可继续配置或用 Ctrl+C 退出。
 - Root Hygiene：根目录只允许一级领域目录、标准工具链根配置、导航文档和极少量顶级 Launcher；普通实现文件与临时脚本必须进入真实 ownership。`.git/.cache/.xma/node_modules/dist` 为本机状态，不属于源码架构。
 - Gate：Architecture Gate 新增 root allowlist/本机状态忽略集；Distribution Gate 锁定“每次 Workspace Trust + 居中首次 Brain Setup + Ctrl+P 长期入口”标记。
@@ -754,4 +754,14 @@
 - 乱码根因：`rustup-init` / `rustup component add` / `cargo fetch` 仍经 `Invoke-XmaPrepareExternal -> Out-Host` 消费 native stdout。Rustup 在连接管道时输出 UTF-8 字节，Windows PowerShell 5.1 再按本地代码页解码，中文 checkout 路径因此出现 `涓€閿...` mojibake；和真实目录内容无关。
 - 修复：删除 `Invoke-XmaPrepareExternal`。Bootstrap 所有 native 动作统一直接调用 `Invoke-XmaExternal` 并继承当前终端；Rust 准备改为 void 动作 + `Resolve-XmaRustRuntime` 二阶段读取，避免为了返回 Runtime 对象再次引入 stdout pipeline。Windows Gate 禁止 `Invoke-XmaExternal ... | Out-Host/ForEach-Object/Write-Host`，并禁止 `$rustRuntime = Ensure-XmaRustToolchain`。
 - 文档清理：Source Sync/Console 中 `xma-path` 文案明确标记为历史迁移对象；当前本地依赖只有 `runtime`、`node_modules`、`.cache` 与 `.git/xma-state`。版本保持 `0.1.0`。
+
+##70 · Xiaoyu 启动链路 / Cursor / PATH / 模型就绪收口
+
+- 日期：2026-09-15
+- 实机现象：`[1]` 已完整通过后，`[4] Xiaoyu Terminal` 仍出现四类产品问题：Windows Text Cursor Indicator 的蓝色水滴会跟随星星/流星动画漂移；CLI 启动每次都无条件执行 Native `cargo build --offline` 导致进入 Workspace Trust 明显变慢；User PATH 中的 `xiaoyu/xma` 能被找到但中文 checkout 路径经旧 `cmd set /p` 读取后乱码，最终报“系统找不到指定的路径”；已配置 DeepSeek/Profile/Model/凭据仍显示“尚未就绪”，要求用户额外做连接测试。
+- Cursor：Active OpenTUI 的主 Prompt、搜索框与普通输入 Dialog 全部 `showCursor=false`，Renderer 生命周期持续 `setCursorPosition(..., false)`；Workspace Trust 接受后保持 hardware cursor 隐藏再交给 OpenTUI，取消/退出才恢复。输入焦点/IME/编辑仍由 Textarea 管理，装饰帧不再拥有可见硬件 cursor 锚点。
+- 启动性能：Windows `[4]` 对 `Cargo.toml/Cargo.lock/.cargo/config.toml + native/**/*.rs/Cargo.toml/build.rs + rustc --version` 形成 `cli-native.sha256`。构建产物与指纹一致时跳过 `cargo build`，直接 staging 当前 Native Runtime；只有源码/依赖/rustc 变化或产物缺失才执行一次 offline 增量构建。首次变更后仍会构建一次，后续启动不重复编译/下载。
+- PATH：开发态 `.cmd` shim 改为纯 ASCII 跳板，转交 `xiaoyu-dev.ps1`；PowerShell/.NET 以 UTF-8 读取 `source-root.txt`，再调用当前 checkout 的 `xma-dev.bat cli <caller-cwd>`。`[1]` 同时清理其他 checkout 的 `.git/.cache/xma-state/dev-bin` User/Process PATH 项，中文路径不再交给 cmd 本地代码页解析。
+- 模型状态：`providerReady` 改为“存在活动 Provider/Profile/Model + Credential Reference 当前可读取”。首次配置完成真实模型选择/Reasoning 后直接显示“模型已就绪”；切换已保存 Profile/Model 同样立即按凭据状态显示就绪。`Brain Ready Probe / 连接测试` 保留为 Ctrl+P/doctor 的可选真实连接诊断与发布验收证据，不再是 UI Ready 前置条件；真实请求若出现 auth/network/model 错误仍必须显式返回。
+- 回归：Distribution/OpenTUI/Windows Gate 锁定 hardware cursor 隐藏、Trust→OpenTUI cursor handoff、模型 Ready 不依赖 Probe、首次配置不自动 Probe、Native 指纹缓存和 UTF-8 dev shim。版本保持 `0.1.0`。
 

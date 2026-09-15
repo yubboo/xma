@@ -255,6 +255,13 @@ if (prepareSource.includes('Import-XmaRustEnvironment') || prepareSource.include
 if (prepareSource.includes('https://rsproxy.cn')) throw new Error('Project-local Rust bootstrap must use the official rustup distribution endpoint.')
 if (prepareSource.includes('Rustlang.Rustup') || prepareSource.includes("Join-Path $env:USERPROFILE '.cargo")) throw new Error('Windows Rust must not fall back to user-profile Rust installation.')
 if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) throw new Error('dev shim belongs to checkout-local state, not xma-path')
+if (!prepareSource.includes("xiaoyu-dev.ps1") || !prepareSource.includes("[IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8)")) {
+  throw new Error('Windows dev shim must read source-root.txt through PowerShell/.NET UTF-8, not cmd set /p, so Chinese checkout paths remain valid.')
+}
+if (prepareSource.includes('set /p "XMA_DEV_ROOT="')) throw new Error('Windows dev shim must not parse UTF-8 source-root.txt through cmd.exe set /p.')
+if (!prepareSource.includes(String.raw`(?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$`)) {
+  throw new Error('Windows [1] must remove stale dev-bin PATH entries from other XMA checkouts.')
+}
 if (prepareSource.includes("@('exec','esbuild','--version')")) throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
 if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) throw new Error('XMA preparation must never download Electron Chromium Runtime')
 if (prepareSource.includes("@('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')")) throw new Error('XMA preparation must not prefetch Tauri Rust crates')
@@ -658,12 +665,15 @@ for (const marker of [
   '[2] 开发运行 · Web                    已准备后直接启动',
   '[4] 运行 · Xiaoyu Terminal            已准备后直接启动',
   'Build-CliNativeRuntime',
+  'Get-CliNativeRuntimeFingerprint',
+  'cli-native.sha256',
+  '跳过 cargo build，直接启动',
   'Stage-CliNativeRuntime',
   "@('build','--package','xma-native-runtime','--offline')",
   "Join-Path $Root '.cache\\cargo-target'",
   "Join-Path $Root '.cache\\native-runtime\\runs'",
   '$env:XIAOYU_NATIVE_RUNTIME = $nativeExe',
-  '复用 Cargo 增量缓存，离线构建，不下载依赖',
+  'Native Runtime 指纹已变化或缓存缺失；正在离线增量构建（不下载依赖）',
   '[3] 开发运行 · Desktop',
   '[5] 构建发布 · Desktop 当前平台',
   '[6] 构建发布 · Desktop Windows',
@@ -685,7 +695,10 @@ for (const marker of [
   if (!consoleSource.includes(marker)) throw new Error(`XMA console prepared-dependency/runtime contract missing: ${marker}`)
 }
 if (!/Build-CliNativeRuntime\r?\n\s*\$nativeExe = Stage-CliNativeRuntime/.test(consoleSource)) {
-  throw new Error('Xiaoyu Terminal must build native runtime as a void native action, then stage/read the executable separately.')
+  throw new Error('Xiaoyu Terminal must validate/cache native runtime as a void native action, then stage/read the executable separately.')
+}
+if (!consoleSource.includes("Get-Content -LiteralPath $stampFile -Raw -Encoding UTF8") || !consoleSource.includes("Get-XmaFingerprint") && !consoleSource.includes('Get-CliNativeRuntimeFingerprint')) {
+  throw new Error('Xiaoyu Terminal must fingerprint Native Rust inputs before deciding whether cargo build is necessary.')
 }
 if (consoleSource.includes('$nativeExe = Ensure-CliNativeRuntime')) {
   throw new Error('Xiaoyu Terminal must not capture cargo build output through a value-returning action function.')

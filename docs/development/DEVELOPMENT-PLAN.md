@@ -133,7 +133,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 - text streaming + tool-call round trip；
 - UI/CLI 展示真实 Provider/model/reasoning/latency/usage；
 - Secret 不进入 Session/日志/导出；
-- Brain Ready 只有真实请求成功才为 ready。
+- Terminal 产品状态：活动 Provider/Profile/Model 已保存且凭据可读即显示“模型已就绪”；Brain Ready Probe 只承担可选连接诊断/发布验收，真实请求失败仍必须显式报错。
 
 ## 5. 阶段 C：ToolPlan / Permission / Native Capability
 

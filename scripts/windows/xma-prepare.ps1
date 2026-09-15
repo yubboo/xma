@@ -268,22 +268,29 @@ function Install-XmaDevelopmentCommands {
   # 开发 shim 属于 checkout 控制状态，不属于 JavaScript/Rust 依赖实体。放到 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）。
   $devBin = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'
   New-Item -ItemType Directory -Force -Path $devBin | Out-Null
+  # `.cmd` 保持纯 ASCII；真正读取中文 checkout 路径由 PowerShell/.NET UTF-8 完成。
+  # 旧实现用 cmd.exe `set /p` 直接读取 UTF-8 source-root.txt，在中文路径下会被本地代码页解码成乱码，随后 call 到不存在的路径。
   $launcher = @'
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
-set "XMA_DEV_ROOT="
-if exist "%~dp0source-root.txt" set /p "XMA_DEV_ROOT="<"%~dp0source-root.txt"
-if not defined XMA_DEV_ROOT (
-  echo [ERROR] XMA development shim lost source-root.txt. Run xma-dev.bat ^> [1] again.
-  exit /b 1
-)
-call "%XMA_DEV_ROOT%\xma-dev.bat" cli "%CD%"
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0xiaoyu-dev.ps1"
 exit /b %ERRORLEVEL%
+'@
+  $powershellLauncher = @'
+$ErrorActionPreference = 'Stop'
+$rootFile = Join-Path $PSScriptRoot 'source-root.txt'
+if (-not (Test-Path -LiteralPath $rootFile -PathType Leaf)) { Write-Error 'XMA development shim lost source-root.txt. Run xma-dev.bat -> [1] again.'; exit 1 }
+$root = [IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8).Trim()
+$entry = Join-Path $root 'xma-dev.bat'
+if (-not (Test-Path -LiteralPath $entry -PathType Leaf)) { Write-Error "XMA source checkout no longer exists: $root. Run [1] in the active checkout to refresh the shim."; exit 1 }
+& $entry cli (Get-Location).Path
+exit $LASTEXITCODE
 '@
   $shimChanged = $false
   foreach ($name in @('xiaoyu.cmd','xma.cmd')) {
     if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin $name) -Content $launcher) { $shimChanged = $true }
   }
+  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'xiaoyu-dev.ps1') -Content $powershellLauncher) { $shimChanged = $true }
   if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'source-root.txt') -Content "$Root`r`n") { $shimChanged = $true }
 
   $normalizedDevBin = Get-XmaNormalizedPath $devBin
@@ -293,8 +300,9 @@ exit /b %ERRORLEVEL%
   foreach ($entry in $userEntries) {
     $normalized = Get-XmaNormalizedPath $entry
     if ($normalized -ieq $normalizedDevBin) { continue }
-    # 同一用户只激活一个 XMA checkout；同时清掉旧 `.xma/dev-bin` 与旧 checkout 的 `.git/.cache xma-state/dev-bin`。
+    # 同一用户只激活一个 XMA checkout；清掉旧 `.xma/dev-bin` 以及其他 checkout 的 `.git/.cache/xma-state/dev-bin`。
     if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
+    if ($normalized -match '(?i)[\\/](?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$') { continue }
     $nextUserEntries += $entry
   }
   $nextUserPath = ($nextUserEntries -join ';')
@@ -302,7 +310,15 @@ exit /b %ERRORLEVEL%
   if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }
 
   $processEntries = @(Get-XmaPathEntries $env:Path)
-  if (-not ($processEntries | Where-Object { (Get-XmaNormalizedPath $_) -ieq $normalizedDevBin })) { $env:Path = "$devBin;$env:Path" }
+  $nextProcessEntries = @($devBin)
+  foreach ($entry in $processEntries) {
+    $normalized = Get-XmaNormalizedPath $entry
+    if ($normalized -ieq $normalizedDevBin) { continue }
+    if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
+    if ($normalized -match '(?i)[\\/](?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$') { continue }
+    $nextProcessEntries += $entry
+  }
+  $env:Path = ($nextProcessEntries -join ';')
   if ($pathChanged -or $shimChanged) { Write-Host '[更新] 开发态 xiaoyu / xma shim 或 User PATH 已同步。' -ForegroundColor Green }
   else { Write-Host '[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。' -ForegroundColor DarkCyan }
   Write-Host "[位置] $devBin" -ForegroundColor DarkGray

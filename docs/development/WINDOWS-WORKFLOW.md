@@ -70,7 +70,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] Xiaoyu CLI`：不再次安装依赖；Bun/OpenTUI 直接从 Workspace `node_modules` 读取并真实验证当前已安装版本，Rust/Cargo 直接从当前项目 `runtime/rust/cargo/bin` 真实解析。随后执行 Cargo offline preflight 与 `cargo build --package xma-native-runtime --offline`；缺依赖时明确提示 `[1]/[8]/[9]`，不得静默联网；
+- `[4] Xiaoyu CLI`：不再次安装依赖；Bun/OpenTUI 直接从根 `node_modules` 读取并真实验证当前已安装版本，Rust/Cargo 从当前项目 `runtime/rust/cargo/bin` 真实解析。随后执行 Cargo offline preflight，并对 Native Rust 源码/Cargo 配置/lockfile/rustc 版本形成指纹：指纹一致且 `.cache/cargo-target/debug/xma-native-runtime.exe` 存在时跳过 `cargo build` 直接启动；只有 Native 输入变化或产物缺失才执行 `cargo build --package xma-native-runtime --offline`。缺依赖时明确提示 `[1]/[8]/[9]`，不得静默联网；
 - `[7] 全量检查`：先恢复 `[1]` 记录的 Rust Home，并在 TypeScript/CLI 测试之前做 Cargo offline preflight + rustfmt preflight；缺失立即提示回 `[1]`。随后 Rust check/test 使用 `--offline`；
 - `[8] 刷新 · JavaScript Runtime`：与 `[1]` 分离，只主动刷新 Workspace Bun/OpenTUI/Solid/@types-bun 到 registry latest；
 - `[9] 单独准备 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates；已有标准 Rust 工具链则复用，缺失时通过 winget/rustup 自动安装 stable，不再出现项目默认/D 盘/自定义盘符选择；
