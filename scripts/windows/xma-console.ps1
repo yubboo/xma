@@ -68,7 +68,7 @@ function Assert-CoreDependencies {
 }
 
 function Resolve-XmaCargoRuntime {
-  $importedRust = Import-XmaRustEnvironment -ProjectRoot $Root
+  $importedRust = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal
   if ($importedRust -and $importedRust.Source -eq 'drive-scan') {
     Write-Host "[恢复] checkout 状态缺失；已从现有磁盘自动重新接管 Rust/Cargo：$($importedRust.CargoHome)" -ForegroundColor DarkCyan
   }
@@ -96,7 +96,7 @@ function Assert-XmaCargoOfflineReady {
 }
 
 function Resolve-XmaBunRuntime {
-  $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  $bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
   if (-not $bunRuntime) {
     $discovered = @(Get-XmaDiscoveredBunHomes -ProjectRoot $Root -ExpectedVersion $BunVersion)
     if ($discovered.Count -gt 1) {

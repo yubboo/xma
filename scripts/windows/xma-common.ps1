@@ -178,7 +178,7 @@ function Get-XmaDiscoveredBunHomes {
   # 中文说明：checkout 状态可能因脚本升级/旧版清理而暂时缺失，但用户已经把 Bun 安装在某个盘符根的 `xma-path`。
   # `[4]/[7]` 只允许做离线真实发现，不允许联网安装；因此这里扫描当前已挂载文件系统盘符并执行 `bun --version`。
   $results = New-Object System.Collections.Generic.List[string]
-  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $seen = @{}
   foreach ($drive in [IO.DriveInfo]::GetDrives()) {
     try {
       if (-not $drive.IsReady) { continue }
@@ -186,7 +186,8 @@ function Get-XmaDiscoveredBunHomes {
     } catch { continue }
     $bunHome = Join-Path $driveRoot 'xma-path\bun'
     try { $bunHome = [IO.Path]::GetFullPath($bunHome) } catch { continue }
-    if (-not $seen.Add($bunHome)) { continue }
+    if ($seen.ContainsKey($bunHome)) { continue }
+    $seen[$bunHome] = $true
     $bunExe = Get-XmaBunExecutableFromHome -BunHome $bunHome -ExpectedVersion $ExpectedVersion
     if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) { continue }
 
@@ -204,13 +205,14 @@ function Get-XmaDiscoveredBunHomes {
       [void]$results.Add($bunHome)
     }
   }
-  return @($results)
+  return $results.ToArray()
 }
 
 function Import-XmaBunEnvironment {
   param(
     [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [Parameter(Mandatory = $true)][string]$ExpectedVersion
+    [Parameter(Mandatory = $true)][string]$ExpectedVersion,
+    [switch]$DiscoverExternal
   )
 
   # 中文说明：当前 checkout 的控制状态位于 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）；项目默认 Bun 仍位于 `xma-path/bun`。
@@ -260,11 +262,12 @@ function Import-XmaBunEnvironment {
   if (-not [string]::IsNullOrWhiteSpace($userBunHome)) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-user-env'; BunHome = $userBunHome }) }
   if (-not [string]::IsNullOrWhiteSpace($env:XMA_BUN_HOME)) { [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; BunHome = $env:XMA_BUN_HOME }) }
 
-  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $seen = @{}
   foreach ($candidate in $candidates) {
     try {
       $bunHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.BunHome))
-      if (-not $seen.Add($bunHome)) { continue }
+      if ($seen.ContainsKey($bunHome)) { continue }
+      $seen[$bunHome] = $true
       $bunExe = Get-XmaBunExecutableFromHome -BunHome $bunHome -ExpectedVersion $ExpectedVersion
     } catch { continue }
     if (-not (Test-Path -LiteralPath $bunExe -PathType Leaf)) { continue }
@@ -285,6 +288,9 @@ function Import-XmaBunEnvironment {
     $env:XMA_BUN_HOME = $bunHome
     return [pscustomobject]@{ Source = $candidate.Source; BunHome = $bunHome; BunExe = $bunExe; Version = $version }
   }
+  if (-not $DiscoverExternal) { return $null }
+
+  # 只有明确要求外部发现的入口才扫描盘符。普通 xma-dev 菜单启动只恢复已知状态，避免发现逻辑拖垮控制台入口。
   # checkout 状态缺失时，尝试从各文件系统盘符的 `xma-path` 自动重新发现一套已经安装好的 Bun。
   # 只有唯一命中时才自动接管并补写新状态；多套命中时保持未解析，交给上层明确提示用户选择。
   $discovered = @(Get-XmaDiscoveredBunHomes -ProjectRoot $ProjectRoot -ExpectedVersion $ExpectedVersion)
@@ -332,7 +338,7 @@ function Get-XmaDiscoveredRustHomes {
   # 中文说明：和 Bun 一样，Rust 的 checkout 状态可能丢失，但实体仍位于用户选择的外部盘符。
   # 只扫描 XMA 自管的已知外部布局，不搜索整盘；所有候选必须真实通过 `cargo/rustc --version`。
   $results = New-Object System.Collections.Generic.List[object]
-  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $seen = @{}
   foreach ($drive in [IO.DriveInfo]::GetDrives()) {
     try {
       if (-not $drive.IsReady) { continue }
@@ -346,7 +352,8 @@ function Get-XmaDiscoveredRustHomes {
       $cargoHome = Join-Path $rustRoot 'cargo'
       $rustupHome = Join-Path $rustRoot 'rustup'
       try { $cargoHome = [IO.Path]::GetFullPath($cargoHome) } catch { continue }
-      if (-not $seen.Add($cargoHome)) { continue }
+      if ($seen.ContainsKey($cargoHome)) { continue }
+      $seen[$cargoHome] = $true
       $cargoBin = Join-Path $cargoHome 'bin'
       $cargoExe = Join-Path $cargoBin 'cargo.exe'
       $rustcExe = Join-Path $cargoBin 'rustc.exe'
@@ -373,11 +380,14 @@ function Get-XmaDiscoveredRustHomes {
       }
     }
   }
-  return @($results)
+  return $results.ToArray()
 }
 
 function Import-XmaRustEnvironment {
-  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [switch]$DiscoverExternal
+  )
 
   # 中文说明：优先使用 checkout 本地 `.git/xma-state`（非 Git 树为 `.cache/xma-state`）记录的 Rust 位置；默认安装仍在 `xma-path/rust` 并按项目相对位置恢复。
   # 旧 `xma-path/state`、User 环境与 `.xma/state` 只作为迁移兼容来源，找到可用工具链后 `[1]` 会写回新的 checkout 状态。
@@ -427,10 +437,11 @@ function Import-XmaRustEnvironment {
   if (-not [string]::IsNullOrWhiteSpace($userCargoHome)) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-user-env'; CargoHome = $userCargoHome; RustupHome = $userRustupHome }) }
   if (-not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) { [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; CargoHome = $env:CARGO_HOME; RustupHome = $env:RUSTUP_HOME }) }
 
-  $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  $seen = @{}
   foreach ($candidate in $candidates) {
     try { $cargoHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.CargoHome)) } catch { continue }
-    if (-not $seen.Add($cargoHome)) { continue }
+    if ($seen.ContainsKey($cargoHome)) { continue }
+    $seen[$cargoHome] = $true
     $cargoBin = Join-Path $cargoHome 'bin'
     $cargoExe = Join-Path $cargoBin 'cargo.exe'
     $rustcExe = Join-Path $cargoBin 'rustc.exe'
@@ -445,6 +456,9 @@ function Import-XmaRustEnvironment {
     Add-XmaProcessPathFront -Directory $cargoBin
     return [pscustomobject]@{ Source = $candidate.Source; CargoHome = $cargoHome; RustupHome = $rustupHome; CargoExe = $cargoExe; RustcExe = $rustcExe }
   }
+  if (-not $DiscoverExternal) { return $null }
+
+  # 只有明确要求外部发现的入口才扫描盘符。普通 xma-dev 菜单启动只恢复已知状态，避免发现逻辑拖垮控制台入口。
   # checkout 状态缺失时，离线扫描 XMA 自管的外部 Rust 布局。唯一命中才自动接管，避免多套工具链时擅自猜测。
   $discovered = @(Get-XmaDiscoveredRustHomes -ProjectRoot $ProjectRoot)
   if ($discovered.Count -eq 1) {

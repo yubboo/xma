@@ -65,7 +65,7 @@ if ($DesktopRuntime -in @('electron','both')) {
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {
-  [void](Import-XmaRustEnvironment -ProjectRoot $Root)
+  [void](Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal)
   $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
   if (-not $cargoCommand) { throw 'Tauri Desktop 需要 Rust/Cargo。请先运行 xma-dev.bat → [1]。' }
   $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source

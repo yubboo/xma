@@ -514,7 +514,7 @@ function Move-XmaLegacyBunToProjectDefault {
 
 function Install-XmaBunRuntime([switch]$PromptIfMissing) {
   # 先恢复已经配置的 Runtime；只要真实 `bun.exe --version` 通过，就绝不重复安装。
-  $existing = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  $existing = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
   if ($existing) {
     # 旧 state/User env 可能仍把 Bun 指回当前 checkout 的 `.xma/tools/bun`。即使真实可执行，也必须先迁移，不能把旧目录重新保存成 external Home。
     $legacyBunHome = [IO.Path]::GetFullPath((Join-Path $Root '.xma\tools\bun'))
@@ -823,7 +823,7 @@ function Install-XmaRustStable {
 }
 
 function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
-  $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
+  $runtime = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal
   $rustReady = $false
   if ($runtime) {
     $rustProbe = Invoke-XmaProbe -FilePath $runtime.RustcExe -ArgumentList @('--version')
@@ -1096,7 +1096,7 @@ function Ensure-XmaOpenTuiDependencies([string]$BunExecutable) {
 function Ensure-XmaBunOpenTuiRuntime([switch]$PromptIfMissing) {
   # 中文说明：Bun + OpenTUI 是一个运行组件。`[1]` 必须按“整组件真值”判断，
   # 不能只看到 bun.exe 就认为准备完成，否则用户删除 xma-path\opentui 后不会再次获得 Y/N 修复机会。
-  $before = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion
+  $before = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal
   $bunExe = Install-XmaBunRuntime -PromptIfMissing:$PromptIfMissing
   if (-not $bunExe) { return $null }
 

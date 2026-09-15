@@ -364,4 +364,4 @@ XMA Agent Platform 采用 **Upstream-first Development Rule** 与 **No Blind Rei
 
 完整 Workbench 开工前至少应具备：Session/Turn/Step durable Runtime、两个不同协议族真实 Provider、ToolPlan/Approval/Native Capability、Workspace persistence、App Protocol/Event Stream、PTY/Process Native 能力和 Xiaoyu Code 最小真实闭环。UI 不得反向成为 Agent 状态源。
 
-- Windows `[4]/[7]` 在 checkout 状态缺失但外部 `xma-path` 实体仍存在时，必须允许离线真实再发现：只扫描 XMA 自管固定布局并执行版本探针；唯一命中可补写 checkout 状态，多套命中禁止猜测。
+- Windows `[4]/[7]` 在 checkout 状态缺失但外部 `xma-path` 实体仍存在时，必须允许离线真实再发现：只扫描 XMA 自管固定布局并执行版本探针；唯一命中可补写 checkout 状态，多套命中禁止猜测。盘符扫描只能由明确的准备/运行/检查解析入口触发；普通 `xma-dev.bat` 菜单启动只恢复已知状态，禁止在脚本顶层自动扫盘，避免发现逻辑故障导致整个开发控制台无法启动。

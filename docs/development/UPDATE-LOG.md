@@ -529,3 +529,13 @@
 - Rust：Rustup 官方与 RsProxy 做同类选择；仅当前 XMA 进程临时设置 `RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT`，不写 User/Machine 环境。rustup-init 自身继续 SHA-256 校验；stable toolchain、rustfmt 与已有 rustup repair 通过可见子进程运行，并显示实时子进程日志 + PowerShell elapsed progress，避免“静默等待”。
 - 边界：镜像只用于显式准备入口 `[1]/[8]/[9]`；`[4]/[7]` 仍严格 offline/`--no-install`，不会因为新增镜像逻辑偷偷联网。Cargo crates 的 offline 真值检查合同不变。
 - 回归：Windows Gate 锁定下载源模式、curl progress/stall、Bun SHA 清单、SourceForge/npmmirror/RsProxy、可见子进程与 `disposeCompileAlias: () => void`；版本保持 `0.1.0`，继续覆盖同名正式源码包与 SHA-256。
+
+
+##46 · Windows 外部 Rust 发现启动回归修复
+
+- 日期：2026-09-15
+- 现象：更新到 ##44/##45 后，双击 `xma-dev.bat` 在主菜单出现前直接退出；Windows PowerShell 报 `Get-XmaDiscoveredRustHomes : 参数数目不匹配`，调用点位于 `xma-common.ps1` 的外部 Rust 盘符发现。
+- 根因：外部 Rust 扫描使用 `List[object]` 后通过 `@($results)` 返回；Windows PowerShell 5.1 对该 generic collection 的 array-subexpression 存在 binder 兼容问题，会抛 `System.ArgumentException / Argument types do not match`。同时 ##44 把盘符发现放进通用 `Import-XmaRustEnvironment`，而 `xma-console.ps1` 顶层在显示菜单前就调用 Import，因此发现层的任何异常都会拖垮整个开发控制台。
+- 修复：Bun/Rust 发现结果统一通过 `List<T>.ToArray()` 返回，发现/候选去重改为 PowerShell 原生大小写不敏感 hashtable，避开 Windows PowerShell generic binder 差异。`Import-XmaBunEnvironment` / `Import-XmaRustEnvironment` 新增显式 `-DiscoverExternal`；普通控制台/准备器脚本顶层只恢复已知状态，不扫描盘符。只有 `[1]/[4]/[7]/[8]/[9]` 等真正解析依赖的路径以及明确的 Tauri 构建才允许离线发现。
+- 边界：外部发现仍只检查 XMA 自管固定布局并执行 `bun/cargo/rustc --version`，不下载依赖；多套候选继续 fail loud。即使将来盘符扫描再次出现异常，也不得阻断 `xma-dev.bat` 主菜单启动。
+- 回归：Windows Gate 锁定 `-DiscoverExternal` 显式入口、禁止 discovery helper 用 `return @($results)`，并要求脚本顶层 Import 不带外部发现开关。版本保持 `0.1.0`。

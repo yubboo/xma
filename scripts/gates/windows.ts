@@ -49,6 +49,20 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
+
+// 外部依赖盘符发现必须是显式行为，不能在 xma-dev 菜单脚本顶层自动执行。
+// Windows PowerShell 5.1 对 List[object] 的 `@($results)` array-subexpression 存在 binder 兼容问题，discovery helper 必须返回 ToArray()。
+const discoveryCommonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
+for (const marker of [
+  '[switch]$DiscoverExternal',
+  'if (-not $DiscoverExternal) { return $null }',
+  'return $results.ToArray()',
+]) {
+  if (!discoveryCommonSource.includes(marker)) throw new Error(`XMA external dependency discovery contract regression: missing ${marker}`)
+}
+if (discoveryCommonSource.includes('return @($results)')) throw new Error('PowerShell 5.1 discovery helpers must not return generic List via @($results); use ToArray().')
+if (discoveryCommonSource.includes("New-Object 'System.Collections.Generic.HashSet[string]'")) throw new Error('PowerShell discovery/path dedupe should use native case-insensitive hashtables instead of fragile generic HashSet constructor binding.')
+
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 for (const marker of [
   "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
@@ -235,6 +249,8 @@ for (const marker of [
   '未检测到 rustfmt/cargo-fmt。请运行主菜单 [9]',
   'Rust rustfmt 已就绪；[7] 将保持 offline',
   'function Resolve-XmaCargoRuntime',
+  '$importedRust = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal',
+  '$bunRuntime = Import-XmaBunEnvironment -ProjectRoot $Root -ExpectedVersion $BunVersion -DiscoverExternal',
   'function Assert-XmaCargoOfflineReady',
   'Rust/Cargo 环境已恢复：CARGO_HOME=',
   '[8] 单独安装 · Bun / OpenTUI',
@@ -245,6 +261,16 @@ for (const marker of [
   if (!cliConsoleSource.includes(marker)) throw new Error(`XMA Console TUI dependency contract regression: missing ${marker}`)
 }
 
+
+
+const consoleHead = cliConsoleSource.split(/\r?\n/).slice(0, 40).join('\n')
+if (/Import-Xma(?:Rust|Bun)Environment[^\n]*-DiscoverExternal/.test(consoleHead)) {
+  throw new Error('xma-dev menu startup must not scan external drives before the user selects an operation.')
+}
+const prepareHead = prepareSource.split(/\r?\n/).slice(0, 30).join('\n')
+if (/Import-XmaRustEnvironment[^\n]*-DiscoverExternal/.test(prepareHead)) {
+  throw new Error('xma-prepare top-level initialization must not scan external drives before dependency preparation actually starts.')
+}
 
 const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
 for (const marker of [
