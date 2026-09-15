@@ -623,3 +623,13 @@
 - `[8]`：保留显式升级能力，但只执行 `Bun latest -> OpenTUI/Solid latest` 两个定向阶段；不再 baseline install / consistency install / esbuild rebuild。更新失败仍恢复受管 manifest/lockfile。
 - CI/Release：与 `[1]` 一样只安装当前 Workspace，不调用 `runtime:update`，避免构建过程隐式升级依赖。`[4]/[7]/build` 继续只消费已安装依赖，不联网。
 - 生命周期安全：`strictDepBuilds: true` 与 `bun/esbuild=true`、`electron/electron-winstaller/koffi=false` 保持不变；Electron Chromium Runtime 仍只能在明确选择 Desktop Electron 后下载。版本继续保持 `0.1.0`。
+
+##55 · [1] 一键完整 Bootstrap 与原生 pnpm install
+
+- 日期：2026-09-15
+- 用户语义：`xma-dev.bat -> [1]` 的职责固定为“把当前这份 XMA 源码所需的全部开发/运行工具与依赖准备到可用状态”。项目以后新增 npm package、Workspace、Rust crate 或调整工具最低版本，用户更新源码后只需重新运行 `[1]`，不需要理解内部依赖变化。
+- JavaScript：Windows `[1]` 删除 npm/npmmirror 自动测速、registry 强切、`--no-frozen-lockfile`、`--prefer-offline`、`--reporter=append-only` 等 XMA 包装参数，项目根直接执行原生 `pnpm install` 并透传 pnpm 自己的正常实时输出。`[8]` 保持显式 Runtime latest 更新边界，但也默认尊重用户当前 pnpm registry 配置。
+- 工具链：Git/Node/pnpm/Rust/MSVC 从“缺失时逐项询问是否安装”改为项目硬依赖自动补齐。Node 仅在缺失或低于 `>=22` 时自动安装/升级；pnpm 当前支持 `11.x >= 11.17.0`，兼容版本直接复用，缺失/过旧/跨不兼容主版本才自动回到项目基准 `11.17.0`；Rust/Cargo 可用即复用，缺失时 `[1]` 自动安装 stable 到 checkout 默认 `xma-path`，rustfmt/MSVC/crates 同步补齐。
+- 版本原则：项目硬要求不满足时脚本负责自动修正；已经满足要求时不为了“最新”强制升级。可选稳定版更新不得成为 `[1]` 的阻塞网络前置条件。
+- 边界：Electron Chromium Runtime 与 Tauri Rust crates 仍属于用户明确选择 Desktop 后的按需依赖，不进入通用 `[1]`；`[4]/[7]` 继续只消费已准备依赖，不偷偷联网。
+

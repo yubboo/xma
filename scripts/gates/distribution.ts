@@ -139,7 +139,7 @@ const unixDevConsole = text('scripts/unix/xma-console.sh')
 for (const marker of ['prepare_environment', 'start_web', 'start_desktop', 'start_cli', 'full_check', './xma-dev [prepare|web|desktop|cli|check]']) {
   if (!unixDevConsole.includes(marker)) throw new Error(`XMA Unix source-development console marker missing: ${marker}`)
 }
-if (!unixDevConsole.includes('pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only')) throw new Error('Unix prepare must install current Workspace dependencies once.')
+if (!unixDevConsole.includes('pnpm install')) throw new Error('Unix prepare must delegate Workspace dependency sync to pnpm install.')
 if (!unixDevConsole.includes('node scripts/runtime/update.mjs')) throw new Error('Unix explicit Runtime refresh helper must use scripts/runtime/update.mjs.')
 if (existsSync('XMA.bat') || existsSync('xma.bat')) throw new Error('XMA source-development launcher must not occupy xma.bat/XMA.bat; installed product owns the xma command name.')
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # 文件作用：XMA Linux/macOS 源码开发控制台，对应根 `xma-dev`。
 # 关联模块：package.json、pnpm-workspace.yaml、Cargo.toml、apps/cli、apps/web、apps/desktop。
-# 当前实现：Bun/OpenTUI/Solid 统一由 pnpm Workspace 管理并存放在 node_modules；prepare 通过唯一 Runtime updater 刷新 registry latest 并事务式同步 lockfile/node_modules，运行/检查阶段只复用现有依赖，不偷偷联网更新；Rust/Cargo 继续作为 Native Toolchain 独立准备。
+# 当前实现：Bun/OpenTUI/Solid 统一由 pnpm Workspace 管理并存放在 node_modules；prepare 直接执行标准 pnpm install 同步当前 Workspace，运行/检查阶段只复用现有依赖；显式 Runtime refresh 才追 latest；Rust/Cargo 继续作为 Native Toolchain 独立准备。
 # 职责边界：只服务源码开发；普通用户应使用 xma-install.sh 安装预构建产品，再运行 `xiaoyu` / `xma`。
 set -eu
 
@@ -25,11 +25,16 @@ require_command() {
 }
 
 ensure_pnpm() {
-  if command -v pnpm >/dev/null 2>&1 && [ "$(pnpm --version 2>/dev/null || true)" = '11.17.0' ]; then
-    return 0
+  current="$(pnpm --version 2>/dev/null || true)"
+  if [ -n "$current" ]; then
+    major="$(printf '%s' "$current" | cut -d. -f1)"
+    minor="$(printf '%s' "$current" | cut -d. -f2)"
+    if [ "$major" = '11' ] && [ "${minor:-0}" -ge 17 ] 2>/dev/null; then
+      return 0
+    fi
   fi
   require_command npm
-  printf '%s\n' '[安装] Installing pnpm 11.17.0...'
+  printf '%s\n' '[安装] Installing XMA baseline pnpm 11.17.0...'
   npm install --global pnpm@11.17.0
 }
 
@@ -66,7 +71,7 @@ assert_workspace_js_runtime() {
 
 install_workspace_js_dependencies() {
   printf '%s\n' '[安装] Installing current XMA Workspace JavaScript dependencies once...'
-  pnpm install --no-frozen-lockfile --prefer-offline --reporter=append-only
+  pnpm install
   assert_workspace_js_runtime
   bun_version="$(package_version "$ROOT/node_modules/bun/package.json")"
   opentui_version="$(package_version "$RUNTIME_ROOT/node_modules/@opentui/core/package.json")"
@@ -113,7 +118,7 @@ prepare_environment() {
   [ "$major" -ge 22 ] || { printf '[ERROR] Node.js 22+ required; current: %s\n' "$(node --version)" >&2; exit 1; }
   printf '[通过] %s\n' "$(node --version)"
 
-  printf '%s\n' '[2/5] pnpm 11.17.0'
+  printf '%s\n' '[2/5] pnpm 11.x · minimum 11.17.0'
   ensure_pnpm
   printf '[通过] pnpm %s\n' "$(pnpm --version)"
 

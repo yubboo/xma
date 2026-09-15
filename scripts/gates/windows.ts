@@ -124,16 +124,25 @@ for (const marker of [
   "Join-Path $Root 'node_modules\\bun\\package.json'",
   "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
   'function Install-XmaWorkspaceJavaScriptDependencies',
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--no-frozen-lockfile','--prefer-offline','--reporter=append-only')",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')",
   'function Invoke-XmaManagedJavaScriptLatestUpdate',
-  "Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs','--registry',[string]$registry.Url)",
+  "Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
   '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
-  '[1] 只安装当前源码所需依赖到 node_modules，[8] 才主动刷新 latest',
+  'Workspace JavaScript 依赖直接执行原生 pnpm install',
   'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules',
+  '[缺少] 当前没有检测到 Git；这是 XMA 源码开发必需工具，正在自动安装稳定版。',
+  '[缺少] 当前没有检测到 Node.js；XMA 要求 Node.js 22+，正在自动安装 Node.js LTS。',
+  '[3/8] pnpm 11.x · 最低 11.17.0',
+  'Ensure-XmaRustToolchain -UseDefaultLocation',
+  '这是 XMA Windows Native 构建必需工具，正在自动安装',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`pnpm Workspace JS Runtime contract regression: missing ${marker}`)
 }
 if (prepareSource.includes('baseline install → Bun latest')) throw new Error('Windows [1] must not use the old five-stage Runtime bootstrap.')
+for (const forbidden of ['--no-frozen-lockfile','--prefer-offline','--reporter=append-only']) {
+  const installLine = prepareSource.split('\n').find((line) => line.includes("Invoke-XmaExternal -FilePath 'pnpm.cmd'") && line.includes("'install'")) ?? ''
+  if (installLine.includes(forbidden)) throw new Error(`Windows [1] must delegate dependency sync to plain pnpm install; forbidden wrapper flag: ${forbidden}`)
+}
 if (!prepareSource.includes("if ($Component -eq 'js') { [void](Ensure-XmaWorkspaceJavaScriptDependencies); exit 0 }")) throw new Error('Windows js component must install current Workspace dependencies only.')
 if (!prepareSource.includes("if ($Component -eq 'bun') { Prepare-XmaJavaScriptOnly; exit 0 }")) throw new Error('Windows bun component must remain the explicit latest refresh path.')
 const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
@@ -182,7 +191,6 @@ if (prepareSource.includes('[Console]::ReadKey') || prepareSource.includes('[Con
   throw new Error('Dependency arrow menu must use PowerShell Host RawUI; System.Console cursor/read APIs regress in Windows Terminal hosts.')
 }
 for (const marker of [
-  'function Get-XmaNpmRegistrySources',
   'https://registry.npmmirror.com',
   'function Get-XmaRustupSource',
   'https://rsproxy.cn',

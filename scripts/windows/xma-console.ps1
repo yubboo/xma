@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布、全量检查和 Git 源码更新。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 一次准备通用开发依赖并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 继续从独立 Home 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
+当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 继续从独立 Home 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
 职责边界：GitHub push 仍只由 XMA-GitHub.bat 负责；[10] 只更新当前 clone，不提交/推送；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -120,7 +120,7 @@ function Update-XmaProject {
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
         Write-Host '[更新] 正在安全同步当前分支...' -ForegroundColor Cyan
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main') | Out-Host
-        Write-Host '[完成] XMA 源码已安全更新。请关闭本控制台并重新运行 xma-dev.bat，让新脚本完整生效。' -ForegroundColor Green
+        Write-Host '[完成] XMA 源码已安全更新。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步新版本新增/调整的全部工具与依赖。' -ForegroundColor Green
         exit 0
       }
       '2' {
@@ -129,7 +129,7 @@ function Update-XmaProject {
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
         Write-Host '[恢复] 正在用 origin/main 覆盖当前已跟踪源码...' -ForegroundColor Yellow
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('reset','--hard','origin/main') | Out-Host
-        Write-Host '[完成] 当前源码已强制恢复到 GitHub main。请关闭本控制台并重新运行 xma-dev.bat。' -ForegroundColor Green
+        Write-Host '[完成] 当前源码已强制恢复到 GitHub main。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步当前源码全部工具与依赖。' -ForegroundColor Green
         exit 0
       }
       '0' { return }
@@ -429,7 +429,7 @@ if ($Command -ne 'menu') {
 while ($true) {
   Write-Header
   Write-Host '  [1] 一键准备开发环境                   ← 推荐首次运行' -ForegroundColor Green
-  Write-Host '      系统工具 + Workspace JS 依赖；一次 pnpm install，装完即可运行' -ForegroundColor DarkGray
+  Write-Host '      自动准备当前源码所需全部工具与依赖；JavaScript 使用原生 pnpm install' -ForegroundColor DarkGray
   Write-Host '  [2] 开发运行 · Web                    已准备后直接启动'
   Write-Host "  [3] 开发运行 · Desktop                Electron $ElectronVersion 主 / Tauri 2 副"
   Write-Host '  [4] 运行 · Xiaoyu Terminal            已准备后直接启动'
@@ -437,7 +437,7 @@ while ($true) {
   Write-Host '  [6] 构建发布 · Desktop Windows         Electron Setup + Portable'
   Write-Host '  [7] 全量检查                          使用已准备依赖，不偷偷下载'
   Write-Host '  [8] 刷新 · JavaScript Runtime         pnpm latest：Bun / OpenTUI / Solid'
-  Write-Host '  [9] 单独安装 · Rust / Cargo           缺失时单独补齐'
+  Write-Host '  [9] 单独准备 · Rust / Cargo           单独修复/重装 Native 工具链'
   Write-Host '  [10] 更新项目                         安全更新 / 强制恢复 GitHub main'
   Write-Host '  [0] 退出'
   Write-Host ''

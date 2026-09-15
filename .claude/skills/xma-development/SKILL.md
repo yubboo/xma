@@ -41,6 +41,6 @@
 - 修改架构时同步文档和 Gate；目录/公共 package/Stable Import/阶段变化还必须追加 `UPDATE-LOG.md` 下一个 `##NN` 编号并更新 `CODEMAP.md`。
 - 未冻结 0.1.0 修正仍交付 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，禁止 fixed/hotfix/final/v2/new。
 
-- Windows `[1]` 的 Bun/OpenTUI 与 Rust/Cargo 必须先真实探测；缺失时允许分别 Y/N 跳过，并由 `[8]` / `[9]` 单独补装。默认依赖根是当前 checkout 的 `xma-path`，D 盘使用 `D:/xma-path`，自定义只接受真实盘符并使用 `<盘符>:/xma-path`；`[4]/[7]/build:cli` 统一恢复并真实校验同一 Runtime。旧 `.xma` 只能迁移，不能继续写新状态。
+- Windows `[1]` 是一键完整 Bootstrap：Git、Node、兼容 pnpm、Workspace JavaScript、Rust/Cargo、rustfmt、MSVC 与 Native crates 必须真实探测并确保可用；缺失或低于项目硬要求时自动安装/修正，满足要求就复用，不为追新强制升级。Workspace JavaScript 固定直接执行标准 `pnpm install`；项目新增/调整依赖后重跑 `[1]` 即同步。缺失 Rust 时 `[1]` 使用当前 checkout 的默认 `xma-path`；`[9]` 可单独修复并选择 D:/自定义盘符。`[4]/[7]/build:cli` 统一恢复并真实校验同一 Runtime。旧 `.xma` 只能迁移，不能继续写新状态。
 - Windows `xma-dev.bat → [1]` 会把当前 checkout 的 `.git/xma-state/dev-bin` 注册到 User PATH；之后可在任意 Workspace 用 `xiaoyu` / `xma` 启动开发态 CLI。不得把整个仓库加入 PATH。
 - Terminal 没有已配置 Brain/Profile 时只在首次进入时自动打开 Provider 配置；已有 Profile 后不重复弹出，`Ctrl+P → Brain / Provider` 始终保留。

@@ -67,9 +67,9 @@ cd xma
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。Bun、OpenTUI、Solid 与 `@types/bun` 已并入 pnpm Workspace：`[1]` 只执行一次 Workspace `pnpm install`，把当前源码需要的依赖安装到 `node_modules/`；只有 `[8] 刷新 · JavaScript Runtime` 才主动查询 registry `latest` 并更新受管 Runtime。`[4]`、`[7]` 与 `build:cli` 只使用已经安装并由 lockfile 记录的版本，不会在运行/检查阶段偷偷联网升级。Rust/Cargo 仍是独立 Native Toolchain，缺失时由 `[1]` 询问 Y/N，或稍后使用 `[9]` 单独安装；Rust 安装位置支持跟随项目 `xma-path/rust`、D 盘或用户自定义真实盘符，并使用隔离 `RUSTUP_HOME/CARGO_HOME` + stable default，不设置目录级 `rustup override`。
+首次进入菜单选择 `[1] 一键准备开发环境`。它的职责只有一个：**把当前这份 XMA 源码需要的开发/运行工具与依赖全部准备到可用状态**。Windows 会检查 Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 与 Cargo crates；缺失或低于项目硬要求时自动安装/修正，已经满足要求的稳定可用版本直接复用，不为了追“最新”强制升级。Bun、OpenTUI、Solid 与 `@types/bun` 已并入 pnpm Workspace，JavaScript 依赖同步就是在项目根直接执行标准 `pnpm install`。以后项目新增 package、Workspace 或调整依赖版本，用户更新源码后重新运行一次 `[1]` 即会自动补齐。
 
-JavaScript Runtime 的下载与版本解析统一交给 pnpm/npm registry；`[1]/[8]` 会在 npm 官方与 `registry.npmmirror.com` 间按当前准备策略切换，并通过 pnpm lockfile 固化这次解析结果。XMA 不再维护 Bun ZIP/tgz 下载器、SourceForge 镜像、Bun SHA 清单或独立 Bun Home。Rust/rustup 仍可使用官方源与 RsProxy 的进程级加速策略，镜像环境变量不会写入 User/Machine 全局设置。
+`[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析完全交给 pnpm 及用户当前 npm registry 配置；XMA 不再为 `[1]` 做 npm/npmmirror 测速、强制切源、隐藏 reporter 或重复 install。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
 
 JavaScript 依赖统一位于 Workspace `node_modules/`：根 `node_modules/bun` 提供 Bun Runtime，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types/bun。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/bun`、`xma-path/opentui`、`xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做清理/迁移兼容，不再作为当前 JavaScript Runtime。
 
@@ -152,7 +152,7 @@ XMA-GitHub.bat
 xma-dev.bat
 ```
 
-菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查、`[8] 刷新 JavaScript Runtime`、`[9] Rust/Cargo` 与 `[10] 更新项目`。首次运行 `[1]` 会一次安装 pnpm Workspace 的 Bun/OpenTUI/Solid/TypeScript 等当前 JavaScript 依赖；Rust 缺失时允许选择 N 跳过，之后再由 `[9]` 补齐。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查、`[8] 刷新 JavaScript Runtime`、`[9] Rust/Cargo` 与 `[10] 更新项目`。首次运行 `[1]` 会自动准备 Git/Node/pnpm/Rust/MSVC 等工具，并通过标准 `pnpm install` / Cargo 流程补齐当前源码依赖；项目以后新增或调整依赖，更新源码后重新运行 `[1]` 即可同步。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
 
 
 ## Terminal / Distribution 第一批

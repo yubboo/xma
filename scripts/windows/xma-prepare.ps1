@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
-当前实现：检查/安装 Git、Node.js、pnpm、Rust/Cargo、MSVC；Bun/OpenTUI/Solid 作为 pnpm Workspace 依赖统一进入 node_modules，[1] 只执行一次 Workspace install，[8] 才定向刷新受管 JS Runtime latest；Rust 仍支持 ↑/↓ + Enter 或数字键选择独立安装位置；准备 XMA Native Rust crates；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
+当前实现：[1] 自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript 依赖、Rust/Cargo、MSVC 与 Native crates 全部就绪；JavaScript 依赖直接执行原生 pnpm install，项目新增/调整依赖后重新运行 [1] 即同步；已满足项目版本要求的工具直接复用，不为追新强制升级；[8] 仅用于用户明确要求的 Bun/OpenTUI/Solid latest 刷新；生成开发态 xiaoyu/xma 命令并自动注册到当前用户 PATH。
 职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
@@ -83,15 +83,6 @@ function Set-XmaTextFileIfChanged([string]$Path, [string]$Content) {
   }
   [IO.File]::WriteAllText($Path, $normalized, ([Text.UTF8Encoding]::new($false)))
   return $true
-}
-
-function Confirm-XmaAction([string]$Message) {
-  while ($true) {
-    $answer = (Read-Host "$Message [Y/N]").Trim().ToLowerInvariant()
-    if ($answer -in @('y','yes')) { return $true }
-    if ($answer -in @('n','no')) { return $false }
-    Write-Host '请输入 Y 或 N。' -ForegroundColor Yellow
-  }
 }
 
 function Refresh-XmaPath {
@@ -338,14 +329,6 @@ function Invoke-XmaVisibleProcess {
   if ([int]$exitCode -ne 0) { throw "$FilePath failed with exit code $exitCode" }
 }
 
-function Get-XmaNpmRegistrySources {
-  $sources = @(
-    [pscustomobject]@{ Kind = 'official'; Name = 'npm 官方'; Url = 'https://registry.npmjs.org'; ProbeUrl = 'https://registry.npmjs.org/-/ping' },
-    [pscustomobject]@{ Kind = 'mirror'; Name = 'npmmirror'; Url = 'https://registry.npmmirror.com'; ProbeUrl = 'https://registry.npmmirror.com/-/ping' }
-  )
-  return @(Get-XmaOrderedDownloadSources -Sources $sources)
-}
-
 function Get-XmaRustupSource {
   $sources = @(
     [pscustomobject]@{
@@ -548,8 +531,15 @@ function Set-XmaRustHomes([string]$InstallRoot) {
   return [pscustomobject]@{ Root = $InstallRoot; RustupHome = $rustupHome; CargoHome = $cargoHome; CargoBin = $cargoBin }
 }
 
-function Install-XmaRustStable {
-  $dependencyRoot = Select-XmaDependencyRoot -ComponentLabel 'Rust / Cargo'
+function Install-XmaRustStable([switch]$UseDefaultLocation) {
+  $dependencyRoot = if ($UseDefaultLocation) {
+    $defaultRoot = Get-XmaLocalPathRoot -ProjectRoot $Root
+    if (-not (Test-XmaWritableDirectory $defaultRoot)) { throw "XMA 默认依赖目录不可写：$defaultRoot" }
+    Write-Host "[自动] [1] 使用项目默认依赖根：$defaultRoot" -ForegroundColor DarkCyan
+    $defaultRoot
+  } else {
+    Select-XmaDependencyRoot -ComponentLabel 'Rust / Cargo'
+  }
   $installRoot = Join-Path $dependencyRoot 'rust'
   $homes = Set-XmaRustHomes $installRoot
   $cargoExe = Join-Path $homes.CargoBin 'cargo.exe'
@@ -659,7 +649,7 @@ function Install-XmaRustStable {
   return (Import-XmaRustEnvironment -ProjectRoot $Root)
 }
 
-function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
+function Ensure-XmaRustToolchain([switch]$UseDefaultLocation) {
   $runtime = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal
   $rustReady = $false
   if ($runtime) {
@@ -668,7 +658,7 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
     $rustReady = ($rustProbe.ExitCode -eq 0) -and ($cargoProbe.ExitCode -eq 0)
   }
 
-  # 兼容用户电脑上已经存在但尚未写入 checkout 本地状态的 Rust。只要真实探针通过，就接管并保存位置，不重复安装。
+  # 兼容用户电脑上已经存在但尚未写入 checkout 本地状态的 Rust。真实探针通过就直接复用，不为追新强制升级。
   if (-not $rustReady) {
     $rustcCommand = Get-Command rustc.exe -ErrorAction SilentlyContinue
     $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
@@ -684,21 +674,15 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
         $runtime = Import-XmaRustEnvironment -ProjectRoot $Root
         $rustReady = $null -ne $runtime
         if ($rustReady -and -not $hadProjectState) {
-          Write-Host "[恢复] 当前 checkout 状态不存在，但检测到可真实运行的外部 Rust/Cargo；已重新接管，不重复安装：$cargoHome" -ForegroundColor DarkCyan
+          Write-Host "[恢复] 检测到可实际运行的 Rust/Cargo；已接管并复用，不重复安装：$cargoHome" -ForegroundColor DarkCyan
         }
       }
     }
   }
 
   if (-not $rustReady) {
-    if ($PromptIfMissing) {
-      Write-Host '[缺少] 当前没有可实际运行的 Rust stable / Cargo。' -ForegroundColor Yellow
-      if (-not (Confirm-XmaAction '是否安装 Rust / Cargo？选择 N 会跳过，可稍后在主菜单 [9] 单独安装。')) {
-        Write-Host '[跳过] Rust/Cargo 未安装；与 Rust 无关的 JavaScript 环境会继续准备。' -ForegroundColor Yellow
-        return $null
-      }
-    }
-    $runtime = Install-XmaRustStable
+    Write-Host '[缺少] 当前没有可实际运行的 Rust stable / Cargo；这是 XMA Native Runtime 必需工具链，正在自动安装。' -ForegroundColor Yellow
+    $runtime = Install-XmaRustStable -UseDefaultLocation:$UseDefaultLocation
     if (-not $runtime) { throw 'Rust 安装完成后仍无法恢复运行环境。' }
   }
 
@@ -709,12 +693,13 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
   Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $runtime.CargoHome -RustupHome $runtime.RustupHome
   Write-Host "[通过] $((($rustProbe.Output -join ' ').Trim()))" -ForegroundColor Green
   Write-Host "[通过] $((($cargoProbe.Output -join ' ').Trim()))" -ForegroundColor Green
+  Write-Host '[版本策略] 当前 Rust/Cargo 可用即直接复用；XMA 推荐 stable，但不会仅为了追最新 stable 强制升级。' -ForegroundColor DarkGray
 
   $rustupExe = Join-Path (Join-Path $runtime.CargoHome 'bin') 'rustup.exe'
   $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
   if ($rustfmtProbe.ExitCode -ne 0) {
-    if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且当前 Rust Home 没有 rustup.exe。' }
-    Write-Host '[缺少] 未检测到 rustfmt；正在为当前 XMA Rust Home 安装 rustfmt 组件...' -ForegroundColor Yellow
+    if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw 'Rust 已可用，但缺少 rustfmt/cargo-fmt，且当前 Rust Home 没有 rustup.exe。' }
+    Write-Host '[缺少] 未检测到 rustfmt；这是 XMA 全量检查必需组件，正在自动安装...' -ForegroundColor Yellow
     [void](Set-XmaRustupDownloadSource)
     Invoke-XmaVisibleProcess -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') -Activity 'Rust rustfmt 组件下载/安装'
     $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
@@ -735,10 +720,7 @@ function Ensure-XmaMsvc {
   }
   if ($msvcReady) { Write-Host '[通过] Visual Studio C++ Build Tools 已安装。' -ForegroundColor Green; return }
 
-  Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools（Rust MSVC 链接器需要）。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否自动安装 Visual Studio 2022 Build Tools + C++ Toolchain？')) {
-    throw 'Windows Rust Native 构建需要 MSVC C++ Build Tools。可稍后在主菜单 [9] 重新准备 Rust/Cargo。'
-  }
+  Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools；这是 XMA Windows Native 构建必需工具，正在自动安装。' -ForegroundColor Yellow
   Ensure-XmaWinget
   Write-Host '[安装] 正在安装 Visual Studio 2022 Build Tools + C++ Toolchain，这一步可能需要几分钟...' -ForegroundColor Yellow
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @(
@@ -909,48 +891,18 @@ function Get-XmaWorkspaceJavaScriptRuntimeInfo {
 }
 
 function Install-XmaWorkspaceJavaScriptDependencies {
-  Write-Host '[安装] 正在安装 XMA 当前源码所需 Workspace JavaScript 依赖...' -ForegroundColor Cyan
-  Write-Host '[策略] [1] 只执行一次 pnpm install；不会主动刷新 Bun/OpenTUI/Solid latest。需要升级请使用主菜单 [8]。' -ForegroundColor DarkGray
-
-  $registrySources = @(Get-XmaNpmRegistrySources)
-  $lastError = ''
-  foreach ($registry in $registrySources) {
-    Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
-    $previousRegistry = $env:npm_config_registry
-    try {
-      $env:npm_config_registry = [string]$registry.Url
-      Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--no-frozen-lockfile','--prefer-offline','--reporter=append-only')
-      Write-Host '[完成] Workspace JavaScript 依赖已安装。' -ForegroundColor Green
-      return
-    } catch {
-      $lastError = $_.Exception.Message
-      Write-Host "[切换] $($registry.Name) 安装失败：$lastError" -ForegroundColor Yellow
-    } finally {
-      if ($null -eq $previousRegistry) { Remove-Item Env:npm_config_registry -ErrorAction SilentlyContinue }
-      else { $env:npm_config_registry = $previousRegistry }
-    }
-  }
-  throw "XMA Workspace JavaScript 依赖安装失败；已尝试可用 npm registry。最后错误：$lastError"
+  Write-Host '[安装] 正在同步 XMA 当前源码所需的全部 Workspace JavaScript 依赖...' -ForegroundColor Cyan
+  Write-Host '[pnpm] 直接执行项目根 pnpm install；依赖新增、删除或版本调整后重新运行 [1] 即可同步。' -ForegroundColor DarkGray
+  Write-Host '[进度] 以下为 pnpm 原生实时输出；XMA 不接管 registry、不隐藏 reporter、不重复执行 install。' -ForegroundColor DarkCyan
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')
+  Write-Host '[完成] Workspace JavaScript 依赖已按当前项目声明同步。' -ForegroundColor Green
 }
 
 function Invoke-XmaManagedJavaScriptLatestUpdate {
   Write-Host '[更新] 正在刷新 XMA JS Runtime：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
-  Write-Host '[策略] [8] 只做两个定向 latest 更新；不重复执行整 Workspace install。' -ForegroundColor DarkGray
-
-  $registrySources = @(Get-XmaNpmRegistrySources)
-  $lastError = ''
-  foreach ($registry in $registrySources) {
-    Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
-    try {
-      Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs','--registry',[string]$registry.Url)
-      Write-Host '[完成] Workspace JavaScript Runtime latest 刷新完成。' -ForegroundColor Green
-      return
-    } catch {
-      $lastError = $_.Exception.Message
-      Write-Host "[切换] $($registry.Name) Runtime 刷新失败；受管 manifest/lockfile 已回滚：$lastError" -ForegroundColor Yellow
-    }
-  }
-  throw "XMA JS Runtime latest 更新失败；已尝试可用 npm registry。最后错误：$lastError"
+  Write-Host '[策略] [8] 是显式升级入口；使用 pnpm 当前配置的 registry，不修改用户 registry。' -ForegroundColor DarkGray
+  Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')
+  Write-Host '[完成] Workspace JavaScript Runtime latest 刷新完成。' -ForegroundColor Green
 }
 
 function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
@@ -1021,10 +973,10 @@ if ($Component -eq 'rust') { Prepare-XmaRustOnly; exit 0 }
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '  XMA 一键准备开发环境' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
-Write-Host '说明：本流程一次准备系统工具 + XMA 通用项目依赖。' -ForegroundColor DarkGray
-Write-Host '说明：Bun/OpenTUI/Solid 已并入 pnpm Workspace；[1] 只安装当前源码所需依赖到 node_modules，[8] 才主动刷新 latest。' -ForegroundColor DarkGray
-Write-Host '说明：Rust/Cargo 仍是 Native Toolchain；缺失时会询问 Y/N，选择 N 只跳过 Rust，不中断 JavaScript 开发环境准备。' -ForegroundColor DarkGray
-Write-Host '说明：不会下载 Electron Chromium Runtime，也不会预取 Tauri 2 Rust crates；这两项只在明确选择对应 Desktop 后执行。' -ForegroundColor DarkGray
+Write-Host '说明：[1] 会自动确保当前 XMA 源码开发/运行所需工具与依赖全部就绪。' -ForegroundColor DarkGray
+Write-Host '说明：Git / Node.js / pnpm / Rust / MSVC 缺失或不满足项目硬要求时自动修正；已满足要求就直接复用，不为追新强制升级。' -ForegroundColor DarkGray
+Write-Host '说明：Workspace JavaScript 依赖直接执行原生 pnpm install；以后项目新增/调整依赖，重新运行 [1] 即会自动同步。' -ForegroundColor DarkGray
+Write-Host '说明：Electron Chromium Runtime 与 Tauri Rust crates 属于明确 Desktop 选择后的按需依赖，不在通用 [1] 中预下载。' -ForegroundColor DarkGray
 Write-Host ''
 Refresh-XmaPath
 
@@ -1032,8 +984,7 @@ Write-Host '[1/8] Git' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Git 是否可用...' -ForegroundColor DarkCyan
 if (Get-Command git.exe -ErrorAction SilentlyContinue) { Write-Host "[通过] 已检测到 $(& git.exe --version)" -ForegroundColor Green }
 else {
-  Write-Host '[缺少] 当前没有检测到 Git。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否自动下载并安装 Git？')) { throw 'Git 是 XMA 开发与推送流程的必要依赖。' }
+  Write-Host '[缺少] 当前没有检测到 Git；这是 XMA 源码开发必需工具，正在自动安装稳定版。' -ForegroundColor Yellow
   Ensure-XmaWinget
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
@@ -1045,8 +996,7 @@ Write-Host ''
 Write-Host '[2/8] Node.js 22+' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
-  Write-Host '[缺少] 当前没有检测到 Node.js。' -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否自动下载并安装 Node.js LTS？')) { throw 'Node.js 22+ 是 XMA TypeScript Runtime 的必要依赖。' }
+  Write-Host '[缺少] 当前没有检测到 Node.js；XMA 要求 Node.js 22+，正在自动安装 Node.js LTS。' -ForegroundColor Yellow
   Ensure-XmaWinget
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
@@ -1055,8 +1005,7 @@ if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { throw 'Node.js 
 $nodeVersion = (& node.exe --version).Trim()
 $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
 if ($major -lt 22) {
-  Write-Host "[过旧] 当前 $nodeVersion，XMA 要求 Node.js 22+。" -ForegroundColor Yellow
-  if (-not (Confirm-XmaAction '是否通过 winget 自动升级 Node.js LTS？')) { throw 'Node.js 版本不足。' }
+  Write-Host "[过旧] 当前 $nodeVersion，低于 XMA 硬要求 Node.js 22+；正在自动升级到受支持的 LTS。" -ForegroundColor Yellow
   Ensure-XmaWinget
   Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
@@ -1064,39 +1013,55 @@ if ($major -lt 22) {
   if ($major -lt 22) { throw "Node.js 升级后仍低于 22：$nodeVersion。" }
 }
 Write-Host "[通过] Node.js $nodeVersion" -ForegroundColor Green
+Write-Host '[版本策略] 当前版本已满足 XMA >=22；不会仅为了追最新稳定版强制升级。' -ForegroundColor DarkGray
 
 Write-Host ''
-Write-Host '[3/8] pnpm 11.17.0' -ForegroundColor Cyan
+Write-Host '[3/8] pnpm 11.x · 最低 11.17.0' -ForegroundColor Cyan
 $pnpmVersion = if (Get-Command pnpm.cmd -ErrorAction SilentlyContinue) { (& pnpm.cmd --version).Trim() } else { '' }
-if ($pnpmVersion -ne '11.17.0') {
-  if ($pnpmVersion) { Write-Host "[调整] 当前 pnpm $pnpmVersion，项目固定使用 11.17.0。" -ForegroundColor Yellow } else { Write-Host '[缺少] 当前没有检测到 pnpm。' -ForegroundColor Yellow }
+$pnpmCompatible = $false
+if ($pnpmVersion) {
+  try {
+    $pnpmNumeric = [version](($pnpmVersion -split '-')[0])
+    $pnpmCompatible = ($pnpmNumeric.Major -eq 11) -and ($pnpmNumeric -ge [version]'11.17.0')
+  } catch { $pnpmCompatible = $false }
+}
+if (-not $pnpmCompatible) {
+  if ($pnpmVersion) {
+    Write-Host "[不兼容] 当前 pnpm $pnpmVersion；XMA 当前支持 pnpm 11.x，最低 11.17.0。正在自动切换到项目基准稳定版 11.17.0。" -ForegroundColor Yellow
+  } else {
+    Write-Host '[缺少] 当前没有检测到 pnpm；正在自动安装项目基准稳定版 11.17.0。' -ForegroundColor Yellow
+  }
   Invoke-XmaExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
   Refresh-XmaPath
+  $pnpmVersion = (& pnpm.cmd --version).Trim()
+  try {
+    $pnpmNumeric = [version](($pnpmVersion -split '-')[0])
+    $pnpmCompatible = ($pnpmNumeric.Major -eq 11) -and ($pnpmNumeric -ge [version]'11.17.0')
+  } catch { $pnpmCompatible = $false }
 }
-$pnpmVersion = (& pnpm.cmd --version).Trim()
-if ($pnpmVersion -ne '11.17.0') { throw "pnpm 版本校验失败：期望 11.17.0，实际 $pnpmVersion。" }
+if (-not $pnpmCompatible) { throw "pnpm 版本不满足 XMA 要求：当前 $pnpmVersion；要求 11.x 且 >= 11.17.0。" }
 Write-Host "[通过] pnpm $pnpmVersion" -ForegroundColor Green
+Write-Host '[版本策略] 兼容的 pnpm 11.x 直接复用；只有缺失、低于最低版本或跨到不兼容主版本时才自动修正。' -ForegroundColor DarkGray
 
 Write-Host ''
 Write-Host '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain' -ForegroundColor Cyan
-Write-Host '[检查] 正在通过 pnpm 一次安装当前 XMA Workspace 所需 JavaScript 依赖...' -ForegroundColor DarkCyan
+Write-Host '[检查] 正在执行项目标准 pnpm install，同步当前 XMA Workspace 全部 JavaScript 依赖...' -ForegroundColor DarkCyan
 $jsRuntime = Ensure-XmaWorkspaceJavaScriptDependencies
 $workspaceFingerprint = Get-XmaWorkspaceDependencyFingerprint
 Set-XmaPrepareStamp -Name 'workspace-js' -Fingerprint $workspaceFingerprint
 
 Write-Host ''
 Write-Host '[5/8] Rust / Cargo' -ForegroundColor Cyan
-Write-Host '[检查] 正在真实恢复 Rust stable / Cargo；不存在时才询问是否安装。' -ForegroundColor DarkCyan
-$rustRuntime = Ensure-XmaRustToolchain -PromptIfMissing
+Write-Host '[检查] 正在恢复 Rust/Cargo；缺失时自动安装到项目默认依赖根。' -ForegroundColor DarkCyan
+$rustRuntime = Ensure-XmaRustToolchain -UseDefaultLocation
 
 Write-Host ''
 Write-Host '[6/8] MSVC C++ Build Tools' -ForegroundColor Cyan
-if ($rustRuntime) { Ensure-XmaMsvc } else { Write-Host '[跳过] Rust/Cargo 未安装，因此本轮不准备 MSVC；可稍后主菜单 [9] 单独安装 Rust/Cargo。' -ForegroundColor Yellow }
+Ensure-XmaMsvc
 
 Write-Host ''
 Write-Host '[7/8] XMA Native Rust crates' -ForegroundColor Cyan
-if ($rustRuntime) { Ensure-XmaCargoCrates -RustRuntime $rustRuntime }
-else { Write-Host '[跳过] Rust/Cargo 未安装，因此不预取 Native crates；主菜单 [9] 会一次补齐 Rust/Cargo + crates。' -ForegroundColor Yellow }
+Ensure-XmaCargoCrates -RustRuntime $rustRuntime
 
 Write-Host ''
 Write-Host '[8/8] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
@@ -1110,13 +1075,11 @@ Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
 Write-Host "[JS Runtime] Bun $($jsRuntime.BunVersion) · OpenTUI $($jsRuntime.OpenTuiCoreVersion) · Solid $($jsRuntime.SolidJsVersion) · node_modules" -ForegroundColor Cyan
-Write-Host '[JS 更新] [1] 只安装当前依赖；只有主菜单 [8] 会主动查询 registry latest。[4]/[7] 不自动联网升级。' -ForegroundColor DarkGray
-if ($rustRuntime) {
-  $rustInstallRootSummary = Split-Path -Parent ([IO.Path]::GetFullPath($rustRuntime.CargoHome))
-  $rustDependencyRootSummary = Split-Path -Parent $rustInstallRootSummary
-  Write-Host "[Rust/Cargo] 依赖根：$rustDependencyRootSummary" -ForegroundColor Cyan
-  Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan
-} else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
+Write-Host '[依赖同步] 项目 package/workspace/Cargo 依赖以后有新增或调整，重新运行 [1] 即自动补齐；[4]/[7] 不偷偷联网。' -ForegroundColor DarkGray
+$rustInstallRootSummary = Split-Path -Parent ([IO.Path]::GetFullPath($rustRuntime.CargoHome))
+$rustDependencyRootSummary = Split-Path -Parent $rustInstallRootSummary
+Write-Host "[Rust/Cargo] 依赖根：$rustDependencyRootSummary" -ForegroundColor Cyan
+Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan
 Write-Host "[控制状态] $(Get-XmaStateRoot -ProjectRoot $Root)" -ForegroundColor DarkGray
 Write-Host '[开发命令] 新开终端后，可在任意 Workspace 输入 xiaoyu / xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan
