@@ -59,7 +59,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 `[1] 一键准备开发环境` 是首次运行的推荐入口，按以下规则逐项处理；Bun/Rust 可由用户明确跳过后再单独补装：
 
-- Git、Node.js、pnpm 与基础系统工具照常检查。Bun/OpenTUI 与 Rust/Cargo 改成**先真实探测、缺失才询问 Y/N**：选择 N 只跳过该组件并继续后面的准备，不把整次 `[1]` 判定失败。安装位置统一按依赖根选择：`[1] <当前 checkout>\xma-path`（默认/推荐）、`[2] D:\xma-path`、`[3] 输入这台电脑真实存在的盘符并使用 `<盘符>:\xma-path`；不再把 `%LOCALAPPDATA%\XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定为 `bun/`、`opentui/`、`rust/`；已有可用 Runtime 必须接管/保存而不是重复下载。旧 `.xma` Bun 自动迁移到项目默认 `xma-path`；已有 D:/E:/自定义 Rust 真实探针通过时直接采用其当前位置；
+- Git、Node.js、pnpm 与基础系统工具照常检查。Bun/OpenTUI 与 Rust/Cargo 改成**先真实探测、缺失才询问 Y/N**：选择 N 只跳过该组件并继续后面的准备，不把整次 `[1]` 判定失败。安装位置统一按依赖根选择：`[1] <当前 checkout>\xma-path`（默认/推荐）、`[2] D:\xma-path`、`[3] 输入这台电脑真实存在的盘符并使用 `<盘符>:\xma-path`；不再把 `%LOCALAPPDATA%\XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定为 `bun/`、`opentui/`、`rust/`；已有可用 Runtime 必须接管/保存而不是重复下载。旧 `.xma` Bun 自动迁移到项目默认 `xma-path`；已有 D:/E:/自定义 Rust 真实探针通过时直接采用其当前位置；安装位置 UI 在 `[1]/[2]/[3]` 三行上原位高亮，`↑/↓` 移动、`Enter` 确认、数字键直达；Rust 使用隔离 Home + stable default，禁止目录级 `rustup override` 绑定 checkout 绝对路径；
 - 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
 - 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。

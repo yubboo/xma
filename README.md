@@ -67,7 +67,7 @@ cd xma
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 checkout 本地状态恢复同一真实位置并重新校验；Git checkout 的控制状态放在 `.git/xma-state/`，不会因为选择外部依赖位置就在项目根额外创建一个空壳 `xma-path`。 Bun/OpenTUI 与 Rust/Cargo 的安装位置菜单共用键盘选择器：可用 `↑/↓` 移动、`Enter` 确认，也保留数字键 `1/2/3` 直达；不支持原始按键读取的 PowerShell Host 会自动退回传统数字输入。
+首次进入菜单选择 `[1] 一键准备开发环境`。Bun/OpenTUI 与 Rust/Cargo 都先做**真实可执行与依赖探测**：已经准备过就直接复用；确实缺失时才分别询问 Y/N，选择 N 只跳过该组件并继续剩余准备。默认安装根是当前 checkout 的 `xma-path/`，因此 clone 在 D:/E:/U 盘时依赖也跟随该项目，不主动把 XMA 自管 Bun/Rust 安装到系统 C 盘。需要后补时可用主菜单 `[8] 单独安装 · Bun / OpenTUI` 或 `[9] 单独安装 · Rust / Cargo`。`[4]`、`[7]` 与 CLI build 都从 checkout 本地状态恢复同一真实位置并重新校验；Git checkout 的控制状态放在 `.git/xma-state/`，不会因为选择外部依赖位置就在项目根额外创建一个空壳 `xma-path`。 Bun/OpenTUI 与 Rust/Cargo 的安装位置菜单共用键盘选择器：`↑/↓` 会直接在 `[1]/[2]/[3]` 三行之间移动选中高亮，`Enter` 确认，也保留数字键 `1/2/3` 直达；不额外渲染“当前选择”状态行。不支持原始按键读取的 PowerShell Host 会自动退回传统数字输入。Rust 安装只使用隔离的 `RUSTUP_HOME/CARGO_HOME` 与 stable default，不设置绑定 checkout 绝对路径的 `rustup override`，因此 U 盘换盘符/项目移动不会留下目录级 toolchain 绑定。
 
 默认项目依赖布局只包含实体依赖：`xma-path/bun/`、`xma-path/opentui/`、`xma-path/rust/`。其中 OpenTUI 的真实 `node_modules` 存在对应依赖根的 `opentui/`；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做一次迁移，不再作为当前控制目录。
 

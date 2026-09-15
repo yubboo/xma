@@ -272,7 +272,7 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 - `[1]` 首次或依赖声明变化时使用 `pnpm install --ignore-scripts`，不得触发 Electron Chromium Runtime；已准备且 package/lockfile/平台指纹一致时必须跳过重复 install/esbuild rebuild；首次接管没有 stamp 的旧缓存必须优先做 offline/frozen 校验，验证通过直接复用，不得为了生成 stamp 再联网。OpenTUI 固定版本已匹配时同样跳过重复 `bun install`，Rust Cargo 声明未变化时跳过重复 `cargo fetch`。
 - `[1]` 写入开发态 `.git/xma-state/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量；旧 `.xma/dev-bin` 只允许作为迁移清理对象。
 - Windows `[1]` 必须把 Bun/OpenTUI 与 Rust/Cargo 当成两个可独立跳过/补装的组件：先真实检测；缺失时分别询问 Y/N；选择 N 只跳过该组件并继续。主菜单 `[8]` / `[9]` 分别单独准备 Bun/OpenTUI 与 Rust/Cargo。
-- XMA 自管依赖根固定为三种选择：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实存在的盘符后使用 `<盘符>:/xma-path`。禁止把 `%LOCALAPPDATA%/XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定使用 `bun/`、`opentui/`、`rust/`；项目本地状态和开发 shim 使用checkout 本地 `.git/xma-state/`（非 Git 树回退 `.cache/xma-state/`）。
+- XMA 自管依赖根固定为三种选择：`[1] <当前 checkout>/xma-path`（默认/推荐）、`[2] D:/xma-path`、`[3] 用户输入真实存在的盘符后使用 `<盘符>:/xma-path`。禁止把 `%LOCALAPPDATA%/XMA` 或系统 C 盘作为 XMA 自管 Bun/Rust 的默认安装位置。依赖根内部固定使用 `bun/`、`opentui/`、`rust/`；项目本地状态和开发 shim 使用checkout 本地 `.git/xma-state/`（非 Git 树回退 `.cache/xma-state/`）。 三项安装位置必须使用同一原位键盘菜单：`↑/↓` 直接移动 `[1]/[2]/[3]` 行的高亮，`Enter` 确认，数字键可直达；不得额外打印独立“当前选择”状态行。Rust 自管安装不得使用 `rustup override set stable` 绑定当前源码绝对路径；通过隔离 `RUSTUP_HOME/CARGO_HOME` 与 stable default 保持可移动。
 - `[4]`、`[7]`、`build:cli` 必须从 checkout 本地 `.git/xma-state`（非 Git 树回退 `.cache/xma-state`）恢复 `[1]/[8]/[9]` 已确认的位置并真实验证 executable/version/offline crates；不得因为源码移动、U 盘盘符变化或旧绝对路径而误报依赖缺失。旧 `.xma/tools|state|dev-bin` 只作为一次迁移来源，迁移后不得继续写入。
 - Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式联网补包。
 - Desktop 只有用户明确选择 Electron/Tauri 时准备对应 Runtime。

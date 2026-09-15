@@ -53,6 +53,8 @@ const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
 for (const marker of [
   "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
   "Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host",
+  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal') | Out-Host",
+  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('default','stable') | Out-Host",
   "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') | Out-Host",
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`PowerShell value-return pipeline isolation regression: missing ${marker}`)
@@ -77,7 +79,9 @@ for (const marker of [
   '[ConsoleKey]::DownArrow',
   '[ConsoleKey]::Enter',
   '↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达',
-  "Read-XmaArrowMenuChoice -Prompt '请选择'",
+  '[Console]::SetCursorPosition(0, $menuTop + $index)',
+  "$prefix = if ($number -eq $selected) { '  > ' } else { '    ' }",
+  "Read-XmaArrowMenuChoice -Prompt '请选择' -Items",
   'function Select-XmaDependencyRoot',
   "Get-XmaLocalPathRoot -ProjectRoot $Root",
   "$driveDRoot = 'D:\\xma-path'",
@@ -91,12 +95,18 @@ for (const marker of [
   'function Install-XmaRustStable',
   '主菜单 [9] 单独安装',
   'rustup-init SHA-256 校验通过',
+  'RUSTUP_INIT_SKIP_PATH_CHECK',
+  "@('toolchain','install','stable','--profile','minimal')",
+  "@('default','stable')",
   "@('component','add','rustfmt','--toolchain','stable')",
   'function Ensure-XmaMsvc',
   'function Ensure-XmaCargoCrates',
   'Refresh-XmaPath',
   '[检查] 正在检查 Git 是否可用...',
   '[完成] XMA 一键准备流程结束。',
+  '[Bun/OpenTUI] 依赖根：',
+  '[Rust/Cargo] 依赖根：',
+  '[控制状态]',
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--ignore-scripts')",
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
   "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
@@ -132,6 +142,12 @@ if (/SetEnvironmentVariable\([^)]*['"]Machine['"][^)]*\)/i.test(prepareSource)) 
   throw new Error('XMA development preparation must not modify Machine PATH; use current-user PATH only')
 }
 if (/AppData\\Local\\XMA\\(?:Bun|Rust)/i.test(prepareSource)) throw new Error('Bun/Rust default install must follow project xma-path instead of system C user directories')
+if (prepareSource.includes("@('override','set','stable')")) {
+  throw new Error('Rust preparation must not use rustup directory override; it binds the checkout absolute path and breaks removable-drive/project moves')
+}
+if (prepareSource.includes('> 当前选择：')) {
+  throw new Error('Dependency root arrow menu must highlight the actual [1]/[2]/[3] rows instead of rendering a separate current-selection status line')
+}
 if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) {
   throw new Error('External dependency selection must not create project xma-path only for dev-bin; dev shim belongs to checkout-local state')
 }
@@ -228,7 +244,7 @@ if (bunRunnerSource.includes("path.join(root, '.xma', 'tools', 'bun'")) throw ne
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
 // 历史问题：多个脚本各自声明 [string[]]$Args，触发 PowerShell 自动变量 $args 冲突，
-// 导致 `pnpm check`、`rustup override set stable` 等命令退化成裸 `pnpm` / `rustup`。
+// 导致 `pnpm check`、`rustup component add rustfmt` 等命令退化成裸 `pnpm` / `rustup`。
 const commonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
 for (const marker of [
   'function Invoke-XmaExternal',

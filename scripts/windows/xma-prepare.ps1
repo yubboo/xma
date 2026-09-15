@@ -140,67 +140,86 @@ function Ensure-XmaWinget {
 function Read-XmaArrowMenuChoice {
   param(
     [Parameter(Mandatory = $true)][string]$Prompt,
-    [Parameter(Mandatory = $true)][string[]]$Labels,
+    [Parameter(Mandatory = $true)][string[]]$Items,
     [int]$DefaultChoice = 1
   )
-  if ($Labels.Count -lt 1) { throw '菜单至少需要一个选项。' }
-  if ($DefaultChoice -lt 1 -or $DefaultChoice -gt $Labels.Count) { $DefaultChoice = 1 }
+  if ($Items.Count -lt 1) { throw '菜单至少需要一个选项。' }
+  if ($DefaultChoice -lt 1 -or $DefaultChoice -gt $Items.Count) { $DefaultChoice = 1 }
 
-  # 中文说明：Windows Terminal / ConsoleHost 使用 ReadKey 提供 ↑/↓ + Enter 选择，同时保留数字键直达。
-  # 输入被重定向或宿主不支持 Console.ReadKey 时自动退回 Read-Host，避免脚本在 CI/特殊 PowerShell Host 中挂死。
+  # 中文说明：安装位置菜单直接在 `[1]/[2]/[3]` 三行上移动高亮，不额外打印“当前选择”状态行。
+  # Windows Terminal / ConsoleHost 用 ↑/↓ 循环移动、Enter 确认；数字键仍可直达。特殊 Host/重定向输入自动退回 Read-Host。
   $interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
-  if (-not $interactive) {
-    while ($true) {
-      $fallback = (Read-Host "$Prompt [$DefaultChoice]").Trim()
-      if ([string]::IsNullOrWhiteSpace($fallback)) { return [string]$DefaultChoice }
-      if ($fallback -match '^\d+$') {
-        $numeric = [int]$fallback
-        if ($numeric -ge 1 -and $numeric -le $Labels.Count) { return [string]$numeric }
+  if ($interactive) {
+    try {
+      $menuTop = [Console]::CursorTop
+      $bufferWidth = [Math]::Max(40, [Console]::BufferWidth - 1)
+      $selected = $DefaultChoice
+      $directChoice = $null
+
+      while ($true) {
+        for ($index = 0; $index -lt $Items.Count; $index++) {
+          [Console]::SetCursorPosition(0, $menuTop + $index)
+          Write-Host (' ' * $bufferWidth) -NoNewline
+          [Console]::SetCursorPosition(0, $menuTop + $index)
+          $number = $index + 1
+          $prefix = if ($number -eq $selected) { '  > ' } else { '    ' }
+          $line = "$prefix[$number] $($Items[$index])"
+          if ($number -eq $selected) { Write-Host $line -NoNewline -ForegroundColor Green }
+          else { Write-Host $line -NoNewline -ForegroundColor Gray }
+        }
+
+        [Console]::SetCursorPosition(0, $menuTop + $Items.Count)
+        Write-Host (' ' * $bufferWidth) -NoNewline
+        [Console]::SetCursorPosition(0, $menuTop + $Items.Count)
+        Write-Host '    ↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达' -NoNewline -ForegroundColor DarkGray
+
+        if ($null -ne $directChoice) {
+          [Console]::SetCursorPosition(0, $menuTop + $Items.Count + 1)
+          return [string]$directChoice
+        }
+
+        $key = [Console]::ReadKey($true)
+        if ($key.Key -eq [ConsoleKey]::UpArrow) {
+          $selected = if ($selected -le 1) { $Items.Count } else { $selected - 1 }
+          continue
+        }
+        if ($key.Key -eq [ConsoleKey]::DownArrow) {
+          $selected = if ($selected -ge $Items.Count) { 1 } else { $selected + 1 }
+          continue
+        }
+        if ($key.Key -eq [ConsoleKey]::Enter) {
+          [Console]::SetCursorPosition(0, $menuTop + $Items.Count + 1)
+          return [string]$selected
+        }
+
+        $digitText = [string]$key.KeyChar
+        if ($digitText -match '^\d$') {
+          $digit = [int]$digitText
+          if ($digit -ge 1 -and $digit -le $Items.Count) {
+            $selected = $digit
+            $directChoice = $digit
+            # 数字键属于“直达”：先把目标行高亮一帧，再立即确认，保持旧 1/2/3 操作速度。
+            continue
+          }
+        }
       }
-      Write-Host ("请输入 1-{0}。" -f $Labels.Count) -ForegroundColor Yellow
+    } catch {
+      # Console API 在 ISE/某些重定向 Host 中不可用时，落回传统数字输入。
+      try { Write-Host '' } catch {}
     }
   }
 
-  $selected = $DefaultChoice
-  Write-Host '  操作：↑/↓ 移动 · Enter 确认 · 数字键 1/2/3 直达' -ForegroundColor DarkGray
+  for ($index = 0; $index -lt $Items.Count; $index++) {
+    Write-Host ("    [{0}] {1}" -f ($index + 1), $Items[$index]) -ForegroundColor Gray
+  }
   while ($true) {
-    $status = "  > 当前选择：[$selected] $($Labels[$selected - 1])"
-    $clearWidth = 100
-    try { $clearWidth = [Math]::Max(40, [Math]::Min(200, [Console]::BufferWidth - 1)) } catch {}
-    Write-Host ("`r" + (' ' * $clearWidth) + "`r") -NoNewline
-    Write-Host $status -NoNewline -ForegroundColor Green
-
-    try {
-      $key = [Console]::ReadKey($true)
-    } catch {
-      Write-Host ''
-      $fallback = (Read-Host "$Prompt [$selected]").Trim()
-      if ([string]::IsNullOrWhiteSpace($fallback)) { return [string]$selected }
-      if ($fallback -match '^\d+$') {
-        $numeric = [int]$fallback
-        if ($numeric -ge 1 -and $numeric -le $Labels.Count) { return [string]$numeric }
-      }
-      continue
+    $fallback = (Read-Host "$Prompt [$DefaultChoice]").Trim()
+    if ([string]::IsNullOrWhiteSpace($fallback)) { return [string]$DefaultChoice }
+    if ($fallback -match '^\d+$') {
+      $numeric = [int]$fallback
+      if ($numeric -ge 1 -and $numeric -le $Items.Count) { return [string]$numeric }
     }
-
-    if ($key.Key -eq [ConsoleKey]::UpArrow) {
-      $selected = if ($selected -le 1) { $Labels.Count } else { $selected - 1 }
-      continue
-    }
-    if ($key.Key -eq [ConsoleKey]::DownArrow) {
-      $selected = if ($selected -ge $Labels.Count) { 1 } else { $selected + 1 }
-      continue
-    }
-    if ($key.Key -eq [ConsoleKey]::Enter) {
-      Write-Host ''
-      return [string]$selected
-    }
-
-    $digit = [int][char]$key.KeyChar - [int][char]'0'
-    if ($digit -ge 1 -and $digit -le $Labels.Count) {
-      Write-Host ''
-      return [string]$digit
-    }
+    Write-Host ("请输入 1-{0}。" -f $Items.Count) -ForegroundColor Yellow
   }
 }
 
@@ -211,10 +230,11 @@ function Select-XmaDependencyRoot([string]$ComponentLabel) {
   while ($true) {
     Write-Host ''
     Write-Host "[$ComponentLabel 安装位置] 请选择 XMA 依赖根目录：" -ForegroundColor Cyan
-    Write-Host "  [1] 跟随当前项目（推荐）  $defaultRoot" -ForegroundColor Green
-    Write-Host "  [2] D 盘                    $driveDRoot" -ForegroundColor Gray
-    Write-Host '  [3] 自定义盘符              输入 E / F / G 等真实盘符' -ForegroundColor Gray
-    $choice = Read-XmaArrowMenuChoice -Prompt '请选择' -Labels @('跟随当前项目（推荐）','D 盘','自定义盘符') -DefaultChoice 1
+    $choice = Read-XmaArrowMenuChoice -Prompt '请选择' -Items @(
+      "跟随当前项目（推荐）  $defaultRoot",
+      "D 盘                    $driveDRoot",
+      '自定义盘符              输入 E / F / G 等真实盘符'
+    ) -DefaultChoice 1
 
     if ($choice -eq '1') {
       if (-not (Test-XmaWritableDirectory $defaultRoot)) { Write-Host '[不可用] 当前项目目录不可写，请选择其他位置。' -ForegroundColor Yellow; continue }
@@ -440,6 +460,40 @@ function Install-XmaRustStable {
   $dependencyRoot = Select-XmaDependencyRoot -ComponentLabel 'Rust / Cargo'
   $installRoot = Join-Path $dependencyRoot 'rust'
   $homes = Set-XmaRustHomes $installRoot
+  $cargoExe = Join-Path $homes.CargoBin 'cargo.exe'
+  $rustcExe = Join-Path $homes.CargoBin 'rustc.exe'
+  $rustupExe = Join-Path $homes.CargoBin 'rustup.exe'
+
+  Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
+  Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
+
+  # 中文说明：用户可能在同一 D:/自定义依赖根中留下了可用或半完成的 Rust。先真实探针；完整则直接接管，
+  # 只有 rustup shim 存在但 toolchain 不完整时，用该 rustup 修复 stable，不重新跑 rustup-init 触发“already installed”警告。
+  $existingCargo = Invoke-XmaProbe -FilePath $cargoExe -ArgumentList @('--version')
+  $existingRustc = Invoke-XmaProbe -FilePath $rustcExe -ArgumentList @('--version')
+  if ($existingCargo.ExitCode -eq 0 -and $existingRustc.ExitCode -eq 0) {
+    Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
+    Write-Host '[发现] 目标位置已有可实际运行的 Rust/Cargo，直接接管，不重复安装。' -ForegroundColor DarkCyan
+    return (Import-XmaRustEnvironment -ProjectRoot $Root)
+  }
+
+  if (Test-Path -LiteralPath $rustupExe -PathType Leaf) {
+    Write-Host '[修复] 目标位置已有 rustup，但 stable toolchain 尚未完整；正在复用现有 rustup 修复，不重复下载 rustup-init。' -ForegroundColor Yellow
+    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('toolchain','install','stable','--profile','minimal') | Out-Host
+    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('default','stable') | Out-Host
+    Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
+    $repaired = Import-XmaRustEnvironment -ProjectRoot $Root
+    if ($repaired) {
+      $cargoProbe = Invoke-XmaProbe -FilePath $repaired.CargoExe -ArgumentList @('--version')
+      $rustcProbe = Invoke-XmaProbe -FilePath $repaired.RustcExe -ArgumentList @('--version')
+      if ($cargoProbe.ExitCode -eq 0 -and $rustcProbe.ExitCode -eq 0) {
+        Write-Host '[完成] 现有 rustup 已修复 stable toolchain。' -ForegroundColor Green
+        return $repaired
+      }
+    }
+    throw "现有 rustup 修复 stable 后仍不可用：$installRoot"
+  }
+
   $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
   $triple = if ($arch -eq 'arm64') { 'aarch64-pc-windows-msvc' } else { 'x86_64-pc-windows-msvc' }
   $cacheRoot = Join-Path $Root '.cache\rustup'
@@ -449,8 +503,6 @@ function Install-XmaRustStable {
   $checksumUrl = "$url.sha256"
   New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
-  Write-Host "[依赖根] $dependencyRoot" -ForegroundColor Cyan
-  Write-Host "[安装位置] $installRoot" -ForegroundColor Cyan
   Write-Host "[下载] 正在下载 Rust 官方 rustup-init（$triple）..." -ForegroundColor Yellow
   Write-Host "[来源] $url" -ForegroundColor DarkGray
   try {
@@ -460,17 +512,24 @@ function Install-XmaRustStable {
     $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($expected -ne $actual) { throw 'rustup-init SHA-256 校验失败，已拒绝执行。' }
     Write-Host '[验证] rustup-init SHA-256 校验通过。' -ForegroundColor DarkCyan
-    Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host
+
+    # 当前 PATH 可能还包含旧 Rust shim；XMA 已经显式隔离 CARGO_HOME/RUSTUP_HOME，因此让 rustup-init 跳过 PATH 冲突检查，避免误报“Rust is installed”。
+    $previousSkipPathCheck = $env:RUSTUP_INIT_SKIP_PATH_CHECK
+    $env:RUSTUP_INIT_SKIP_PATH_CHECK = 'yes'
+    try {
+      Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host
+    } finally {
+      if ($null -eq $previousSkipPathCheck) { Remove-Item Env:RUSTUP_INIT_SKIP_PATH_CHECK -ErrorAction SilentlyContinue }
+      else { $env:RUSTUP_INIT_SKIP_PATH_CHECK = $previousSkipPathCheck }
+    }
   } finally {
     Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $checksumFile -Force -ErrorAction SilentlyContinue
   }
 
-  $rustupExe = Join-Path $homes.CargoBin 'rustup.exe'
   if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw "Rust 安装完成但未找到 rustup：$rustupExe" }
   Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
-  Push-Location $Root
-  try { Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable') | Out-Host } finally { Pop-Location }
+  # 不使用 `rustup override set stable`：override 会绑定当前 checkout 绝对路径，不适合 U 盘换盘符/项目移动。
   Write-Host "[完成] Rust stable 已安装：$installRoot" -ForegroundColor Green
   return (Import-XmaRustEnvironment -ProjectRoot $Root)
 }
@@ -941,9 +1000,19 @@ Remove-XmaPackageMetadataFromGitWorktree
 Write-Host ''
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host '[完成] XMA 一键准备流程结束。' -ForegroundColor Green
-Write-Host "[依赖根] 选择 [1] 跟随项目时：$(Get-XmaLocalPathRoot -ProjectRoot $Root)" -ForegroundColor Cyan
+if ($bunExe) {
+  $bunVersionDir = Split-Path -Parent ([IO.Path]::GetFullPath($bunExe))
+  $bunHomeSummary = Split-Path -Parent $bunVersionDir
+  $bunDependencyRootSummary = Split-Path -Parent $bunHomeSummary
+  Write-Host "[Bun/OpenTUI] 依赖根：$bunDependencyRootSummary" -ForegroundColor Cyan
+  Write-Host '[Bun/OpenTUI] 整组件已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan
+} else { Write-Host '[Bun/OpenTUI] 本轮跳过或未完整；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
+if ($rustRuntime) {
+  $rustInstallRootSummary = Split-Path -Parent ([IO.Path]::GetFullPath($rustRuntime.CargoHome))
+  $rustDependencyRootSummary = Split-Path -Parent $rustInstallRootSummary
+  Write-Host "[Rust/Cargo] 依赖根：$rustDependencyRootSummary" -ForegroundColor Cyan
+  Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan
+} else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
 Write-Host "[控制状态] $(Get-XmaStateRoot -ProjectRoot $Root)" -ForegroundColor DarkGray
-if ($bunExe) { Write-Host '[Bun/OpenTUI] 整组件已准备；[4]/[7]/build:cli 将复用同一真实位置。' -ForegroundColor Cyan } else { Write-Host '[Bun/OpenTUI] 本轮跳过或未完整；需要 Xiaoyu Terminal 时使用主菜单 [8]。' -ForegroundColor Yellow }
-if ($rustRuntime) { Write-Host '[Rust] 已准备；[4]/[7] 将复用同一 Cargo/Rustup Home。' -ForegroundColor Cyan } else { Write-Host '[Rust] 本轮跳过；需要 Native Runtime 时使用主菜单 [9]。' -ForegroundColor Yellow }
 Write-Host '[开发命令] 新开终端后，可在任意 Workspace 输入 xiaoyu / xma 启动当前源码 CLI。' -ForegroundColor Cyan
 Write-Host '====================================================================' -ForegroundColor DarkCyan

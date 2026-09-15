@@ -488,3 +488,13 @@
 - 迁移：继续读取旧 `xma-path/state` / `xma-path/dev-bin` 与 `.xma`；新状态写入成功后迁移 Source Sync 元数据并清理旧控制目录。如果项目根 `xma-path` 只剩旧 state/dev-bin，会自动删除；如果其中仍有 bun/opentui/rust 实体则保留，不误删依赖。
 - 行为：选择 `[2] D:/xma-path` 后，Bun/OpenTUI 实体位于 `D:/xma-path/{bun,opentui}`，项目根不会再仅因状态生成 `xma-path`；`[4]/[7]/build:cli` 仍从 checkout state 恢复该外部绝对位置。默认 `[1] 跟随当前项目` 时则继续合法使用 `<checkout>/xma-path/{bun,opentui,rust}`。
 - 回归：Windows Gate/README/CODEMAP/AGENTS 同步锁定“依赖位置与控制状态分离”合同；版本仍为 `0.1.0`，继续覆盖正式同名源码包与 SHA-256。
+
+##42 · 依赖位置原位键盘菜单、Rust 可移动安装与准备摘要真值
+
+- 日期：2026-09-15
+- 目的：根据 Windows `[1]` 全流程实机回归继续收口三个问题：安装位置的 `↑/↓` 需要直接移动 `[1]/[2]/[3]` 行本身的选中态；外部 `D:/xma-path` 安装完成后摘要仍显示项目默认依赖根容易误导；Rust 安装使用 `rustup override set stable` 会把当前 checkout 绝对路径写入 rustup，违背 U 盘换盘符/项目移动的路径合同。
+- 原位菜单：`Read-XmaArrowMenuChoice` 改为用 Console cursor 在三条真实选项行上重绘，高亮行带 `>` + 绿色；↑/↓ 循环移动，Enter 确认，数字 1/2/3 仍直达并先刷新目标行高亮。特殊 Host/重定向输入仍退回 `Read-Host`。Bun/OpenTUI 与 Rust/Cargo 继续复用同一选择器。
+- Rust 安装：选择目标依赖根后先直接探测目标 `cargo/rustc`；完整则直接接管。若目标已有 `rustup.exe` 但 stable 不完整，复用现有 rustup 执行 `toolchain install stable --profile minimal` + `default stable`，不重复下载 rustup-init。首次 rustup-init 使用隔离的 `RUSTUP_HOME/CARGO_HOME` 并设置单次 `RUSTUP_INIT_SKIP_PATH_CHECK=yes`，避免 PATH 中旧 shim 产生误导性“Rust is installed”警告。移除项目目录 `rustup override set stable`，不再产生 checkout absolute-path toolchain override。
+- 控制状态：延续 ##41，state/prepare/source-sync/dev-bin 使用 `.git/xma-state`（非 Git 树 `.cache/xma-state`），外部依赖位置不再为了控制状态生成项目根空壳 `xma-path`；旧 `xma-path/state|dev-bin` 迁移后清理。
+- 摘要：`[1]` 结束不再只打印“默认依赖根”。Bun/OpenTUI 和 Rust/Cargo 分别打印本轮真实依赖根，例如都选择 `[2]` 时显示 `D:/xma-path`；另行打印 checkout 控制状态路径，避免把项目默认位置误认为实际安装位置。
+- 回归：Windows Gate 锁定三行原位高亮、禁止独立“当前选择”状态行、禁止 `rustup override set stable`、要求已有 rustup repair + PATH-check 隔离，并继续锁定 `.git/xma-state` 控制状态。版本仍为 `0.1.0`，覆盖生成正式同名源码包与 SHA-256。

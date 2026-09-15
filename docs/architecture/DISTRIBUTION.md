@@ -148,7 +148,7 @@ Windows 资产在 Windows 构建，Linux 资产在 Linux 构建，macOS 资产�
 
 `xma-dev.bat → [1]` 在准备完依赖后，会在当前 checkout 本地 `.git\xma-state\dev-bin\` 生成 `xiaoyu.cmd / xma.cmd` 开发 shim，并把**该 dev-bin**写入当前用户 `User PATH`。不把整个 Git 仓库加入 PATH，不修改 Machine PATH，也不需要管理员权限。这样开发者新开终端后可在任意 Workspace 直接输入 `xiaoyu` / `xma`，命令会回到当前源码 checkout 并以调用时目录作为 Workspace。
 
-Windows 源码开发的 XMA 自管依赖根同样使用 `xma-path/`：默认跟随当前 checkout，内部按 `bun/`、`opentui/`、`rust/`、`state/`、`dev-bin/` 分区；也可显式选择 `D:/xma-path` 或其他真实盘符的 `<盘符>:/xma-path`。这属于源码开发本地状态，必须被 Git/Source Package 排除，与普通用户正式安装目录 `%LOCALAPPDATA%\Programs\Xiaoyu` 完全分离。旧 `.xma/` 只保留迁移兼容，不再产生新的当前状态。
+Windows 源码开发的 XMA 自管**依赖实体根**使用 `xma-path/`：默认跟随当前 checkout，内部只放 `bun/`、`opentui/`、`rust/`；也可显式选择 `D:/xma-path` 或其他真实盘符的 `<盘符>:/xma-path`。checkout 控制状态、prepare stamp、Source Sync 元数据与开发 shim 独立存放在 `.git/xma-state/`（无 Git 临时树回退 `.cache/xma-state/`），因此选择外部依赖盘符时不会在项目根生成第二个空壳 `xma-path`。这些都属于源码开发本地状态，必须被 Git/Source Package 排除，与普通用户正式安装目录 `%LOCALAPPDATA%\Programs\Xiaoyu` 完全分离。旧 `.xma/`、`xma-path/state|dev-bin` 只保留迁移兼容，不再产生新的当前状态。
 
 同一 Windows 用户只激活一个 XMA 开发 checkout 的 dev-bin；再次在另一份 checkout 执行 `[1]` 会替换旧 dev-bin PATH entry。移动仓库后重新运行 `[1]` 即可刷新。该机制只是开发便利，不替代正式 Release 安装器 `%LOCALAPPDATA%\Programs\Xiaoyu\bin`。
 
