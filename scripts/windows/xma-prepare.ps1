@@ -910,45 +910,21 @@ function Get-XmaWorkspaceJavaScriptRuntimeInfo {
 
 function Invoke-XmaManagedJavaScriptLatestUpdate {
   Write-Host '[更新] 正在检查 XMA JS Runtime 最新稳定版本：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
-  Write-Host '[策略] Bun/OpenTUI/Solid 使用 registry latest；[1]/[8] 统一刷新 Workspace lockfile + node_modules，运行/检查阶段不联网更新。' -ForegroundColor DarkGray
-  Write-Host '[进度] pnpm 使用 append-only reporter；解析、复用、下载与写入 lockfile 会逐行显示，不做同行动态重绘。' -ForegroundColor DarkCyan
+  Write-Host '[策略] 唯一入口 scripts/runtime/update.mjs 固定执行 baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild。' -ForegroundColor DarkGray
+  Write-Host '[进度] 统一 Runtime updater 会逐阶段透传 pnpm stdout/stderr；失败自动回滚受管 manifest/lockfile。' -ForegroundColor DarkCyan
 
   $registrySources = @(Get-XmaNpmRegistrySources)
-  $previousRegistry = [string]$env:npm_config_registry
   $lastError = ''
-  $runtimeSteps = @(
-    [pscustomobject]@{
-      Index = 1
-      Total = 2
-      Label = 'Bun Runtime latest'
-      Arguments = @('--workspace-root','update','--latest','bun','--reporter=append-only')
-    },
-    [pscustomobject]@{
-      Index = 2
-      Total = 2
-      Label = 'OpenTUI / Solid Runtime latest'
-      Arguments = @('--filter','@xma/cli-opentui-runtime','update','--latest','@opentui/core','@opentui/solid','solid-js','@types/bun','--reporter=append-only')
+  foreach ($registry in $registrySources) {
+    Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
+    try {
+      Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs','--registry',[string]$registry.Url)
+      Write-Host '[完成] Workspace JavaScript Runtime 已完成事务式 latest 刷新与一致性安装。' -ForegroundColor Green
+      return
+    } catch {
+      $lastError = $_.Exception.Message
+      Write-Host "[切换] $($registry.Name) Runtime updater 失败；受管 manifest/lockfile 已由 updater 回滚：$lastError" -ForegroundColor Yellow
     }
-  )
-  try {
-    foreach ($registry in $registrySources) {
-      $env:npm_config_registry = [string]$registry.Url
-      Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
-      try {
-        foreach ($step in $runtimeSteps) {
-          Write-Host "[$($step.Index)/$($step.Total)] $($step.Label) · 正在解析 registry latest 并更新 lockfile/node_modules..." -ForegroundColor Cyan
-          Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList ([string[]]$step.Arguments)
-          Write-Host "[完成] $($step.Label)" -ForegroundColor Green
-        }
-        return
-      } catch {
-        $lastError = $_.Exception.Message
-        Write-Host "[切换] $($registry.Name) 更新失败：$lastError" -ForegroundColor Yellow
-      }
-    }
-  } finally {
-    if ([string]::IsNullOrWhiteSpace($previousRegistry)) { Remove-Item Env:npm_config_registry -ErrorAction SilentlyContinue }
-    else { $env:npm_config_registry = $previousRegistry }
   }
   throw "XMA JS Runtime latest 更新失败；已尝试可用 npm registry。最后错误：$lastError"
 }
@@ -956,10 +932,10 @@ function Invoke-XmaManagedJavaScriptLatestUpdate {
 function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
   if ($RefreshLatest) { Invoke-XmaManagedJavaScriptLatestUpdate }
 
-  Write-Host '[安装] 正在同步 Workspace JavaScript 依赖到 node_modules...' -ForegroundColor Yellow
-  Write-Host '[安全] pnpm allowBuilds 仅允许 bun + esbuild；Electron Chromium Runtime 不会在这里 postinstall 下载。' -ForegroundColor DarkYellow
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--reporter=append-only')
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
+  if (-not $RefreshLatest) {
+    Write-Host '[验证] 未请求 latest 刷新；本路径只验证当前 lockfile/node_modules，不隐式联网安装。' -ForegroundColor DarkCyan
+  }
+  Write-Host '[安全] Runtime updater 仅允许 bun + esbuild lifecycle；electron/electron-winstaller/koffi 显式拒绝，Electron Chromium Runtime 不会在这里下载。' -ForegroundColor DarkYellow
 
   $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'
   $vite = Join-Path $Root 'node_modules\.bin\vite.cmd'

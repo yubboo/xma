@@ -22,7 +22,15 @@ if (openTuiPackage.dependencies?.['solid-js'] !== 'latest') throw new Error('Xia
 if (openTuiPackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('Xiaoyu Bun types source dependency must use registry latest.')
 const workspaceSource = text('pnpm-workspace.yaml')
 if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('Xiaoyu OpenTUI runtime must participate in root pnpm Workspace install.')
-if (rootPackage.scripts?.['runtime:update'] !== 'pnpm --workspace-root update --latest bun --reporter=append-only && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only') throw new Error('Managed JS Runtime latest refresh script is missing or drifted.')
+if (rootPackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs') throw new Error('Managed JS Runtime must use the single transactional updater entry.')
+if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:runtime')) throw new Error('pnpm check must include Runtime updater transaction tests.')
+const runtimeUpdater = text('scripts/runtime/update.mjs')
+for (const marker of ['baseline install', 'Bun latest', 'OpenTUI / Solid latest', 'consistency install', 'esbuild rebuild', 'restored package/runtime/workspace/lockfile transaction snapshot', 'ERR_PNPM_IGNORED_BUILDS']) {
+  if (!runtimeUpdater.includes(marker)) throw new Error(`Managed JS Runtime updater contract missing: ${marker}`)
+}
+for (const marker of ['strictDepBuilds: true', 'electron: false', 'electron-winstaller: false', 'koffi: false']) {
+  if (!workspaceSource.includes(marker)) throw new Error(`pnpm lifecycle policy marker missing: ${marker}`)
+}
 if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Legacy Workspace Trust/test compatibility still pins Pi TUI until the compatibility layer is retired.')
 if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pnpm-managed Bun/OpenTUI runner.')
 if (rootPackage.scripts?.['smoke:cli'] !== 'tsx scripts/cli/smoke.ts') throw new Error('Xiaoyu compiled OpenTUI CLI must keep a canonical no-TTY smoke test.')
@@ -131,6 +139,10 @@ const unixDevConsole = text('scripts/unix/xma-console.sh')
 for (const marker of ['prepare_environment', 'start_web', 'start_desktop', 'start_cli', 'full_check', './xma-dev [prepare|web|desktop|cli|check]']) {
   if (!unixDevConsole.includes(marker)) throw new Error(`XMA Unix source-development console marker missing: ${marker}`)
 }
+if (!unixDevConsole.includes('node scripts/runtime/update.mjs')) throw new Error('Unix prepare must delegate JavaScript Runtime mutation to scripts/runtime/update.mjs.')
+for (const forbidden of ['pnpm install --reporter=append-only', 'pnpm rebuild esbuild']) {
+  if (unixDevConsole.includes(forbidden)) throw new Error(`Unix prepare must not duplicate Runtime updater stage: ${forbidden}`)
+}
 if (existsSync('XMA.bat') || existsSync('xma.bat')) throw new Error('XMA source-development launcher must not occupy xma.bat/XMA.bat; installed product owns the xma command name.')
 
 const windowsBytes = readFileSync('scripts/install/xma-install.ps1')
@@ -185,9 +197,15 @@ for (const marker of ["argument('directory', 'dist/release')", "'release-manifes
 
 
 const workflow = text('.github/workflows/release.yml')
-for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm run runtime:update', 'pnpm install --no-frozen-lockfile', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
+for (const marker of ['ubuntu-latest', 'windows-latest', 'macos-latest', 'pnpm run runtime:update', 'pnpm release:cli-stage', 'cargo build --workspace --release', 'xma-install.ps1', 'xma-install.sh', 'actions/upload-artifact@v4', 'actions/download-artifact@v4', 'gh release']) {
   if (!workflow.includes(marker)) throw new Error(`XMA cross-platform release workflow marker missing: ${marker}`)
 }
+
+const ciWorkflow = text('.github/workflows/ci.yml')
+for (const marker of ['JavaScript Runtime · Windows PowerShell 5.1', 'shell: powershell', '.\\scripts\\windows\\xma-prepare.ps1 -Component js', 'pnpm build:cli', 'pnpm smoke:cli']) {
+  if (!ciWorkflow.includes(marker)) throw new Error(`XMA Windows JavaScript Runtime CI marker missing: ${marker}`)
+}
+if (ciWorkflow.includes('pnpm install --no-frozen-lockfile') || ciWorkflow.includes('pnpm rebuild esbuild')) throw new Error('CI must not duplicate stages already owned by scripts/runtime/update.mjs.')
 
 const readme = text('README.md')
 for (const marker of [

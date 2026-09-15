@@ -16,10 +16,11 @@
     "dev:desktop": "pnpm --dir apps/desktop run dev:electron",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test core/tests/*.test.ts apps/cli/tests/*.test.ts apps/desktop/tests/*.test.ts",
+    "test:runtime": "node --test scripts/runtime/update.test.mjs",
     "gate:architecture": "tsx scripts/gates/architecture.ts",
     "gate:comments": "tsx scripts/gates/comments.ts",
     "gate:docs": "tsx scripts/gates/documentation.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
+    "check": "pnpm typecheck && pnpm test && pnpm test:runtime && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
     "build:web": "vite build apps/web --outDir ../../dist/web --emptyOutDir",
     "build:cli": "tsx scripts/cli/bun.ts build",
     "smoke:cli": "tsx scripts/cli/smoke.ts",
@@ -41,7 +42,7 @@
     "release:cli-stage": "tsx scripts/release/cli.ts",
     "gate:distribution": "tsx scripts/gates/distribution.ts",
     "release:source-manifest": "tsx scripts/release/source-manifest.ts",
-    "runtime:update": "pnpm --workspace-root update --latest bun --reporter=append-only && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only"
+    "runtime:update": "node scripts/runtime/update.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",

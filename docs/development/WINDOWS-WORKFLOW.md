@@ -61,8 +61,8 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 - Git、Node.js、pnpm 与基础系统工具照常检查。Bun/OpenTUI/Solid/@types-bun 不再走独立安装位置：`[1]` 通过 pnpm 查询 registry `latest`、更新 lockfile，并安装到 Workspace `node_modules`。Rust/Cargo 仍先真实探测，缺失才询问 Y/N；选择 N 只跳过 Rust 并继续。Rust 安装位置仍可选 `[1] <checkout>\xma-path`、`[2] D:\xma-path`、`[3] 自定义真实盘符`，并使用原位 ↑/↓ 菜单；
 - JavaScript Runtime 下载统一交给 pnpm/npm registry；`[1]/[8]` 可在 npm 官方与 `registry.npmmirror.com` 间切换，不再维护 Bun platform tgz/ZIP、SourceForge 或独立 checksum 下载器。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间选择，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
-- 首次或依赖声明变化时执行 `pnpm install --ignore-scripts`：准备全部 Workspace JavaScript package，但不执行 Electron postinstall；后续 `[1]` 会按 package/lockfile/平台指纹复用现有 `node_modules`，新准备器首次接管旧缓存时也先用 `--offline --frozen-lockfile` + 最小 tsx 探针验证，验证通过直接认领缓存，不重复下载/install/rebuild；
-- 仅在 Workspace 依赖指纹变化时执行 `pnpm rebuild esbuild`，已准备且指纹一致时直接复用当前平台 Native Binary；
+- `[1]/[8]` 的 JavaScript Runtime 只调用 `scripts/runtime/update.mjs`。固定五阶段为 `baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild`；fresh clone 不再先执行可能被 lifecycle policy 拦截的单独 `pnpm update --latest bun`。
+- Runtime 更新是事务式的：执行前保存根 `package.json`、OpenTUI package、`pnpm-workspace.yaml` 与 `pnpm-lock.yaml`；任一步失败都恢复。`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准；真实 pnpm stdout/stderr 直接透传，registry 切换前先由 updater 回滚到完整干净状态；
 - Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 

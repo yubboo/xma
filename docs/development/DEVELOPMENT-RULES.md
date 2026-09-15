@@ -350,3 +350,11 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - 正式安装后的产品命令是 `xiaoyu`（主）与 `xma`（兼容别名）；源码入口必须始终包含 `-dev`，不得产生根 `xma.bat` / `xma` 开发启动器与产品命令撞名。
 - 维护者 Source Manifest 工作流不得绑定 `H:`/`D:`/`C:` 等固定盘符；`XMA-Sync.bat` 只能复用已存在、origin 正确的 XMA Git 工作目录。唯一候选可自动使用，多候选必须交给维护者选择，无候选时必须要求输入已 clone 仓库路径；禁止自动创建 `xma/xma-worktree-*`、禁止 `git init`、禁止改写其他仓库 origin。`XMA_TARGET_ROOT` 仅用于显式指定一个已存在的正确仓库，不能反向污染产品/源码启动逻辑。
 
+
+## JavaScript Runtime Bootstrap 补充规则（0.1.0）
+
+- `scripts/runtime/update.mjs` 是 Bun/OpenTUI/Solid latest、Workspace install 与 esbuild rebuild 的唯一跨平台变更入口。Windows [1]/[8]、Linux/macOS prepare、CI、Release 禁止自行重新拼装这些 pnpm 阶段。
+- fresh clone 固定顺序：baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild。
+- updater 必须事务保存并在失败时恢复 `package.json`、`apps/cli/opentui-runtime/package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；registry 切换只能发生在回滚之后。
+- pnpm lifecycle policy 必须显式：`bun/esbuild=true`，`electron/electron-winstaller/koffi=false`，并启用 `strictDepBuilds: true`；发现新的 lifecycle package 必须打印包名并失败，禁止自动批准。
+- Runtime updater 必须透传真实 pnpm stdout/stderr；禁止重新退化成只显示“pnpm failed with exit code 1”的黑盒错误。

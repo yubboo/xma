@@ -276,7 +276,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ## Windows 依赖准备硬规则
 
 - Windows 源码开发首次运行推荐 `xma-dev.bat -> [1] 一键准备开发环境`；Linux/macOS 使用 `./xma-dev prepare`。两者只服务源码开发，不能与正式 `xma` 产品命令混淆。
-- `[1]` 的 JavaScript Runtime 统一由 pnpm Workspace 管理；Bun/OpenTUI/Solid 位于 `node_modules`，`pnpm-workspace.yaml -> allowBuilds` 只允许已审核的 `bun + esbuild` lifecycle，**不得**触发 Electron Chromium Runtime 下载。
+- `[1]` 的 JavaScript Runtime 统一由 pnpm Workspace 管理；Bun/OpenTUI/Solid 位于 `node_modules`。唯一变更入口是 `scripts/runtime/update.mjs`：固定五阶段事务执行并透传真实 pnpm stdout/stderr；`allowBuilds` 显式 `bun/esbuild=true`、`electron/electron-winstaller/koffi=false`，同时启用 `strictDepBuilds: true`，**不得**触发 Electron Chromium Runtime 下载或静默批准新增 lifecycle 包。
 - Web / CLI 在 `[1]` 成功后不得再次执行 `pnpm install`、`pnpm rebuild esbuild` 或其他重复依赖安装。`[4] Xiaoyu Terminal` 例外必须在启动前执行 `cargo build --package xma-native-runtime --offline` 的增量校验构建：Source Sync 会保留 `.cache/`，因此严禁直接信任缓存中可能来自上一版源码的 Native 可执行文件。Windows CLI 构建必须使用 `.cache/cargo-target/cli/` 独立 target，并把构建结果复制到 `.cache/native-runtime/runs/` 的唯一 staging exe 后再启动，禁止直接运行/覆盖 Cargo target 中可能被旧进程锁定的 exe。该构建只使用 `[1]` 已预取 crates，不允许偷偷联网下载。
 - TypeScript Host 启动 Native Runtime 后必须核对当前产品依赖的 capability 集；缓存/portable Native 缺少 `credential.*` 等必需能力时必须 fail loud 并给出重建/升级提示，禁止降级成“OS Credentials 不可用”后让用户在配置流程里无提示失败。
 - Desktop 采用 **Electron 41.2.0 主运行时 + Tauri 2 备用运行时**：Electron Chromium Runtime 只允许在明确选择 Electron 后由 `apps/desktop/scripts/electron/install-runtime.ts` 按需下载；Tauri 2 Rust crates 只允许在明确选择 Tauri 2 或对应构建时预取。

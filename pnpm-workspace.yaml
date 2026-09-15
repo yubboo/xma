@@ -8,13 +8,14 @@ packages:
 
 # pnpm 11 默认阻止依赖包执行 install/postinstall 脚本。
 # XMA 通用环境只允许 Bun Runtime wrapper 与 esbuild 执行受控 install/postinstall；Electron Runtime 由 XMA Desktop 安装器显式按需处理，
-# 因此 electron 不进入 allowBuilds，防止普通 pnpm install 意外下载 Chromium。
+# 因此 electron/electron-winstaller/koffi 显式拒绝，防止普通 pnpm install 意外下载 Chromium 或执行未审核 native lifecycle。
 allowBuilds:
   bun: true
-  electron: set this to true or false
-  electron-winstaller: set this to true or false
+  electron: false
+  electron-winstaller: false
   esbuild: true
-  koffi: set this to true or false
+  koffi: false
+strictDepBuilds: true
 
 # pnpm 11 的 workspace 级依赖覆盖必须写在这里，而不是 package.json -> pnpm.overrides。
 # 当前用于保证 Electron Builder / 非 Windows ZIP 链使用新版 yauzl。

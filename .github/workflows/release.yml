@@ -31,11 +31,8 @@ jobs:
         with:
           components: rustfmt
       - run: npm install -g pnpm@11.17.0
-      - name: Refresh managed JS runtime and install workspace dependencies
-        run: |
-          pnpm run runtime:update
-          pnpm install --no-frozen-lockfile
-      - run: pnpm rebuild esbuild
+      - name: Refresh managed JavaScript Runtime
+        run: pnpm run runtime:update
       - run: pnpm check
       - run: pnpm build
       - run: pnpm smoke:cli
@@ -79,9 +76,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm install -g pnpm@11.17.0
-      - run: |
-          pnpm run runtime:update
-          pnpm install --no-frozen-lockfile
+      - run: pnpm run runtime:update
       - uses: actions/download-artifact@v4
         with:
           pattern: portable-*

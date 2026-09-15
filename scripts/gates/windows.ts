@@ -97,7 +97,7 @@ if (prepareSource.includes("New-Object 'System.Collections.Generic.HashSet[strin
 }
 
 // Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. [1]/[8] refresh registry latest; [4]/[7]/build only consume installed files.
-const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { devDependencies?: Record<string, string> }
+const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }
 const openTuiRuntimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
 if (rootRuntimePackage.devDependencies?.bun !== 'latest') throw new Error('Root Bun dependency must use registry tag latest; [1]/[8] own the refresh boundary.')
 for (const name of ['@opentui/core', '@opentui/solid', 'solid-js']) {
@@ -106,21 +106,44 @@ for (const name of ['@opentui/core', '@opentui/solid', 'solid-js']) {
 if (openTuiRuntimePackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('@types/bun must use registry tag latest.')
 const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
 if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI runtime must be a real pnpm workspace package so root pnpm install owns its node_modules.')
+if (rootRuntimePackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs') throw new Error('Windows source preparation must share the single scripts/runtime/update.mjs entry.')
+for (const marker of ['strictDepBuilds: true', 'bun: true', 'esbuild: true', 'electron: false', 'electron-winstaller: false', 'koffi: false']) {
+  if (!workspaceSource.includes(marker)) throw new Error(`pnpm lifecycle policy regression: missing ${marker}`)
+}
+if (workspaceSource.includes('set this to true or false')) throw new Error('pnpm lifecycle policy must not contain unresolved allowBuilds decisions.')
+const runtimeUpdaterSource = readFileSync('scripts/runtime/update.mjs', 'utf8')
+const runtimeUpdaterTestSource = readFileSync('scripts/runtime/update.test.mjs', 'utf8')
+for (const marker of ['baseline install', 'Bun latest', 'OpenTUI / Solid latest', 'consistency install', 'esbuild rebuild', 'ERR_PNPM_IGNORED_BUILDS', 'transaction snapshot']) {
+  if (!runtimeUpdaterSource.includes(marker)) throw new Error(`Runtime updater transaction contract regression: missing ${marker}`)
+}
+for (const marker of ['mystery-native', 'calls.log', 'restores all managed files on failure']) {
+  if (!runtimeUpdaterTestSource.includes(marker)) throw new Error(`Runtime updater transaction test regression: missing ${marker}`)
+}
 for (const marker of [
   'function Get-XmaWorkspaceJavaScriptRuntimeInfo',
   "Join-Path $Root 'node_modules\\bun\\package.json'",
   "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
   'function Invoke-XmaManagedJavaScriptLatestUpdate',
-  "@('--workspace-root','update','--latest','bun','--reporter=append-only')",
-  "@('--filter','@xma/cli-opentui-runtime','update','--latest','@opentui/core','@opentui/solid','solid-js','@types/bun','--reporter=append-only')",
-  'pnpm 使用 append-only reporter',
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--reporter=append-only')",
-  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
+  "Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs','--registry',[string]$registry.Url)",
+  '统一 Runtime updater 会逐阶段透传 pnpm stdout/stderr',
+  '受管 manifest/lockfile 已由 updater 回滚',
   '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
   'pnpm Workspace；[1] 会检查 registry latest',
   'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`pnpm Workspace JS Runtime contract regression: missing ${marker}`)
+}
+for (const forbiddenDirectStage of [
+  "@('--workspace-root','update','--latest','bun'",
+  "@('--filter','@xma/cli-opentui-runtime','update','--latest'",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--reporter=append-only')",
+  "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')",
+]) {
+  if (prepareSource.includes(forbiddenDirectStage)) throw new Error(`Windows prepare must not duplicate scripts/runtime/update.mjs stages: ${forbiddenDirectStage}`)
+}
+const ciSource = readFileSync('.github/workflows/ci.yml', 'utf8')
+for (const marker of ['JavaScript Runtime · Windows PowerShell 5.1', 'shell: powershell', '.\\scripts\\windows\\xma-prepare.ps1 -Component js', 'pnpm build:cli', 'pnpm smoke:cli']) {
+  if (!ciSource.includes(marker)) throw new Error(`Windows PowerShell 5.1 JavaScript CI regression: missing ${marker}`)
 }
 for (const forbidden of [
   'function Install-XmaBunRuntime', 'function Ensure-XmaBunOpenTuiRuntime', 'function Ensure-XmaOpenTuiDependencies',

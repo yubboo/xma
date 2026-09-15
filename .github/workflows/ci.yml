@@ -15,16 +15,33 @@ jobs:
         with:
           node-version: '22'
       - run: npm install -g pnpm@11.17.0
-      - name: Refresh managed JS runtime and install workspace dependencies
-        run: |
-          pnpm run runtime:update
-          pnpm install --no-frozen-lockfile
-      - run: pnpm rebuild esbuild
+      - name: Refresh managed JavaScript Runtime
+        run: pnpm run runtime:update
       - run: pnpm check
       - run: pnpm build:web
       - run: pnpm build:cli
       - run: pnpm smoke:cli
       - run: pnpm build:server
+
+  javascript-windows-powershell51:
+    name: JavaScript Runtime · Windows PowerShell 5.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g pnpm@11.17.0
+        shell: powershell
+      - name: Prepare managed JavaScript Runtime through XMA Windows flow
+        shell: powershell
+        run: .\scripts\windows\xma-prepare.ps1 -Component js
+      - run: pnpm check
+        shell: powershell
+      - run: pnpm build:cli
+        shell: powershell
+      - run: pnpm smoke:cli
+        shell: powershell
 
   rust-linux:
     name: Rust Native Linux

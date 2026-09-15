@@ -155,3 +155,7 @@ Windows 源码开发的 JavaScript Runtime 全部位于 pnpm Workspace `node_mod
 ### Windows 源码开发 Native staging
 
 `xma-dev.bat → [4]` 在 Windows 源码开发态不得直接运行 Cargo target 中的 `xma-native-runtime.exe`。Linux/macOS 的 `./xma-dev cli` 可直接使用当前源码对应的 Unix Native build。Windows 会锁定正在运行的 exe，因此 CLI 必须在 `.cache/cargo-target/cli/` 离线增量构建，并复制到 `.cache/native-runtime/runs/` 的唯一运行副本；旧运行副本可延迟清理，不能阻断新版本启动。
+
+## Source-development JavaScript Runtime Bootstrap（0.1.0）
+
+源码开发与 CI/Release 的 JavaScript Runtime 准备统一委托 `scripts/runtime/update.mjs`。它只影响源码工作树的 pnpm Workspace 与 lockfile；普通用户安装仍只消费已构建 portable/release 资产，不需要 pnpm、Bun 或源码 Runtime updater。Updater 采用事务式五阶段并严格拒绝未审核 lifecycle package，Electron Chromium Runtime 仍只能由 Desktop Electron 安装器在用户明确选择后下载。

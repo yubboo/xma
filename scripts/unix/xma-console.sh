@@ -1,7 +1,7 @@
 #!/bin/sh
 # 文件作用：XMA Linux/macOS 源码开发控制台，对应根 `xma-dev`。
 # 关联模块：package.json、pnpm-workspace.yaml、Cargo.toml、apps/cli、apps/web、apps/desktop。
-# 当前实现：Bun/OpenTUI/Solid 统一由 pnpm Workspace 管理并存放在 node_modules；prepare 会主动刷新受管 JS Runtime 到 registry latest，运行/检查阶段只复用 lockfile/node_modules，不偷偷联网更新；Rust/Cargo 继续作为 Native Toolchain 独立准备。
+# 当前实现：Bun/OpenTUI/Solid 统一由 pnpm Workspace 管理并存放在 node_modules；prepare 通过唯一 Runtime updater 刷新 registry latest 并事务式同步 lockfile/node_modules，运行/检查阶段只复用现有依赖，不偷偷联网更新；Rust/Cargo 继续作为 Native Toolchain 独立准备。
 # 职责边界：只服务源码开发；普通用户应使用 xma-install.sh 安装预构建产品，再运行 `xiaoyu` / `xma`。
 set -eu
 
@@ -65,11 +65,8 @@ assert_workspace_js_runtime() {
 }
 
 refresh_workspace_js_runtime() {
-  printf '%s\n' '[更新] Refreshing managed JavaScript Runtime to registry latest: Bun / OpenTUI / Solid / @types/bun...'
-  pnpm run runtime:update
-  printf '%s\n' '[安装] Syncing Workspace dependencies into node_modules...'
-  pnpm install --reporter=append-only
-  pnpm rebuild esbuild
+  printf '%s\n' '[更新] Refreshing managed JavaScript Runtime through scripts/runtime/update.mjs...'
+  node scripts/runtime/update.mjs
   assert_workspace_js_runtime
   bun_version="$(package_version "$ROOT/node_modules/bun/package.json")"
   opentui_version="$(package_version "$RUNTIME_ROOT/node_modules/@opentui/core/package.json")"

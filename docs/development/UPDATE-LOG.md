@@ -602,3 +602,15 @@
 - 回归：Windows Gate 新增 `PSObject.op_Addition` 静态合同，要求 ready/failed source 显式数组化，并禁止准备器重新引入 generic HashSet；`[4/8]` 的两阶段 append-only pnpm 可见进度、registry 自动切换与 `[4]/[7]` 不联网边界保持不变。
 - 验证边界：当前构建环境没有 Windows PowerShell 5.1，不能冒充 Windows 实机 E2E；通过 TypeScript/OpenTUI 定向测试、9 项 Gate、脚本编码/Source Manifest/ZIP 完整性后仍需 Windows 实机重新执行 `[1]` 验收。
 
+
+
+##53 · JavaScript Runtime Bootstrap 事务收口
+
+- 日期：2026-09-15
+- 根因：fresh clone / GitHub CI 在 pnpm 11 lifecycle 安全策略下会遇到 `ERR_PNPM_IGNORED_BUILDS`；旧实现同时在 Windows、Unix、CI、Release 分别拼 `update/install/rebuild`，失败时只留下部分 manifest/lockfile 变化，registry 切换也可能从脏状态继续。
+- 唯一入口：新增 `scripts/runtime/update.mjs`，固定五阶段 `baseline install → Bun latest → OpenTUI/Solid latest → consistency install → esbuild rebuild`。Windows [1]/[8]、Unix prepare、CI 与 Release 全部委托同一实现。
+- pnpm lifecycle：`pnpm-workspace.yaml` 显式 `bun/esbuild=true`、`electron/electron-winstaller/koffi=false`，启用 `strictDepBuilds: true`。新增 install/postinstall 包不会被自动批准；updater 会打印包名并失败。
+- 事务回滚：执行前保存根 `package.json`、OpenTUI package、workspace 与 lockfile；任一步失败恢复。Windows registry 第一个源失败后，先回滚再从完整干净状态尝试下一源。
+- 可观测性：pnpm stdout/stderr 边执行边透传，同时收集用于识别 `ERR_PNPM_IGNORED_BUILDS` / 未决 lifecycle 包，不再只显示包装器 exit code。
+- CI：新增 Windows PowerShell 5.1 JavaScript Runtime lane，执行 `xma-prepare.ps1 -Component js` 后运行 `pnpm check → build:cli → smoke:cli`；Ubuntu CI/Release 移除重复 install/rebuild。
+- 回归：Runtime updater 脱网事务测试覆盖五阶段成功路径和 `mystery-native` lifecycle 失败回滚；OpenTUI/9 Gates 与真实 GitHub Windows/Ubuntu 网络安装仍需在修复进入可写 ref 后完成最终远端验收。版本保持 `0.1.0`。
