@@ -71,9 +71,9 @@ XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默�
 
 `[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析完全交给 pnpm；`[1]` 只执行一次完全原生的 `pnpm install`，不接管 registry/reporter/timeout。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
 
-JavaScript Runtime 统一位于根 `node_modules/`：`node_modules/bun` 提供 Bun Runtime，`node_modules/@opentui/*`、`node_modules/solid-js` 与 `node_modules/@types/bun` 提供 OpenTUI/Solid Runtime。`apps/cli/opentui-runtime/` 只保留第一方 Renderer/Build 源码，不再是嵌套 pnpm Workspace，也不再拥有自己的 `node_modules`。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。
+JavaScript Runtime 统一位于根 `node_modules/`：`node_modules/bun` 提供 Bun Runtime，`node_modules/@opentui/*`、`node_modules/solid-js` 与 `node_modules/@types/bun` 提供 OpenTUI/Solid Runtime。`apps/cli/opentui-runtime/` 只保留第一方 Renderer/Build 源码，不再是嵌套 pnpm Workspace，也不再拥有自己的 `node_modules`。Windows Rust/Cargo 使用项目本地 `runtime/rust/cargo` 与 `runtime/rust/rustup`；`runtime/` 与 `node_modules/` 同为 checkout 本地依赖目录，不进入源码包。XMA 不写 `%USERPROFILE%\.cargo/.rustup`，也不再创建或恢复 `xma-path/rust`。checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。
 
-删除/清理依赖后的行为按真实文件状态判断：删除 `node_modules/` 后，下一次 `[1]` 会重新安装当前 Workspace JavaScript 依赖；需要主动刷新 Bun/OpenTUI/Solid latest 时使用 `[8]`。删除 `xma-path/rust` 只影响项目内 Rust/Cargo；若此前选择了外部 `D:/E:/<盘符>:/xma-path/rust` 或兼容旧 `D:/XMA/Rust` 且实体仍真实存在，则 Rust 探针通过后可重新接管。`[4]`/`[7]` 只校验和运行，不会偷偷执行 `pnpm update`、`pnpm install` 或 Rust 联网安装。
+删除/清理依赖后的行为按真实文件状态判断：删除 `node_modules/` 后，下一次 `[1]` 会重新安装当前 Workspace JavaScript 依赖；需要主动刷新 Bun/OpenTUI/Solid latest 时使用 `[8]`。Rust/Cargo 若未安装或损坏，重新运行 `[1]`（或 `[9]`）会在当前项目 `runtime/rust` 内通过官方 rustup-init 自动补齐 stable 与 rustfmt；已经可运行则直接复用。旧项目根 `xma-path/rust` 会由准备器安全清理，不再参与解析。`[4]`/`[7]` 只校验和运行，不会偷偷执行 `pnpm update`、`pnpm install` 或 Rust 联网安装。
 
 开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
 

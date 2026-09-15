@@ -13,7 +13,6 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
-[void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
 $TauriTargetDir = Join-Path $Root '.cache\tauri-target'
@@ -65,16 +64,15 @@ if ($DesktopRuntime -in @('electron','both')) {
 }
 
 if ($DesktopRuntime -in @('tauri','both')) {
-  [void](Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal)
-  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-  if (-not $cargoCommand) { throw 'Tauri Desktop 需要 Rust/Cargo。请先运行 xma-dev.bat → [1]。' }
-  $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
+  $rustRuntime = Resolve-XmaRustRuntime -ProjectRoot $Root
+  if (-not $rustRuntime) { throw 'Tauri Desktop 需要 Rust/Cargo。请先运行 xma-dev.bat → [1]。' }
+  $cargoHome = $rustRuntime.CargoHome
   Write-Host '[检查] 正在验证 Tauri 2 / Cargo...' -ForegroundColor DarkCyan
   Write-Host "[Rust] 使用 `[1]` 确认的 Cargo Home：$cargoHome" -ForegroundColor DarkGray
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('--dir','apps/desktop','exec','tauri','--version')
-  Invoke-XmaExternal -FilePath $cargoCommand.Source -ArgumentList @('--version')
+  Invoke-XmaExternal -FilePath $rustRuntime.CargoExe -ArgumentList @('--version')
   Write-Host '[同步] 正在按需预取 Tauri 2 Rust crates...' -ForegroundColor Yellow
-  Invoke-XmaExternal -FilePath $cargoCommand.Source -ArgumentList @('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')
+  Invoke-XmaExternal -FilePath $rustRuntime.CargoExe -ArgumentList @('fetch','--manifest-path','apps/desktop/src-tauri/Cargo.toml')
 }
 
 Write-Host '[检查] 正在运行 Desktop 专用测试；全项目 TypeScript / CLI / Gates 请使用菜单 [7]。' -ForegroundColor Cyan

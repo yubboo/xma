@@ -698,3 +698,31 @@
 - 修复：在 `xma-common.ps1` 恢复三项公共 helper：可写目录真实写入探针、PATH 规范化、PATH 条目解析。Rust 默认 `xma-path`/D 盘/自定义盘安装位置与开发 shim PATH 同步全部复用公共实现。
 - Gate：Windows Gate 新增 `scripts/windows/*.ps1` 自定义 `*-Xma*` helper 静态闭包检查；任何被引用但没有在 Windows 脚本集合中定义的 XMA helper 都会直接失败，避免用户每推进一个阶段才发现下一个“函数不存在”。版本保持 `0.1.0`。
 
+##64 · Rust 已验证工具链直接接管
+
+- 日期：2026-09-15
+- 实机现象：JavaScript Bootstrap 已完整成功，进入 `[5/8] Rust / Cargo` 后，脚本先通过绝对路径真实执行 `cargo --version` / `rustc --version` 并打印“目标位置已有可实际运行的 Rust/Cargo”，随后却在同一轮流程报“Rust 安装完成后仍无法恢复运行环境”。
+- 根因：Rust 安装/发现路径在真实探针成功后仍执行 `Save-XmaRustEnvironmentState -> Import-XmaRustEnvironment` 的状态 round-trip，把“本次已经验证可运行”的事实再次交给状态恢复逻辑判定；状态恢复返回空时就把成功工具链误判为安装失败。
+- 修复：`Install-XmaRustStable` 的 project-existing / project-repaired / project-installed 三条路径，以及系统已有 Rust/Cargo 的 external-command 路径，在绝对路径探针成功后直接构造并返回当前 Runtime `{ CargoHome, RustupHome, CargoExe, RustcExe }`。状态文件仍写入，只用于下次启动恢复，不再作为本次成功结果的二次裁判。
+- Gate：Windows Gate 锁定四类 direct-runtime source，并禁止 Rust 安装成功路径重新 `return (Import-XmaRustEnvironment ...)`。版本保持 `0.1.0`。
+
+
+
+##65 · Windows Rust 工具链标准 rustup 收口
+
+- 日期：2026-09-15
+- 实机现象：`[1]` 已完整完成 pnpm/TypeScript/Bun/OpenTUI，进入 Rust 后旧私有 `xma-path/rust` 状态链先误报“已有可运行 Rust/Cargo”，随后打印 `rustc.exe/cargo.exe 无法识别`，最后 `cargo.exe` 不在 PATH；说明项目自建 Rust Home、状态文件、盘符恢复与 Probe 误判互相叠加，复杂度已高于收益。
+- 参考：对照 `AndrewNog0724/minecraft-host-agent` 的 Windows bootstrap，采用生态标准模型：已有 `cargo` 直接复用；默认 `~/.cargo/bin` 已存在则补进当前会话 PATH；缺失时 `winget install Rustlang.Rustup`，再由 rustup 初始化 stable/rustfmt。XMA 不复制其业务逻辑，只吸收“让 rustup 管 Rust、Bootstrap 只做检测/安装/PATH”的边界。
+- 重构：Windows `[1]`/`[9]` 删除项目 `xma-path/rust` 安装器、D:/自定义盘符菜单、rustup-init 私有下载/镜像/checksum、checkout Rust state round-trip 与磁盘扫描。共享 `Resolve-XmaRustRuntime` 只从当前 PATH、用户显式 `CARGO_HOME`、标准 `%USERPROFILE%\.cargo\bin` 解析并真实执行 `cargo/rustc --version`；缺失时通过 winget 安装 `Rustlang.Rustup`，当前进程补 PATH，必要时执行 `rustup toolchain install stable --profile minimal` / `rustup default stable` / `rustup component add rustfmt`。
+- Probe 修复：`Invoke-XmaProbe` 在执行前先确认绝对 executable/命令真实存在；不存在直接返回 `ExitCode=-1`，禁止 Windows PowerShell 5.1 把“无法识别命令”的非终止错误和残留 `$LASTEXITCODE` 误判成成功。
+- 运行边界：Cargo crates 仍由 `[1]/[9]` 允许联网 `cargo fetch --locked`，`[4]/[7]` 继续 offline 校验；MSVC 缺失仍通过 winget 自动安装。旧 `xma-path/rust` 与旧 Rust state 不再参与运行，可作为历史本地目录由用户自行清理。版本保持 `0.1.0`。
+
+
+##66 · Windows Rust 项目本地 Runtime 收口
+
+- 日期：2026-09-15
+- 结论：`%USERPROFILE%\.cargo` / `%USERPROFILE%\.rustup` 默认通常落在系统盘用户目录，不符合 XMA“项目在哪，开发依赖尽量跟项目走”的源码开发边界。Windows Rust 因此从用户级标准目录进一步收口为 checkout 本地 `runtime/rust/{cargo,rustup}`；`runtime/` 与 `node_modules/` 同级且已被 Git/Source Manifest 忽略。
+- 安装：`[1]`/`[9]` 设置 `CARGO_HOME=<root>/runtime/rust/cargo` 与 `RUSTUP_HOME=<root>/runtime/rust/rustup`，从 Rust 官方 `static.rust-lang.org/rustup/dist/<target>/rustup-init.exe` 下载 Windows MSVC 引导程序，并同步下载官方 `.sha256` 做完整性校验；使用 `--no-modify-path --profile minimal --default-toolchain stable` 安装，rustfmt 缺失时再由项目本地 rustup 补齐。Rustup 官方明确支持在运行 rustup-init 前通过 `CARGO_HOME/RUSTUP_HOME` 自定义安装位置。
+- 运行：Windows `[4]/[7]/Desktop Tauri` 只解析当前项目 `runtime/rust/cargo/bin/{cargo,rustc,rustup}.exe`，不回退系统 PATH、用户 `%USERPROFILE%\.cargo` 或旧 checkout state；Cargo crates 也进入项目本地 CARGO_HOME，构建 target 继续进入 `.cache/cargo-target`。
+- 清理：删除旧 Rust 安装/恢复/盘符选择/整盘扫描/`Get-XmaLocalPathRoot` 运行逻辑；`[1]/[9]` 若发现当前项目根旧 `xma-path/rust` 与 Rust state 文件会安全删除，随后只使用 `runtime/rust`。`xma-path/` 的 Git ignore 仅用于防止历史本地目录误提交，不再承担 Rust 功能。
+- 版本：保持 `0.1.0`。

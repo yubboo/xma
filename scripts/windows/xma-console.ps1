@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布、全量检查和 Git 源码更新。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 继续从独立 Home 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
+当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 固定从当前项目 runtime\rust 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
 职责边界：GitHub push 仍只由 XMA-GitHub.bat 负责；[10] 只更新当前 clone，不提交/推送；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -15,7 +15,6 @@ $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Set-Location $Root
 . (Join-Path $PSScriptRoot 'xma-common.ps1')
-[void](Import-XmaRustEnvironment -ProjectRoot $Root)
 $Host.UI.RawUI.WindowTitle = 'XMA Development Console'
 $ProjectVersion = Get-XmaProjectVersion -ProjectRoot $Root
 $ElectronVersion = '41.2.0'
@@ -157,20 +156,14 @@ function Assert-CoreDependencies {
 }
 
 function Resolve-XmaCargoRuntime {
-  $importedRust = Import-XmaRustEnvironment -ProjectRoot $Root -DiscoverExternal
-  if ($importedRust -and $importedRust.Source -eq 'drive-scan') {
-    Write-Host "[恢复] checkout 状态缺失；已从现有磁盘自动重新接管 Rust/Cargo：$($importedRust.CargoHome)" -ForegroundColor DarkCyan
+  $runtime = Resolve-XmaRustRuntime -ProjectRoot $Root
+  if (-not $runtime) {
+    throw '未检测到可运行的 Rust/Cargo。请运行主菜单 [9] 单独准备 Rust/Cargo，或重新运行 [1]。'
   }
-  $cargoCommand = Get-Command cargo.exe -ErrorAction SilentlyContinue
-  if (-not $cargoCommand) {
-    throw '未检测到 Rust/Cargo。请运行主菜单 [9] 单独安装 Rust/Cargo，或重新运行 [1]。'
-  }
-  $cargoHome = Get-XmaEffectiveCargoHome -CargoExecutable $cargoCommand.Source
-  $rustupHome = if ($env:RUSTUP_HOME) { $env:RUSTUP_HOME } else { '' }
   return [pscustomobject]@{
-    Cargo = $cargoCommand.Source
-    CargoHome = $cargoHome
-    RustupHome = $rustupHome
+    Cargo = $runtime.CargoExe
+    CargoHome = $runtime.CargoHome
+    RustupHome = $runtime.RustupHome
   }
 }
 
@@ -180,7 +173,7 @@ function Assert-XmaCargoOfflineReady {
     $location = if ($CargoRuntime.CargoHome) { $CargoRuntime.CargoHome } else { '(未解析)' }
     throw "$Purpose 需要的 Rust crates 尚未完整准备（CARGO_HOME=$location）。请运行主菜单 [9] 补齐 Rust/Cargo crates，或重新运行 [1]；运行/检查阶段不会偷偷联网下载。"
   }
-  Write-Host "[通过] Rust/Cargo 环境已恢复：CARGO_HOME=$($CargoRuntime.CargoHome)" -ForegroundColor Green
+  Write-Host "[通过] 项目本地 Rust/Cargo 已就绪：CARGO_HOME=$($CargoRuntime.CargoHome)" -ForegroundColor Green
   if ($CargoRuntime.RustupHome) { Write-Host "[位置] RUSTUP_HOME=$($CargoRuntime.RustupHome)" -ForegroundColor DarkGray }
 }
 
@@ -436,7 +429,7 @@ while ($true) {
   Write-Host '  [6] 构建发布 · Desktop Windows         Electron Setup + Portable'
   Write-Host '  [7] 全量检查                          使用已准备依赖，不偷偷下载'
   Write-Host '  [8] 刷新 · JavaScript Runtime         pnpm latest：Bun / OpenTUI / Solid'
-  Write-Host '  [9] 单独准备 · Rust / Cargo           单独修复/重装 Native 工具链'
+  Write-Host '  [9] 单独准备 · Rust / Cargo           项目 runtime\rust · stable + rustfmt + crates'
   Write-Host '  [10] 更新项目                         安全更新 / 强制恢复 GitHub main'
   Write-Host '  [0] 退出'
   Write-Host ''

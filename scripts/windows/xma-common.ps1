@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Rust/Cargo 环境恢复、版本读取与外部命令执行。
 关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1。
-当前实现：Rust/Cargo 可放在项目 `xma-path/rust` 或用户选择的外部 `D:/xma-path/rust`/其他盘符；checkout 控制状态存 Git 本地元数据 `.git/xma-state`（非 Git 场景回退 `.cache/xma-state`）。Bun/OpenTUI 已归入 pnpm Workspace `node_modules`，不再由本文件维护独立 Runtime 状态。
-职责边界：这里只提供跨 Windows 入口共享的路径、环境与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，不负责联网安装、Git 提交流程或产品构建策略。
+当前实现：Rust/Cargo 使用项目本地 `runtime/rust/{cargo,rustup}`，与根 `node_modules` 同属 checkout 本地依赖；XMA 通过 `CARGO_HOME/RUSTUP_HOME` 让 rustup、cargo、crates 与 toolchain 跟随项目目录，不写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`。Bun/OpenTUI 统一由根 pnpm Workspace `node_modules` 管理。
+职责边界：这里只提供跨 Windows 入口共享的项目本地 Rust 路径、环境与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，Resolve-XmaRustRuntime 只解析当前项目 `runtime/rust` 中已真实可运行的 Rust/Cargo，不负责联网安装；联网安装由 xma-prepare.ps1 的 [1]/[9] 负责。
 #>
 
 function Get-XmaProjectVersion {
@@ -11,9 +11,39 @@ function Get-XmaProjectVersion {
   return (Get-Content $packageFile -Raw -Encoding UTF8 | ConvertFrom-Json).version
 }
 
-function Get-XmaLocalPathRoot {
+function Get-XmaProjectRustRuntimeRoot {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path $ProjectRoot 'xma-path')
+  return (Join-Path $ProjectRoot 'runtime\rust')
+}
+
+function Get-XmaProjectCargoHome {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path (Get-XmaProjectRustRuntimeRoot -ProjectRoot $ProjectRoot) 'cargo')
+}
+
+function Get-XmaProjectRustupHome {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path (Get-XmaProjectRustRuntimeRoot -ProjectRoot $ProjectRoot) 'rustup')
+}
+
+function Use-XmaProjectRustEnvironment {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+
+  $rustRoot = Get-XmaProjectRustRuntimeRoot -ProjectRoot $ProjectRoot
+  $cargoHome = Get-XmaProjectCargoHome -ProjectRoot $ProjectRoot
+  $rustupHome = Get-XmaProjectRustupHome -ProjectRoot $ProjectRoot
+  $cargoBin = Join-Path $cargoHome 'bin'
+
+  $env:CARGO_HOME = $cargoHome
+  $env:RUSTUP_HOME = $rustupHome
+  Add-XmaProcessPathFront -Directory $cargoBin
+
+  return [pscustomobject]@{
+    RustRoot = $rustRoot
+    CargoHome = $cargoHome
+    RustupHome = $rustupHome
+    CargoBin = $cargoBin
+  }
 }
 
 function Get-XmaCheckoutStateRoot {
@@ -40,12 +70,6 @@ function Get-XmaStateRoot {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
   return (Get-XmaCheckoutStateRoot -ProjectRoot $ProjectRoot)
 }
-
-function Get-XmaDefaultRustRoot {
-  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'rust')
-}
-
 
 function Get-XmaNormalizedPath {
   param([string]$Path)
@@ -101,11 +125,6 @@ function Remove-XmaDirectoryEntry {
   Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
 }
 
-function Get-XmaRustEnvironmentStatePath {
-  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
-  return (Join-Path (Get-XmaStateRoot -ProjectRoot $ProjectRoot) 'rust-environment.json')
-}
-
 function Add-XmaProcessPathFront {
   param([Parameter(Mandatory = $true)][string]$Directory)
   if ([string]::IsNullOrWhiteSpace($Directory)) { return }
@@ -123,190 +142,40 @@ function Add-XmaProcessPathFront {
   $env:Path = ($entries -join ';')
 }
 
-function Save-XmaRustEnvironmentState {
-  param(
-    [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [Parameter(Mandatory = $true)][string]$CargoHome,
-    [string]$RustupHome = ''
-  )
-  if ([string]::IsNullOrWhiteSpace($CargoHome)) { return }
-  $cargo = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($CargoHome))
-  $rustup = if ([string]::IsNullOrWhiteSpace($RustupHome)) { '' } else { [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($RustupHome)) }
-  $defaultRoot = [IO.Path]::GetFullPath((Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot))
-  $defaultCargo = Join-Path $defaultRoot 'cargo'
-  $defaultRustup = Join-Path $defaultRoot 'rustup'
-  $isProject = ($cargo -ieq $defaultCargo) -and ([string]::IsNullOrWhiteSpace($rustup) -or $rustup -ieq $defaultRustup)
 
-  $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $ProjectRoot
-  $stateDir = Split-Path -Parent $stateFile
-  New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
-  $state = [ordered]@{
-    formatVersion = 2
-    location = if ($isProject) { 'project' } else { 'external' }
-    cargoHome = if ($isProject) { '' } else { $cargo }
-    rustupHome = if ($isProject) { '' } else { $rustup }
-  }
-  $json = $state | ConvertTo-Json -Depth 3
-  [IO.File]::WriteAllText($stateFile, "$json`r`n", ([Text.UTF8Encoding]::new($false)))
-}
-
-
-function Get-XmaDiscoveredRustHomes {
+function Resolve-XmaRustRuntime {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
 
-  # 中文说明：Rust 的 checkout 状态可能丢失，但实体仍位于用户选择的外部盘符。
-  # 只扫描 XMA 自管的已知外部布局，不搜索整盘；所有候选必须真实通过 `cargo/rustc --version`。
-  $results = New-Object System.Collections.Generic.List[object]
-  $seen = @{}
-  foreach ($drive in [IO.DriveInfo]::GetDrives()) {
-    try {
-      if (-not $drive.IsReady) { continue }
-      $driveRoot = $drive.RootDirectory.FullName
-    } catch { continue }
+  # XMA 只解析当前 checkout 的项目本地 Rust。系统 Rust / %USERPROFILE%\.cargo 不参与项目运行，
+  # 防止源码移动后继续误用旧路径，也避免依赖默认落到 C 盘用户目录。
+  $layout = Use-XmaProjectRustEnvironment -ProjectRoot $ProjectRoot
+  $cargoExe = Join-Path $layout.CargoBin 'cargo.exe'
+  $rustcExe = Join-Path $layout.CargoBin 'rustc.exe'
+  $rustupExe = Join-Path $layout.CargoBin 'rustup.exe'
 
-    foreach ($rustRoot in @(
-      (Join-Path $driveRoot 'xma-path\rust'),
-      (Join-Path $driveRoot 'XMA\Rust')
-    )) {
-      $cargoHome = Join-Path $rustRoot 'cargo'
-      $rustupHome = Join-Path $rustRoot 'rustup'
-      try { $cargoHome = [IO.Path]::GetFullPath($cargoHome) } catch { continue }
-      if ($seen.ContainsKey($cargoHome)) { continue }
-      $seen[$cargoHome] = $true
-      $cargoBin = Join-Path $cargoHome 'bin'
-      $cargoExe = Join-Path $cargoBin 'cargo.exe'
-      $rustcExe = Join-Path $cargoBin 'rustc.exe'
-      if (-not (Test-Path -LiteralPath $cargoExe -PathType Leaf) -or -not (Test-Path -LiteralPath $rustcExe -PathType Leaf)) { continue }
+  if (-not (Test-Path -LiteralPath $cargoExe -PathType Leaf)) { return $null }
+  if (-not (Test-Path -LiteralPath $rustcExe -PathType Leaf)) { return $null }
 
-      $previousPreference = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try {
-        & $cargoExe --version *> $null
-        $cargoOk = $LASTEXITCODE -eq 0
-        & $rustcExe --version *> $null
-        $rustcOk = $LASTEXITCODE -eq 0
-      } catch {
-        $cargoOk = $false; $rustcOk = $false
-      } finally {
-        $ErrorActionPreference = $previousPreference
-      }
-      if ($cargoOk -and $rustcOk) {
-        $resolvedRustupHome = if (Test-Path -LiteralPath $rustupHome -PathType Container) { [IO.Path]::GetFullPath($rustupHome) } else { '' }
-        [void]$results.Add([pscustomobject]@{
-          CargoHome = $cargoHome
-          RustupHome = $resolvedRustupHome
-        })
-      }
-    }
+  $cargoProbe = Invoke-XmaProbe -FilePath $cargoExe -ArgumentList @('--version')
+  $rustcProbe = Invoke-XmaProbe -FilePath $rustcExe -ArgumentList @('--version')
+  if ($cargoProbe.ExitCode -ne 0 -or $rustcProbe.ExitCode -ne 0) { return $null }
+
+  if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { $rustupExe = '' }
+
+  return [pscustomobject]@{
+    Source = 'project-runtime'
+    RustRoot = $layout.RustRoot
+    CargoHome = $layout.CargoHome
+    RustupHome = $layout.RustupHome
+    CargoExe = $cargoExe
+    RustcExe = $rustcExe
+    RustupExe = $rustupExe
   }
-  return $results.ToArray()
-}
-
-function Import-XmaRustEnvironment {
-  param(
-    [Parameter(Mandatory = $true)][string]$ProjectRoot,
-    [switch]$DiscoverExternal
-  )
-
-  # 中文说明：优先使用 checkout 本地 `.git/xma-state`（非 Git 树为 `.cache/xma-state`）记录的 Rust 位置；默认安装仍在 `xma-path/rust` 并按项目相对位置恢复。
-  # 旧 `xma-path/state`、User 环境与 `.xma/state` 只作为迁移兼容来源，找到可用工具链后 `[1]` 会写回新的 checkout 状态。
-  $candidates = New-Object System.Collections.Generic.List[object]
-  $stateFile = Get-XmaRustEnvironmentStatePath -ProjectRoot $ProjectRoot
-  if (Test-Path -LiteralPath $stateFile -PathType Leaf) {
-    try {
-      $state = Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($state.formatVersion -eq 2) {
-        if ([string]$state.location -eq 'project') {
-          $root = Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot
-          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; CargoHome = (Join-Path $root 'cargo'); RustupHome = (Join-Path $root 'rustup') })
-        } elseif ($state.cargoHome) {
-          [void]$candidates.Add([pscustomobject]@{ Source = 'project-state'; CargoHome = [string]$state.cargoHome; RustupHome = [string]$state.rustupHome })
-        }
-      }
-    } catch {}
-  }
-
-  $defaultRustRoot = Get-XmaDefaultRustRoot -ProjectRoot $ProjectRoot
-  $legacyProjectStateFile = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'state\rust-environment.json'
-  if (Test-Path -LiteralPath $legacyProjectStateFile -PathType Leaf) {
-    try {
-      $legacyProject = Get-Content -LiteralPath $legacyProjectStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($legacyProject.formatVersion -eq 2) {
-        if ([string]$legacyProject.location -eq 'project') {
-          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; CargoHome = (Join-Path $defaultRustRoot 'cargo'); RustupHome = (Join-Path $defaultRustRoot 'rustup') })
-        } elseif ($legacyProject.cargoHome) {
-          [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-project-state'; CargoHome = [string]$legacyProject.cargoHome; RustupHome = [string]$legacyProject.rustupHome })
-        }
-      }
-    } catch {}
-  }
-
-  [void]$candidates.Add([pscustomobject]@{ Source = 'project-default'; CargoHome = (Join-Path $defaultRustRoot 'cargo'); RustupHome = (Join-Path $defaultRustRoot 'rustup') })
-
-  $legacyStateFile = Join-Path $ProjectRoot '.xma\state\rust-environment.json'
-  if (Test-Path -LiteralPath $legacyStateFile -PathType Leaf) {
-    try {
-      $legacy = Get-Content -LiteralPath $legacyStateFile -Raw -Encoding UTF8 | ConvertFrom-Json
-      if ($legacy.cargoHome) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-state'; CargoHome = [string]$legacy.cargoHome; RustupHome = [string]$legacy.rustupHome }) }
-    } catch {}
-  }
-
-  $userCargoHome = [Environment]::GetEnvironmentVariable('CARGO_HOME','User')
-  $userRustupHome = [Environment]::GetEnvironmentVariable('RUSTUP_HOME','User')
-  if (-not [string]::IsNullOrWhiteSpace($userCargoHome)) { [void]$candidates.Add([pscustomobject]@{ Source = 'legacy-user-env'; CargoHome = $userCargoHome; RustupHome = $userRustupHome }) }
-  if (-not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) { [void]$candidates.Add([pscustomobject]@{ Source = 'process-env'; CargoHome = $env:CARGO_HOME; RustupHome = $env:RUSTUP_HOME }) }
-
-  $seen = @{}
-  foreach ($candidate in $candidates) {
-    try { $cargoHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.CargoHome)) } catch { continue }
-    if ($seen.ContainsKey($cargoHome)) { continue }
-    $seen[$cargoHome] = $true
-    $cargoBin = Join-Path $cargoHome 'bin'
-    $cargoExe = Join-Path $cargoBin 'cargo.exe'
-    $rustcExe = Join-Path $cargoBin 'rustc.exe'
-    if (-not (Test-Path -LiteralPath $cargoExe -PathType Leaf) -or -not (Test-Path -LiteralPath $rustcExe -PathType Leaf)) { continue }
-
-    $env:CARGO_HOME = $cargoHome
-    $rustupHome = ''
-    if (-not [string]::IsNullOrWhiteSpace([string]$candidate.RustupHome)) {
-      try { $rustupHome = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables([string]$candidate.RustupHome)) } catch { $rustupHome = [string]$candidate.RustupHome }
-      $env:RUSTUP_HOME = $rustupHome
-    }
-    Add-XmaProcessPathFront -Directory $cargoBin
-    return [pscustomobject]@{ Source = $candidate.Source; CargoHome = $cargoHome; RustupHome = $rustupHome; CargoExe = $cargoExe; RustcExe = $rustcExe }
-  }
-  if (-not $DiscoverExternal) { return $null }
-
-  # 只有明确要求外部发现的入口才扫描盘符。普通 xma-dev 菜单启动只恢复已知状态，避免发现逻辑拖垮控制台入口。
-  # checkout 状态缺失时，离线扫描 XMA 自管的外部 Rust 布局。唯一命中才自动接管，避免多套工具链时擅自猜测。
-  $discovered = @(Get-XmaDiscoveredRustHomes -ProjectRoot $ProjectRoot)
-  if ($discovered.Count -eq 1) {
-    $cargoHome = [IO.Path]::GetFullPath([string]$discovered[0].CargoHome)
-    $rustupHome = [string]$discovered[0].RustupHome
-    $cargoBin = Join-Path $cargoHome 'bin'
-    $cargoExe = Join-Path $cargoBin 'cargo.exe'
-    $rustcExe = Join-Path $cargoBin 'rustc.exe'
-    $env:CARGO_HOME = $cargoHome
-    if (-not [string]::IsNullOrWhiteSpace($rustupHome)) { $env:RUSTUP_HOME = $rustupHome }
-    Add-XmaProcessPathFront -Directory $cargoBin
-    Save-XmaRustEnvironmentState -ProjectRoot $ProjectRoot -CargoHome $cargoHome -RustupHome $rustupHome
-    return [pscustomobject]@{ Source = 'drive-scan'; CargoHome = $cargoHome; RustupHome = $rustupHome; CargoExe = $cargoExe; RustcExe = $rustcExe }
-  }
-  return $null
 }
 
 function Get-XmaEffectiveCargoHome {
-  param([string]$CargoExecutable = '')
-  if (-not [string]::IsNullOrWhiteSpace($env:CARGO_HOME)) {
-    try { return [IO.Path]::GetFullPath($env:CARGO_HOME) } catch { return $env:CARGO_HOME }
-  }
-  if (-not [string]::IsNullOrWhiteSpace($CargoExecutable)) {
-    try {
-      $cargoBin = Split-Path -Parent ([IO.Path]::GetFullPath($CargoExecutable))
-      return (Split-Path -Parent $cargoBin)
-    } catch {}
-  }
-  return ''
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Get-XmaProjectCargoHome -ProjectRoot $ProjectRoot)
 }
 
 function Test-XmaCargoOfflineDependencies {
@@ -354,18 +223,34 @@ function Invoke-XmaProbe {
     [string[]]$ArgumentList = @()
   )
 
-  # 中文说明：Probe 只用于 `--version` / `fmt --version` 这类短命令的静默能力探测。
-  # 它故意捕获 stdout/stderr 并返回结构化结果；禁止用于 pnpm install/cargo fetch/winget 等需要实时终端输出的动作命令。
+  # Probe 只用于 `--version` / `fmt --version` 这类短命令的静默能力探测。
+  # 先解析并确认真实 executable 存在，避免 PowerShell 5.1 将“命令不存在”的非终止错误误判成 ExitCode=0。
+  # 禁止用于 pnpm install/cargo fetch/winget 等需要实时终端输出的动作命令。
+  $resolved = $FilePath
+  $looksLikePath = [IO.Path]::IsPathRooted($FilePath) -or $FilePath.Contains('\') -or $FilePath.Contains('/')
+  if ($looksLikePath) {
+    if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
+      return [pscustomobject]@{ ExitCode = -1; Output = [string[]]@("executable not found: $FilePath") }
+    }
+    try { $resolved = [IO.Path]::GetFullPath($FilePath) } catch { $resolved = $FilePath }
+  } else {
+    $command = Get-Command $FilePath -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $command) {
+      return [pscustomobject]@{ ExitCode = -1; Output = [string[]]@("command not found: $FilePath") }
+    }
+    $resolved = $command.Source
+  }
+
   $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
+  $ErrorActionPreference = 'Stop'
   $lines = @()
   $exitCode = -1
   try {
-    $rawOutput = & $FilePath @ArgumentList 2>&1
-    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    $rawOutput = & $resolved @ArgumentList 2>&1
+    $exitCode = if ($null -eq $LASTEXITCODE) { -1 } else { [int]$LASTEXITCODE }
     $lines = @($rawOutput | ForEach-Object { [string]$_ })
   } catch {
-    $exitCode = if ($null -eq $LASTEXITCODE) { -1 } else { [int]$LASTEXITCODE }
+    $exitCode = if ($null -eq $LASTEXITCODE -or [int]$LASTEXITCODE -eq 0) { -1 } else { [int]$LASTEXITCODE }
     $lines = @([string]$_.Exception.Message)
   } finally {
     $ErrorActionPreference = $previousPreference

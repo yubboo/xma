@@ -59,8 +59,8 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 `[1] 一键准备开发环境` 是首次运行和项目依赖变化后的统一入口。目标是把当前 XMA 源码要求的全部开发/运行依赖自动准备到可用状态：
 
-- Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 都先真实探测；缺失或不满足项目硬要求时自动安装/修正，已经满足要求则直接复用，不为了追新强制升级。`[1]` 的 Rust 首次缺失时自动使用 `<checkout>\xma-path` 默认依赖根；主菜单 `[9]` 仍可用于单独修复/重装并选择 D 盘或自定义真实盘符；
-- JavaScript 依赖下载统一交给 pnpm；`[1]` 先验证当前 registry 的 npm ping 与 Bun/OpenTUI 实际 metadata。当前源是 npm 官方或批准的 npmmirror 时，可在二者之间仅对本次 install 临时切换；用户自定义/企业 registry 不自动切到公共源。所有临时 registry/timeout 配置在命令结束后恢复，不写入 npmrc。Rust stable/rustfmt 仍可在 Rust 官方与 RsProxy 间做 Rust 自身下载容错，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；
+- Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 都先真实探测；缺失或不满足项目硬要求时自动安装/修正，已经满足要求则直接复用，不为了追新强制升级。Rust/Cargo 固定使用项目根 `runtime/rust`；`[1]`/`[9]` 缺失时下载 Rust 官方 `rustup-init.exe` + `.sha256`，设置项目本地 `CARGO_HOME/RUSTUP_HOME` 后安装 stable/minimal 与 rustfmt，不写用户目录，也不让用户选择盘符；
+- JavaScript 依赖下载完全交给项目根原生 `pnpm install`，XMA 不注入 registry/reporter/timeout/purge 参数；pnpm 使用用户/项目自己的正常配置。Rust stable/rustfmt 可在 Rust 官方与 RsProxy 间做 Rust 自身下载容错，`RUSTUP_DIST_SERVER/RUSTUP_UPDATE_ROOT` 只设置到当前 XMA 进程；Rust/Cargo 一旦通过绝对路径真实探针，本次流程直接接管该 Runtime，状态文件只用于下次启动恢复，不得再次 round-trip 导入后把已成功工具链误判失败；
 - `[1]` 的 Workspace JavaScript 同步固定为项目根**每次无条件执行一次原生 `pnpm install`**，与开发者手工在 PowerShell 中运行同一命令的行为一致。不得附加 `--reporter`、`--prefer-offline`、`--no-frozen-lockfile`、`confirmModulesPurge` 或 XMA 自定义 registry/timeout 参数，也不得用 prepare stamp/fingerprint 或 `node_modules` 是否存在来跳过。删除 `node_modules` 后重新运行 `[1]` 必须由 pnpm 重新创建；项目新增/调整依赖后同样由这一条命令自动同步。`[8]` 才调用 `scripts/runtime/update.mjs` 定向更新 Bun 与 OpenTUI/Solid latest。
 - PowerShell 输出流边界固定：Bootstrap 动作函数（`pnpm install`、`cargo fetch`、`npm/winget` 安装等）不得通过函数返回值向上层传递 native stdout，也不得把包含 native command 的函数直接赋值给业务变量。`pnpm install` 属于终端进度型命令，必须直接继承当前控制台 stdout/stderr，禁止 `Out-Host` 或其他 PowerShell pipeline，确保 `Scope / Packages / Progress`、同行刷新、Unicode/ANSI 与开发者手工执行完全一致；Runtime/路径等业务对象由独立 `Get-*`/探针函数读取。
 - `[8]` 的定向更新保留 manifest/lockfile 事务回滚；`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准。
@@ -70,10 +70,10 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 完成 `[1]` 后：
 
 - `[2] Web`：直接启动，不再次安装依赖；
-- `[4] Xiaoyu CLI`：不再次安装依赖；Bun/OpenTUI 直接从 Workspace `node_modules` 读取并真实验证当前已安装版本，Rust/Cargo 从 checkout `.git/xma-state/rust-environment.json`（非 Git 树回退 `.cache/xma-state`）恢复。随后执行 Cargo offline preflight 与 `cargo build --package xma-native-runtime --offline`；缺依赖时明确提示 `[1]/[8]/[9]`，不得静默联网；
+- `[4] Xiaoyu CLI`：不再次安装依赖；Bun/OpenTUI 直接从 Workspace `node_modules` 读取并真实验证当前已安装版本，Rust/Cargo 直接从当前项目 `runtime/rust/cargo/bin` 真实解析。随后执行 Cargo offline preflight 与 `cargo build --package xma-native-runtime --offline`；缺依赖时明确提示 `[1]/[8]/[9]`，不得静默联网；
 - `[7] 全量检查`：先恢复 `[1]` 记录的 Rust Home，并在 TypeScript/CLI 测试之前做 Cargo offline preflight + rustfmt preflight；缺失立即提示回 `[1]`。随后 Rust check/test 使用 `--offline`；
 - `[8] 刷新 · JavaScript Runtime`：与 `[1]` 分离，只主动刷新 Workspace Bun/OpenTUI/Solid/@types-bun 到 registry latest；
-- `[9] 单独准备 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates；缺失时直接进入单独工具链准备流程，可选择项目默认、D 盘或自定义真实盘符；外部 Rust 实体仍存在时真实探针通过即可重新接管；
+- `[9] 单独准备 · Rust / Cargo`：只处理 Rust/Cargo + rustfmt + MSVC + Native crates；已有标准 Rust 工具链则复用，缺失时通过 winget/rustup 自动安装 stable，不再出现项目默认/D 盘/自定义盘符选择；
 - `[3] Desktop`：只补齐用户明确选择的桌面运行时。
   - `[1] Electron 41.2.0`：主/推荐；Electron package 元数据已由 `[1]` 准备，首次明确选择时才下载 Chromium Runtime；
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
