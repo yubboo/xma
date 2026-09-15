@@ -459,3 +459,12 @@
 - Workspace Trust 光标：OpenTUI 启动前的 raw Workspace Trust 选择界面现在在捕获鼠标期间显式隐藏硬件光标，并在退出 Trust 时恢复；避免 Windows Text Cursor Indicator 把硬件光标显示成蓝色上下标记。Active OpenTUI 仍保留原生 Textarea cursor 逻辑，不重新引入手写编辑器。
 - 根目录清理：`.xma-package` 只属于正式源码包。除 Source Sync 继续在目标仓库清理外，`[1]`、`[8]`、`[9]` 在检测到当前目录已经是 Git checkout 时也会删除遗留 `.xma-package`；`.cache/dist/node_modules/xma-path` 仍分别承担缓存、正式构建产物、Workspace JS 依赖和本地依赖根职责，不做错误清理。
 - 回归：Windows Gate 锁定 Bun/OpenTUI 整组件准备、`[7/9]` 只复检、Git checkout `.xma-package` 清理与外部 Rust 恢复提示；TUI 测试锁定 Workspace Trust raw 生命周期隐藏/恢复硬件光标。版本继续保持 `0.1.0`。
+
+##39 · PowerShell 外部命令 stdout 污染返回值修复
+
+- 日期：2026-09-15
+- 现象：Windows 全新 `E:\xma` 环境中 `[1]` 的 Bun 1.3.14 / OpenTUI、Rust/Cargo、Workspace pnpm 安装均成功，但 `[7/9]` 在 `pnpm rebuild esbuild` 后报 `GetFullPath`“路径中具有非法字符”。
+- 根因：`Invoke-XmaExternal` 为了保持 `[2]/[3]/[4]` 开发进程与真实终端直连，会保留 native stdout 的 PowerShell pipeline 语义。`Ensure-XmaBunOpenTuiRuntime` 又是一个需要返回单一 `bun.exe` 路径的函数；首次安装 OpenTUI 时，内部 `bun install` stdout 没有被消费，于是 PowerShell 把安装日志和最终路径一起组成返回数组，后续再次作为路径传给 `GetFullPath()` 就出现非法字符。该问题与 `E:\xma` 路径本身无关。
+- 修复：保持公共 `Invoke-XmaExternal` 的直连语义，不全局把 dev/TUI stdout 改成管道（避免破坏交互 TTY）。只在“需要返回对象/路径”的准备函数中，把非交互安装命令显式 `| Out-Host`：OpenTUI 安装、rustup-init、项目级 stable override、rustfmt component add 的输出继续实时显示，但不再进入函数返回值。`Ensure-XmaBunOpenTuiRuntime` 因此保证只返回 `bun.exe` 路径。
+- 回归：Windows Gate 锁定上述 `Out-Host` 隔离点，并在 `xma-common.ps1` 固化“交互命令保留直连、值返回函数必须消费非交互 stdout”的合同。版本仍为 `0.1.0`，继续覆盖正式同名源码包与 SHA-256。
+

@@ -394,7 +394,7 @@ function Install-XmaRustStable {
     $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($expected -ne $actual) { throw 'rustup-init SHA-256 校验失败，已拒绝执行。' }
     Write-Host '[验证] rustup-init SHA-256 校验通过。' -ForegroundColor DarkCyan
-    Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path')
+    Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host
   } finally {
     Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $checksumFile -Force -ErrorAction SilentlyContinue
@@ -404,7 +404,7 @@ function Install-XmaRustStable {
   if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw "Rust 安装完成但未找到 rustup：$rustupExe" }
   Save-XmaRustEnvironmentState -ProjectRoot $Root -CargoHome $homes.CargoHome -RustupHome $homes.RustupHome
   Push-Location $Root
-  try { Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable') } finally { Pop-Location }
+  try { Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('override','set','stable') | Out-Host } finally { Pop-Location }
   Write-Host "[完成] Rust stable 已安装：$installRoot" -ForegroundColor Green
   return (Import-XmaRustEnvironment -ProjectRoot $Root)
 }
@@ -465,7 +465,7 @@ function Ensure-XmaRustToolchain([switch]$PromptIfMissing) {
   if ($rustfmtProbe.ExitCode -ne 0) {
     if (-not (Test-Path -LiteralPath $rustupExe -PathType Leaf)) { throw 'Rust stable 已可用，但缺少 rustfmt/cargo-fmt，且当前 Rust Home 没有 rustup.exe。' }
     Write-Host '[缺少] 未检测到 rustfmt；正在为当前 XMA Rust Home 安装 rustfmt 组件...' -ForegroundColor Yellow
-    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable')
+    Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') | Out-Host
     $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
     if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
   }
@@ -647,7 +647,8 @@ function Ensure-XmaBunOpenTuiRuntime([switch]$PromptIfMissing) {
   if (-not $openTuiReady) {
     # Bun 本轮刚由用户同意安装时，沿用同一次“Bun / OpenTUI Runtime”授权，不重复弹第二个 Y/N。
     # 旧版实体依赖如果完整，Ensure 会优先本地迁移；只有确实缺失时才联网安装。
-    Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe
+    # 中文说明：该函数最终必须只返回 bun.exe 路径。Bun install 的 stdout 只能显示到 Host，不能进入 PowerShell 返回管道污染 `$bunExe`。
+    Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host
   } elseif (-not (Connect-XmaOpenTuiNodeModules -ProjectRoot $Root -BunHome $bunHome)) {
     throw "OpenTUI 依赖存在，但无法连接到源码 Runtime：$openTuiHome"
   }

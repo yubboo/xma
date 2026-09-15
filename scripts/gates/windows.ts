@@ -50,6 +50,13 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
 // PowerShell `$args` 是自动变量（大小写不敏感），不能作为自定义外部命令参数名。
 // xma-prepare.ps1 现在负责一次准备系统工具与通用项目依赖；Desktop 重型运行时仍按用户选择准备。
 const prepareSource = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
+for (const marker of [
+  "Ensure-XmaOpenTuiDependencies -BunExecutable $bunExe | Out-Host",
+  "Invoke-XmaExternal -FilePath $installer -ArgumentList @('-y','--profile','minimal','--default-toolchain','stable','--no-modify-path') | Out-Host",
+  "Invoke-XmaExternal -FilePath $rustupExe -ArgumentList @('component','add','rustfmt','--toolchain','stable') | Out-Host",
+]) {
+  if (!prepareSource.includes(marker)) throw new Error(`PowerShell value-return pipeline isolation regression: missing ${marker}`)
+}
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
 for (const marker of ['%~dp0', 'scripts\\windows\\xma-console.ps1', 'CALLER_CWD=%CD%', 'DisableDelayedExpansion', 'pushd "%ROOT%"', '-Command cli -Workspace "%CALLER_CWD%"']) {
   if (!devLauncherSource.includes(marker)) throw new Error(`XMA Windows source-development launcher contract missing: ${marker}`)
@@ -227,6 +234,9 @@ for (const marker of [
   if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
 }
 if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
+if (!commonSource.includes('调用非交互安装命令必须显式 `| Out-Host`')) {
+  throw new Error('Invoke-XmaExternal pipeline-output contract documentation missing')
+}
 
 for (const file of [
   'scripts/windows/xma-prepare.ps1',
