@@ -150,3 +150,9 @@ OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/S
 ### `[1]` Workspace JavaScript 依赖真值
 
 Windows `xma-dev.bat → [1]` **每次运行都必须在仓库根目录无条件执行一次原生 `pnpm install`**。不得因为 `node_modules` 已存在、prepare stamp/fingerprint 命中、工具探针通过或缓存存在而跳过；也不得给该命令套 registry/reporter/timeout 等 XMA 私有安装策略。`node_modules` 被删除时，pnpm 必须像开发者手工运行 `pnpm install` 一样重新创建并从 store/registry 恢复依赖；项目新增或调整依赖时，同一命令负责自动同步。
+## Native 输出与项目本地 Rust
+
+- Windows `[1]` 的 Rust/Cargo 唯一运行位置是 `<checkout>\runtime\rust\{cargo,rustup}`。系统 `%USERPROFILE%\.cargo/.rustup`、历史 `xma-path\rust`、盘符扫描和 Rust 状态文件不得参与运行解析；旧 `xma-path\rust` 只允许在准备阶段一次性清理。
+- `rustup-init`、`rustup component add`、`cargo fetch` 与 pnpm/winget/npm 一样必须直接继承当前 Windows Terminal stdout/stderr。禁止通过 `Out-Host` / `ForEach-Object` 等 PowerShell pipeline 消费 native stdout，否则带中文的 checkout 路径会发生 UTF-8/本地代码页二次解码乱码。
+- Bootstrap 动作与状态读取分离：`Ensure-*` 动作直接执行 native 命令且不作为赋值表达式；动作结束后再用 `Resolve-XmaRustRuntime` 获取结构化 Runtime 对象。
+

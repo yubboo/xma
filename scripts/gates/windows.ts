@@ -28,6 +28,14 @@ for (const file of required.filter(file => file.endsWith('.ps1'))) {
   if (!text.includes('\r\n')) throw new Error(`PowerShell CRLF missing: ${file}`)
 }
 
+// Native tools must stay attached to the real terminal. PowerShell pipelines force byte decoding and can corrupt UTF-8 paths on Windows PowerShell 5.1.
+for (const file of required.filter(file => file.endsWith('.ps1'))) {
+  const text = readFileSync(file, 'utf8')
+  if (/^\s*Invoke-XmaExternal[^\r\n]*\|/m.test(text)) {
+    throw new Error(`Native command must not be piped through PowerShell output cmdlets: ${file}`)
+  }
+}
+
 // PowerShell 单引号不把反斜杠当转义符；`'\\'` 是两个字符，不能强制转换为 System.Char。
 // 路径 TrimStart/TrimEnd 的 char[] 必须使用单个反斜杠字面量 `'\'`，避免 xma-dev 启动阶段直接崩溃。
 for (const file of required.filter(file => file.endsWith('.ps1'))) {
@@ -101,7 +109,6 @@ for (const marker of [
   "Join-Path $Root 'node_modules\\@opentui\\solid\\package.json'",
   "Join-Path $Root 'node_modules\\solid-js\\package.json'",
   "Join-Path $Root 'node_modules\\@types\\bun\\package.json'",
-  'function Invoke-XmaPrepareExternal',
   'pnpm install 直接继承当前控制台 stdout/stderr，不经过 Out-Host 或其他 PowerShell pipeline',
   'function Install-XmaWorkspaceJavaScriptDependencies',
   "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')",
@@ -111,7 +118,7 @@ for (const marker of [
   'function Prepare-XmaCurrentJavaScriptDependencies',
   '动作与读取严格分离',
   'function Invoke-XmaManagedJavaScriptLatestUpdate',
-  "Invoke-XmaPrepareExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
+  "Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
   '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
   'Workspace JavaScript 依赖直接执行原生 pnpm install',
   'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在根 node_modules；不再创建 OpenTUI 嵌套 node_modules。',
@@ -147,6 +154,18 @@ if (prepareSource.includes('Get-XmaWorkspaceDependencyFingerprint')) {
 }
 if (prepareSource.includes('$jsRuntime = Prepare-XmaCurrentJavaScriptDependencies') || prepareSource.includes('$jsRuntime = Install-XmaWorkspaceJavaScriptDependencies')) {
   throw new Error('Windows bootstrap must not capture an action function that executes native commands; native stdout must remain visible in the Host.')
+}
+if (prepareSource.includes('function Invoke-XmaPrepareExternal')) {
+  throw new Error('Windows bootstrap must not reintroduce an Out-Host native wrapper; native actions inherit the terminal directly.')
+}
+if (/Invoke-XmaExternal[^\r\n]*\|\s*(?:Out-Host|ForEach-Object|Write-Host)/.test(prepareSource)) {
+  throw new Error('Windows bootstrap native commands must not cross a PowerShell pipeline; this breaks interactive rendering and Unicode path output.')
+}
+if (!/Ensure-XmaRustToolchain\r?\n\s*\$rustRuntime = Resolve-XmaRustRuntime -ProjectRoot \$Root/.test(prepareSource)) {
+  throw new Error('Rust bootstrap must execute the action first and Resolve-XmaRustRuntime separately.')
+}
+if (prepareSource.includes('$rustRuntime = Ensure-XmaRustToolchain')) {
+  throw new Error('Rust bootstrap action must not be captured as a return value; run the action first, then Resolve-XmaRustRuntime separately.')
 }
 if (!prepareSource.includes("if ($Component -eq 'js') { Prepare-XmaCurrentJavaScriptDependencies; exit 0 }")) throw new Error('Windows js component must install and validate current Workspace dependencies only.')
 if (!prepareSource.includes("if ($Component -eq 'bun') { Prepare-XmaJavaScriptOnly; exit 0 }")) throw new Error('Windows bun component must remain the explicit latest refresh path.')
@@ -216,7 +235,7 @@ for (const marker of [
   '[Rust/Cargo] CARGO_HOME=',
   '[Rustup] RUSTUP_HOME=',
   '[控制状态]',
-  "Invoke-XmaPrepareExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
+  "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime',
   'function Install-XmaDevelopmentCommands',
@@ -373,7 +392,7 @@ for (const marker of [
   if (!commonSource.includes(marker)) throw new Error(`XMA Windows common helper regression: missing ${marker}`)
 }
 if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
-if (!commonSource.includes('终端进度型命令（尤其 pnpm install）必须直接调用本函数')) throw new Error('Invoke-XmaExternal native-terminal output contract documentation missing')
+if (!commonSource.includes('pnpm/rustup/cargo/git/winget/npm 等可见动作必须直接调用本函数')) throw new Error('Invoke-XmaExternal native-terminal output contract documentation missing')
 if (!commonSource.includes('Probe 只用于 `--version` / `fmt --version` 这类短命令的静默能力探测')) throw new Error('Invoke-XmaProbe capture-only boundary documentation missing')
 if (!commonSource.includes('executable not found: $FilePath')) throw new Error('Invoke-XmaProbe must fail missing absolute executables instead of treating PowerShell command-not-found output as success')
 if (commonSource.includes("Join-Path $env:USERPROFILE '.cargo'") || commonSource.includes("Join-Path $env:USERPROFILE '.rustup'")) throw new Error('Windows Rust runtime must stay inside project runtime/rust, not the user profile.')
@@ -638,7 +657,8 @@ for (const marker of [
   '← 推荐首次运行',
   '[2] 开发运行 · Web                    已准备后直接启动',
   '[4] 运行 · Xiaoyu Terminal            已准备后直接启动',
-  'Ensure-CliNativeRuntime',
+  'Build-CliNativeRuntime',
+  'Stage-CliNativeRuntime',
   "@('build','--package','xma-native-runtime','--offline')",
   "Join-Path $Root '.cache\\cargo-target'",
   "Join-Path $Root '.cache\\native-runtime\\runs'",
@@ -663,6 +683,12 @@ for (const marker of [
   '$env:CARGO_TARGET_DIR = $tauriTargetDir',
 ]) {
   if (!consoleSource.includes(marker)) throw new Error(`XMA console prepared-dependency/runtime contract missing: ${marker}`)
+}
+if (!/Build-CliNativeRuntime\r?\n\s*\$nativeExe = Stage-CliNativeRuntime/.test(consoleSource)) {
+  throw new Error('Xiaoyu Terminal must build native runtime as a void native action, then stage/read the executable separately.')
+}
+if (consoleSource.includes('$nativeExe = Ensure-CliNativeRuntime')) {
+  throw new Error('Xiaoyu Terminal must not capture cargo build output through a value-returning action function.')
 }
 if (consoleSource.includes(".cache\\cargo-target\\debug\\xma-native-runtime.exe")) {
   throw new Error('Xiaoyu Terminal must not execute the shared Cargo target exe directly on Windows; use unique native staging copies.')

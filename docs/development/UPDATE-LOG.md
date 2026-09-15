@@ -745,3 +745,13 @@
 - 修复：路径尾部分隔符统一改为单字符数组 `[char[]]@('\','/')`；同时把 `xma-github.ps1` 的 `.TrimStart('./')` 改为显式 `[char[]]@('.','/')`，避免另一处多字符 Trim 参数在 Windows PowerShell 5.1 上产生绑定差异。
 - Gate：Windows Gate 现在扫描全部 `scripts/windows/*.ps1` 的显式 `[char[]]` 字面量，要求每个元素恰好一个字符；并禁止 `TrimStart/TrimEnd` 直接传入长度大于 1 的单字符串。旧的用户目录 Rust Gate 同步删除，Gate 与当前 `runtime/rust` 项目本地 Rust 架构保持一致。
 - 验证：在最终源码树上直接使用 Node 22 TypeScript strip-types 执行 9 项 Gate；`gate:windows` 必须真实执行并通过，不能再以人工“看起来通过”替代。当前容器没有 Windows PowerShell 5.1，因此 Windows 实机仍用于最终 E2E。
+
+##69 · Windows Rust 路径收尾与 native Unicode 输出修复
+
+- 日期：2026-09-15
+- 实机结果：`xma-dev.bat -> [1]` 已完整通过 8/8，项目本地 Rust 正确安装到 `runtime/rust/{cargo,rustup}`，Cargo crates 也进入该项目 CARGO_HOME；旧 `xma-path/rust` 已在准备阶段被清理。
+- 路径审计：Windows 运行/检查/构建统一经 `Resolve-XmaRustRuntime` 只解析当前 checkout 的 `runtime/rust/cargo/bin`，不回退 `%USERPROFILE%/.cargo/.rustup`、系统 Rust、旧 Rust state 或盘符扫描。源码中保留的 `xma-path/rust` / `rust-environment.json` 只属于一次性迁移删除路径，不参与任何发现、PATH、构建或版本判断。
+- 乱码根因：`rustup-init` / `rustup component add` / `cargo fetch` 仍经 `Invoke-XmaPrepareExternal -> Out-Host` 消费 native stdout。Rustup 在连接管道时输出 UTF-8 字节，Windows PowerShell 5.1 再按本地代码页解码，中文 checkout 路径因此出现 `涓€閿...` mojibake；和真实目录内容无关。
+- 修复：删除 `Invoke-XmaPrepareExternal`。Bootstrap 所有 native 动作统一直接调用 `Invoke-XmaExternal` 并继承当前终端；Rust 准备改为 void 动作 + `Resolve-XmaRustRuntime` 二阶段读取，避免为了返回 Runtime 对象再次引入 stdout pipeline。Windows Gate 禁止 `Invoke-XmaExternal ... | Out-Host/ForEach-Object/Write-Host`，并禁止 `$rustRuntime = Ensure-XmaRustToolchain`。
+- 文档清理：Source Sync/Console 中 `xma-path` 文案明确标记为历史迁移对象；当前本地依赖只有 `runtime`、`node_modules`、`.cache` 与 `.git/xma-state`。版本保持 `0.1.0`。
+

@@ -2,7 +2,7 @@
 文件作用：XMA Windows 一键开发环境准备器，一次完成系统工具与通用项目依赖准备。
 关联模块：xma-console.ps1、package.json、pnpm-workspace.yaml、Cargo.toml、apps/desktop。
 当前实现：[1] 自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript 依赖、项目本地 rustup/Rust/Cargo、MSVC 与 Native crates 全部就绪；JavaScript 每次运行 [1] 都在项目根无条件执行一次原生 pnpm install；Rust/Cargo 固定安装到当前 checkout 的 `runtime/rust/{cargo,rustup}`，与 node_modules 同属项目本地依赖，不再写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`；已满足项目要求的工具直接复用，不为追新强制升级。
-职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
+职责边界：Electron Chromium Runtime 只在用户明确选择 Electron Desktop/构建时下载；Tauri 2 Rust crates 只在用户明确选择 Tauri/构建时下载；Bootstrap 的 pnpm/rustup/cargo/winget/npm 等 native 动作必须直接继承当前终端 stdout/stderr，禁止 Out-Host/ForEach-Object 管道转码；开发命令只写 User PATH，不修改 Machine PATH，也不冒充正式 Release 安装。
 #>
 
 param(
@@ -99,19 +99,6 @@ function Ensure-XmaWinget {
   }
 }
 
-function Invoke-XmaPrepareExternal {
-  param(
-    [Parameter(Mandatory = $true)][string]$FilePath,
-    [string[]]$ArgumentList = @(),
-    [switch]$QuietCommand
-  )
-
-  # 仅供行式输出的 Bootstrap 动作使用：Out-Host 消费 success stream，避免这些命令的 stdout 污染业务返回对象。
-  # 禁止用本包装器执行 pnpm install 等终端进度型命令；PowerShell pipeline 会破坏 carriage-return 同行刷新并可能触发转码乱码。
-  Invoke-XmaExternal -FilePath $FilePath -ArgumentList $ArgumentList -QuietCommand:$QuietCommand | Out-Host
-}
-
-
 function Get-XmaRustupInitTarget {
   $arch = [string]$env:PROCESSOR_ARCHITECTURE
   if ($arch -ieq 'AMD64' -or $arch -ieq 'x86_64') { return 'x86_64-pc-windows-msvc' }
@@ -156,7 +143,7 @@ function Install-XmaProjectRustup {
 
   Write-Host '[安装] 正在把 Rust stable 安装到当前 XMA 项目 runtime\rust...' -ForegroundColor Cyan
   try {
-    Invoke-XmaPrepareExternal -FilePath $rustupInit -ArgumentList @(
+    Invoke-XmaExternal -FilePath $rustupInit -ArgumentList @(
       '-y','--no-modify-path','--profile','minimal','--default-toolchain','stable'
     )
   } finally {
@@ -218,7 +205,7 @@ function Ensure-XmaRustToolchain {
       throw "项目本地 Rust/Cargo 已可用，但缺少 rustfmt 且 rustup.exe 不存在：$($runtime.CargoHome)"
     }
     Write-Host '[缺少] rustfmt 未就绪；正在通过项目本地 rustup 自动补齐...' -ForegroundColor Yellow
-    Invoke-XmaPrepareExternal -FilePath $runtime.RustupExe -ArgumentList @('component','add','rustfmt')
+    Invoke-XmaExternal -FilePath $runtime.RustupExe -ArgumentList @('component','add','rustfmt')
     $rustfmtProbe = Invoke-XmaProbe -FilePath $runtime.CargoExe -ArgumentList @('fmt','--version')
     if ($rustfmtProbe.ExitCode -ne 0) { throw "rustfmt 安装后仍不可用：$($rustfmtProbe.Output -join ' ')" }
   }
@@ -228,7 +215,7 @@ function Ensure-XmaRustToolchain {
   Write-Host "[通过] $((($rustfmtProbe.Output -join ' ').Trim()))" -ForegroundColor Green
   Write-Host '[版本策略] 项目本地 stable 可用即复用；只有缺失/损坏时才自动修复，不为了追新强制升级。' -ForegroundColor DarkGray
   Write-Host "[位置] runtime\rust · CARGO_HOME=$($runtime.CargoHome) · RUSTUP_HOME=$($runtime.RustupHome)" -ForegroundColor DarkGray
-  return $runtime
+  # 动作函数不返回 Runtime 对象；调用方在动作完成后单独 Resolve，避免 native stdout 被变量捕获。
 }
 
 function Ensure-XmaMsvc {
@@ -244,7 +231,7 @@ function Ensure-XmaMsvc {
   Write-Host '[缺少] 未检测到 Visual Studio C++ Build Tools；这是 XMA Windows Native 构建必需工具，正在自动安装。' -ForegroundColor Yellow
   Ensure-XmaWinget
   Write-Host '[安装] 正在安装 Visual Studio 2022 Build Tools + C++ Toolchain，这一步可能需要几分钟...' -ForegroundColor Yellow
-  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @(
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @(
     'install','--id','Microsoft.VisualStudio.2022.BuildTools','--exact',
     '--accept-source-agreements','--accept-package-agreements',
     '--override','--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
@@ -269,7 +256,7 @@ function Ensure-XmaCargoCrates($RustRuntime) {
   }
   Write-Host "[同步] 当前 CARGO_HOME 缺少 Cargo.lock 所需 crates：$cargoHome" -ForegroundColor Yellow
   Write-Host '[同步] 准备入口允许联网，现在开始 cargo fetch --locked...' -ForegroundColor Yellow
-  Invoke-XmaPrepareExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')
+  Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')
   if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $Root -CargoExecutable $RustRuntime.CargoExe)) {
     throw "Rust crates 下载后仍无法离线解析。请检查 CARGO_HOME/网络/代理：$cargoHome"
   }
@@ -395,7 +382,7 @@ function Install-XmaWorkspaceJavaScriptDependencies {
 function Invoke-XmaManagedJavaScriptLatestUpdate {
   Write-Host '[更新] 正在刷新 XMA JS Runtime：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
   Write-Host '[策略] [8] 是显式升级入口；使用 pnpm 当前配置，不改变 [1] 的普通安装语义。' -ForegroundColor DarkGray
-  Invoke-XmaPrepareExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')
+  Invoke-XmaExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')
   Write-Host '[完成] Workspace JavaScript Runtime latest 刷新完成。' -ForegroundColor Green
 }
 
@@ -412,11 +399,11 @@ function Assert-XmaWorkspaceJavaScriptDependencies {
   if (-not $runtime) { throw 'Bun/OpenTUI Workspace Runtime 未完整进入 node_modules。请检查上方 pnpm install 原生输出。' }
 
   Write-Host '[验证] 正在验证 TypeScript / Vite / tsx / tsup 工具链...' -ForegroundColor DarkCyan
-  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
-  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
-  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
-  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
-  Invoke-XmaPrepareExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsc','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','vite','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsup','--version')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('exec','tsx','-e','const value: number = 1; if (value !== 1) process.exit(1)') -QuietCommand
 
   $desktopElectronPackage = Join-Path $Root 'apps\desktop\node_modules\electron\package.json'
   $desktopTauriCmd = Join-Path $Root 'apps\desktop\node_modules\.bin\tauri.cmd'
@@ -453,7 +440,9 @@ function Prepare-XmaRustOnly {
   Write-Host '====================================================================' -ForegroundColor DarkCyan
   Write-Host '  XMA · 单独准备 Rust / Cargo' -ForegroundColor Cyan
   Write-Host '====================================================================' -ForegroundColor DarkCyan
-  $rustRuntime = Ensure-XmaRustToolchain
+  Ensure-XmaRustToolchain
+  $rustRuntime = Resolve-XmaRustRuntime -ProjectRoot $Root
+  if (-not $rustRuntime) { throw 'Rust 准备动作结束后未能解析项目本地 runtime\rust。' }
   Write-Host '[MSVC] 正在准备 Rust Native 构建所需 Windows C++ Toolchain...' -ForegroundColor Cyan
   Ensure-XmaMsvc
   Write-Host '[Crates] 正在准备 XMA Native Rust crates...' -ForegroundColor Cyan
@@ -483,7 +472,7 @@ if (Get-Command git.exe -ErrorAction SilentlyContinue) { Write-Host "[通过] �
 else {
   Write-Host '[缺少] 当前没有检测到 Git；这是 XMA 源码开发必需工具，正在自动安装稳定版。' -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','Git.Git','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
   if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw 'Git 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
   Write-Host "[完成] Git 安装完成：$(& git.exe --version)" -ForegroundColor Green
@@ -495,7 +484,7 @@ Write-Host '[检查] 正在检查 Node.js 版本...' -ForegroundColor DarkCyan
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) {
   Write-Host '[缺少] 当前没有检测到 Node.js；XMA 要求 Node.js 22+，正在自动安装 Node.js LTS。' -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('install','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
 }
 if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { throw 'Node.js 安装后仍未出现在 PATH，请重新打开终端后再运行。' }
@@ -504,7 +493,7 @@ $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
 if ($major -lt 22) {
   Write-Host "[过旧] 当前 $nodeVersion，低于 XMA 硬要求 Node.js 22+；正在自动升级到受支持的 LTS。" -ForegroundColor Yellow
   Ensure-XmaWinget
-  Invoke-XmaPrepareExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
+  Invoke-XmaExternal -FilePath 'winget.exe' -ArgumentList @('upgrade','--id','OpenJS.NodeJS.LTS','--exact','--accept-source-agreements','--accept-package-agreements')
   Refresh-XmaPath
   $nodeVersion = (& node.exe --version).Trim(); $major = [int]($nodeVersion.TrimStart('v').Split('.')[0])
   if ($major -lt 22) { throw "Node.js 升级后仍低于 22：$nodeVersion。" }
@@ -528,7 +517,7 @@ if (-not $pnpmCompatible) {
   } else {
     Write-Host '[缺少] 当前没有检测到 pnpm；正在自动安装项目基准稳定版 11.17.0。' -ForegroundColor Yellow
   }
-  Invoke-XmaPrepareExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
+  Invoke-XmaExternal -FilePath 'npm.cmd' -ArgumentList @('install','--global','pnpm@11.17.0')
   Refresh-XmaPath
   $pnpmVersion = (& pnpm.cmd --version).Trim()
   try {
@@ -549,7 +538,9 @@ $jsRuntime = Get-XmaWorkspaceJavaScriptRuntimeInfo
 Write-Host ''
 Write-Host '[5/8] Rust / Cargo' -ForegroundColor Cyan
 Write-Host '[检查] 正在检查项目本地 runtime\rust；缺失时自动安装 stable 工具链。' -ForegroundColor DarkCyan
-$rustRuntime = Ensure-XmaRustToolchain
+Ensure-XmaRustToolchain
+$rustRuntime = Resolve-XmaRustRuntime -ProjectRoot $Root
+if (-not $rustRuntime) { throw 'Rust 准备动作结束后未能解析项目本地 runtime\rust。' }
 
 Write-Host ''
 Write-Host '[6/8] MSVC C++ Build Tools' -ForegroundColor Cyan

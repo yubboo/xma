@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布、全量检查和 Git 源码更新。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 固定从当前项目 runtime\rust 恢复并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
+当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 固定从当前项目 runtime\rust 解析并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
 职责边界：GitHub push 仍只由 XMA-GitHub.bat 负责；[10] 只更新当前 clone，不提交/推送；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -92,7 +92,7 @@ function Assert-XmaGitCloneForUpdate {
 function Confirm-XmaGitReset {
   Write-Host ''
   Write-Host '[警告] 强制恢复会丢弃 Git 已跟踪文件的本地修改，并让源码与 origin/main 一致。' -ForegroundColor Yellow
-  Write-Host '[保留] .git/xma-state、xma-path、node_modules、.cache、dist 等 Git 忽略的本地依赖/缓存不会被 reset --hard 删除。' -ForegroundColor DarkGray
+  Write-Host '[保留] .git/xma-state、runtime、node_modules、.cache、dist 等 Git 忽略的本地依赖/缓存不会被 reset --hard 删除；历史 xma-path 如仍存在也不会被 reset。' -ForegroundColor DarkGray
   $answer = (Read-Host '确认强制恢复？请输入 YES 继续').Trim()
   return ($answer -ceq 'YES')
 }
@@ -116,18 +116,18 @@ function Update-XmaProject {
     switch ($updateChoice) {
       '1' {
         Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main')
         Write-Host '[更新] 正在安全同步当前分支...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main') | Out-Host
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main')
         Write-Host '[完成] XMA 源码已安全更新。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步新版本新增/调整的全部工具与依赖。' -ForegroundColor Green
         exit 0
       }
       '2' {
         if (-not (Confirm-XmaGitReset)) { Write-Host '[取消] 未执行强制恢复。' -ForegroundColor Yellow; continue }
         Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main') | Out-Host
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main')
         Write-Host '[恢复] 正在用 origin/main 覆盖当前已跟踪源码...' -ForegroundColor Yellow
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('reset','--hard','origin/main') | Out-Host
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('reset','--hard','origin/main')
         Write-Host '[完成] 当前源码已强制恢复到 GitHub main。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步当前源码全部工具与依赖。' -ForegroundColor Green
         exit 0
       }
@@ -280,19 +280,18 @@ function Remove-StaleCliNativeRuns {
   }
 }
 
-function Ensure-CliNativeRuntime {
+function Build-CliNativeRuntime {
   Assert-CliJsDependencies
   $cargoRuntime = Resolve-XmaCargoRuntime
   Assert-XmaCargoOfflineReady -CargoRuntime $cargoRuntime -Purpose 'Xiaoyu Terminal Native Runtime'
 
-  # 中文说明：Windows 不允许覆盖仍被旧进程占用的 exe。CLI 构建复用项目统一 .cache\cargo-target 增量缓存，运行时再复制到唯一 staging 路径，
-  # 这样并行/旧版 Xiaoyu 只锁住自己的 run copy，不会阻断当前源码的离线增量构建。
+  # 中文说明：构建动作直接继承当前终端 stdout/stderr，禁止 Out-Host 管道转码；本函数不返回业务对象。
   $cliTargetDir = Join-Path $Root '.cache\cargo-target'
   $previousCargoTargetDir = $env:CARGO_TARGET_DIR
   $env:CARGO_TARGET_DIR = $cliTargetDir
   try {
     Write-Host '[Native] 正在校验当前源码对应的 XMA Native Runtime（复用 Cargo 增量缓存，离线构建，不下载依赖）...' -ForegroundColor DarkCyan
-    Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('build','--package','xma-native-runtime','--offline') | Out-Host
+    Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('build','--package','xma-native-runtime','--offline')
   } finally {
     if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
   }
@@ -300,6 +299,14 @@ function Ensure-CliNativeRuntime {
   $builtExe = Join-Path $cliTargetDir 'debug\xma-native-runtime.exe'
   if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
     throw "XMA Native Runtime 构建结束但未找到：$builtExe"
+  }
+}
+
+function Stage-CliNativeRuntime {
+  $cliTargetDir = Join-Path $Root '.cache\cargo-target'
+  $builtExe = Join-Path $cliTargetDir 'debug\xma-native-runtime.exe'
+  if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
+    throw "XMA Native Runtime 尚未构建：$builtExe"
   }
 
   Remove-StaleCliNativeRuns
@@ -312,8 +319,10 @@ function Ensure-CliNativeRuntime {
   return $runExe
 }
 
+
 function Start-Cli([string]$WorkspacePath = '') {
-  $nativeExe = Ensure-CliNativeRuntime
+  Build-CliNativeRuntime
+  $nativeExe = Stage-CliNativeRuntime
   $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
   $env:XIAOYU_NATIVE_RUNTIME = $nativeExe
   try {

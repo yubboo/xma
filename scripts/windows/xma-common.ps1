@@ -118,7 +118,7 @@ function Remove-XmaDirectoryEntry {
   }
   $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
   if ($item -and (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)) {
-    # 中文说明：Directory.Delete 对目录链接只删除链接本身，不递归删除链接目标；禁止用递归删除误伤 xma-path 中的真实依赖。
+    # 中文说明：Directory.Delete 对目录链接只删除链接本身，不递归删除链接目标；禁止用递归删除误伤链接目标中的真实依赖。
     [IO.Directory]::Delete($Path)
     return
   }
@@ -206,8 +206,8 @@ function Invoke-XmaExternal {
 
   # 中文说明：PowerShell 的 `$args` 是自动变量且大小写不敏感，禁止把 Args 当成自定义参数名。
   # 所有外部程序都通过 ArgumentList 显式转发，避免 pnpm/cargo/rustup 被错误退化成“裸命令”。
-  # 注意：本函数保留原生 stdout 语义。终端进度型命令（尤其 pnpm install）必须直接调用本函数，禁止再接 `| Out-Host`/ForEach-Object 等 PowerShell pipeline，
-  # 否则会破坏 carriage-return 同行刷新并可能触发 Windows PowerShell 5.1 转码乱码。只有确实需要返回对象/路径的非交互函数，才允许在其内部显式消费 stdout。
+  # 注意：本函数保留 native stdout/stderr 的终端语义。pnpm/rustup/cargo/git/winget/npm 等可见动作必须直接调用本函数，禁止再接 `| Out-Host`/ForEach-Object 等 PowerShell pipeline，
+  # 否则会破坏 carriage-return 同行刷新，并可能把 UTF-8 中文路径按本地代码页二次解码。需要返回对象/路径时，必须把 native 动作与 Get-/Resolve-/Stage-* 读取步骤拆开。
   if (-not $QuietCommand) {
     $display = if ($ArgumentList.Count -gt 0) { "$FilePath $($ArgumentList -join ' ')" } else { $FilePath }
     Write-Host "> $display" -ForegroundColor DarkGray

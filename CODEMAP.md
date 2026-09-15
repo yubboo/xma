@@ -32,7 +32,7 @@
 | Windows 源码开发控制台 / 项目更新 | `xma-dev.bat` → `scripts/windows/xma-console.ps1`（[10] 安全更新 / 强制恢复） |
 | Windows 开发态 `xiaoyu / xma` PATH shim | `scripts/windows/xma-prepare.ps1` → checkout `.git/xma-state/dev-bin/`（非 Git 树回退 `.cache/xma-state/dev-bin/`；本地生成，不提交） |
 | 开发环境 Bootstrap / JavaScript Runtime | Windows `[1]` 自动确保 Git、Node、兼容 pnpm、Rust/MSVC/Native crates，并且**每次运行都无条件在项目根执行原生 `pnpm install`**，由 pnpm 自己恢复/同步 Workspace `node_modules`；Unix prepare 同样使用标准 `pnpm install`；`scripts/runtime/update.mjs` 只负责 `[8]` 的 Bun/OpenTUI/Solid 定向 latest 刷新 |
-| Windows 源码依赖 | JavaScript Runtime（Bun/OpenTUI/Solid）统一声明在根 `package.json` 并安装到根 `node_modules/`；`apps/cli/opentui-runtime/` 只保留源码，不是嵌套 Workspace；Rust/Cargo 由 `scripts/windows/xma-common.ps1` + `xma-prepare.ps1` 管理，短命令版本/能力探测统一走公共 `Invoke-XmaProbe`，绝对路径探针成功后本次 Runtime 直接接管，checkout 状态仅用于下次恢复；状态位于 `.git/xma-state/`（本地生成，不提交） |
+| Windows 源码依赖 | JavaScript Runtime（Bun/OpenTUI/Solid）统一声明在根 `package.json` 并安装到根 `node_modules/`；`apps/cli/opentui-runtime/` 只保留源码，不是嵌套 Workspace；Rust/Cargo 唯一位于 checkout 本地 `runtime/rust/{cargo,rustup}`，由 `scripts/windows/xma-common.ps1` + `xma-prepare.ps1` 管理，短命令探测走 `Invoke-XmaProbe`，native 安装/同步动作直接继承 Windows Terminal；不读取用户 `%USERPROFILE%/.cargo/.rustup` 或旧 Rust state |
 | Linux/macOS 源码开发控制台 | `xma-dev` → `scripts/unix/xma-console.sh` |
 | Windows 普通用户安装器 | `scripts/install/xma-install.ps1` |
 | Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |

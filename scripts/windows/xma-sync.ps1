@@ -2,7 +2,7 @@
 文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到自动识别或用户指定的 Git 工作目录。
 关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、checkout 本地 xma-state/source-sync.json、XMA-GitHub.bat、GitHub yubboo/xma。
 当前实现：优先按包内 Source Manifest 比较文件内容；默认识别同级已存在且 origin 正确的 XMA Git 工作目录，存在多个或未找到时由用户明确选择；绝不自动创建/占用标准 git clone 使用的 xma 目录。
-职责边界：不得删除目标仓库 .git、xma-path、用户 runtime、依赖缓存与正式本机构建产物；不得按通用目录名误伤 scripts/release 等正式源码目录。
+职责边界：不得删除目标仓库 .git、项目 runtime、node_modules、.cache 与正式本机构建产物；历史 xma-path 仅作为兼容迁移对象保留，禁止重新承载 Rust/开发依赖；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -404,7 +404,7 @@ foreach ($legacyBuildDir in $legacyBuildDirs) {
 }
 
 # 中文说明：.xma-package 只属于正式源码包，长期 Git 工作目录不需要这份包级元数据。
-# 旧版 Sync 若曾留下该目录，在确认目标是正确 XMA 仓库后安全清理；当前本地状态统一进入 xma-path/.cache。
+# 旧版 Sync 若曾留下该目录，在确认目标是正确 XMA 仓库后安全清理；当前 checkout 控制状态统一进入 .git/xma-state（无 .git 时回退 .cache/xma-state），Rust 统一进入 runtime/rust。
 $legacyPackageMetadata = Join-Path $Target '.xma-package'
 if (Test-Path -LiteralPath $legacyPackageMetadata -PathType Container) {
   Write-Host "[清理] 删除 Git 工作目录中无用的源码包元数据：$legacyPackageMetadata" -ForegroundColor DarkYellow
@@ -412,7 +412,7 @@ if (Test-Path -LiteralPath $legacyPackageMetadata -PathType Container) {
 }
 
 
-# 0.1.0 早期 Source Sync/开发环境使用 `.xma`。状态迁移到 xma-path 后清理旧目录，避免根目录继续出现重复本地状态容器。
+# 0.1.0 早期 Source Sync/开发环境使用 `.xma`；当前状态已收口到 .git/xma-state/.cache，旧 `.xma` 与 xma-path 只保留迁移兼容，禁止作为新依赖根。
 $legacyXmaRoot = Join-Path $Target '.xma'
 if (Test-Path -LiteralPath $legacyXmaRoot -PathType Container) {
   Remove-Item -LiteralPath (Join-Path $legacyXmaRoot 'source-sync.json') -Force -ErrorAction SilentlyContinue
@@ -432,7 +432,7 @@ if (-not (Test-XmaExpectedGitOrigin $Target)) {
 }
 Write-Host '[验证] Git 工作目录与 origin 仍指向 yubboo/xma。' -ForegroundColor Green
 
-Write-Host '[完成] XMA 新源码已同步；.git checkout 状态 / 外部或项目 xma-path 依赖 / runtime / node_modules / .cache / dist 等本地状态均保留。' -ForegroundColor Green
+Write-Host '[完成] XMA 新源码已同步；.git checkout 状态 / runtime / node_modules / .cache / dist 等当前本地状态均保留；历史 xma-path 如存在仅保留用于迁移。' -ForegroundColor Green
 if ($SyncSummaryText) {
   Write-Host "[本次同步] $SyncSummaryText" -ForegroundColor Cyan
   Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray

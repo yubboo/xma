@@ -272,6 +272,7 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 
 
 - Windows PowerShell 所有外部命令必须统一复用 `scripts/windows/xma-common.ps1` 的 `Invoke-XmaExternal -FilePath ... -ArgumentList ...`；禁止私自实现 `Run(..., $Args)`、`Invoke-External(..., $Args)` 等包装器。
+- Windows Bootstrap 的 native 动作（pnpm/rustup/cargo/npm/winget）必须直接继承当前终端 stdout/stderr；禁止用 `Out-Host` / `ForEach-Object` 管道消费 native stdout。需要返回 Runtime/状态对象时，先执行 void 动作函数，再单独调用 `Get-*` / `Resolve-*` 读取，防止 Unicode 路径乱码和进度渲染破坏。
 
 ## Windows 依赖准备硬规则
 
