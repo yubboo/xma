@@ -2,7 +2,7 @@
 文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Rust/Cargo 环境恢复、版本读取与外部命令执行。
 关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1。
 当前实现：Rust/Cargo 可放在项目 `xma-path/rust` 或用户选择的外部 `D:/xma-path/rust`/其他盘符；checkout 控制状态存 Git 本地元数据 `.git/xma-state`（非 Git 场景回退 `.cache/xma-state`）。Bun/OpenTUI 已归入 pnpm Workspace `node_modules`，不再由本文件维护独立 Runtime 状态。
-职责边界：这里只提供跨 Windows 入口共享的路径、环境与命令基础能力，不负责联网安装、Git 提交流程或产品构建策略。
+职责边界：这里只提供跨 Windows 入口共享的路径、环境与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，不负责联网安装、Git 提交流程或产品构建策略。
 #>
 
 function Get-XmaProjectVersion {
@@ -44,6 +44,44 @@ function Get-XmaStateRoot {
 function Get-XmaDefaultRustRoot {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
   return (Join-Path (Get-XmaLocalPathRoot -ProjectRoot $ProjectRoot) 'rust')
+}
+
+
+function Get-XmaNormalizedPath {
+  param([string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+  $expanded = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
+  if ([string]::IsNullOrWhiteSpace($expanded)) { return '' }
+  try { return [IO.Path]::GetFullPath($expanded).TrimEnd([char[]]@('\','/')) }
+  catch { return $expanded.TrimEnd([char[]]@('\','/')) }
+}
+
+function Get-XmaPathEntries {
+  param([string]$PathValue)
+  if ([string]::IsNullOrWhiteSpace($PathValue)) { return @() }
+  $entries = New-Object System.Collections.Generic.List[string]
+  foreach ($entry in ($PathValue -split ';')) {
+    if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+    $candidate = $entry.Trim().Trim('"')
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    [void]$entries.Add($candidate)
+  }
+  return $entries.ToArray()
+}
+
+function Test-XmaWritableDirectory {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  try {
+    $target = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($Path))
+    New-Item -ItemType Directory -Force -Path $target -ErrorAction Stop | Out-Null
+    $probe = Join-Path $target ('.xma-write-test-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($probe, 'xma', ([Text.UTF8Encoding]::new($false)))
+    Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+    return $true
+  } catch {
+    return $false
+  }
 }
 
 function Remove-XmaDirectoryEntry {
@@ -308,6 +346,35 @@ function Invoke-XmaExternal {
   & $FilePath @ArgumentList
   $exitCode = $LASTEXITCODE
   if ($exitCode -ne 0) { throw "$FilePath failed with exit code $exitCode" }
+}
+
+function Invoke-XmaProbe {
+  param(
+    [Parameter(Mandatory = $true)][string]$FilePath,
+    [string[]]$ArgumentList = @()
+  )
+
+  # 中文说明：Probe 只用于 `--version` / `fmt --version` 这类短命令的静默能力探测。
+  # 它故意捕获 stdout/stderr 并返回结构化结果；禁止用于 pnpm install/cargo fetch/winget 等需要实时终端输出的动作命令。
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  $lines = @()
+  $exitCode = -1
+  try {
+    $rawOutput = & $FilePath @ArgumentList 2>&1
+    $exitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    $lines = @($rawOutput | ForEach-Object { [string]$_ })
+  } catch {
+    $exitCode = if ($null -eq $LASTEXITCODE) { -1 } else { [int]$LASTEXITCODE }
+    $lines = @([string]$_.Exception.Message)
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  return [pscustomobject]@{
+    ExitCode = $exitCode
+    Output = [string[]]$lines
+  }
 }
 
 function Test-XmaElectronRuntime {

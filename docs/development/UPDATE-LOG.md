@@ -680,3 +680,21 @@
 - Runtime：Windows/Unix 准备器、Console、`scripts/cli/bun.ts` 与 OpenTUI build 统一从根 `node_modules` 读取 Bun/OpenTUI/Solid；Bun 运行时仍以 `apps/cli/opentui-runtime` 作为源码 cwd，但依赖按标准 Node/Bun 向上解析到项目根。`[8]` 改为一次根 Workspace latest update，失败事务只恢复根 manifest/workspace/lockfile。
 - `[1]` 边界不变：每次仍无条件且只在项目根执行一次完全原生 `pnpm install`；不新增 registry/reporter/timeout/purge 参数，不以 stamp/fingerprint/node_modules 存在性跳过。新结构预期 Workspace 数量从 19 降为 18，且安装过程不得再尝试创建 `apps/cli/opentui-runtime/node_modules`。
 - 验证边界：当前 Linux 构建环境无法替代 Windows PowerShell 5.1/pnpm 11 实机链接 E2E；本地以 Runtime 单测、Gate 静态合同、shell/JSON/YAML、PowerShell BOM+CRLF 与最终 Source ZIP 完整性验证，Windows 最终验收仍以删除根 `node_modules` 后运行 `[1]` 为准。
+
+
+##62 · Windows 公共 Probe 恢复
+
+- 日期：2026-09-15
+- 实机现象：根 `pnpm install` 已完整成功（18 Workspace、Bun postinstall、OpenTUI/Solid 根依赖均完成），随后 `[1]` 在 Runtime 验证阶段报“无法将 Invoke-XmaProbe 识别为 cmdlet/函数”。
+- 根因：Bootstrap 重构时保留了 Bun、Rust/Cargo、rustfmt 与 Console 的 `Invoke-XmaProbe` 调用，但公共 `scripts/windows/xma-common.ps1` 中对应 helper 被遗漏，导致安装成功后第一次版本探测立即失败；继续执行到 Rust 也会重复触发同类错误。
+- 修复：在 `xma-common.ps1` 恢复共享 `Invoke-XmaProbe`，专门捕获 `--version` / `fmt --version` 等短命令的 stdout/stderr，并返回 `{ ExitCode, Output }`；`pnpm install` 等进度型动作仍直接走 `Invoke-XmaExternal` 并继承终端，禁止经过 Probe。
+- 回归：Windows Gate 锁定公共 Probe 定义、结构化返回字段和“只用于短命令静默探测”的职责边界，避免调用存在但 helper 再次丢失。版本保持 `0.1.0`。
+
+##63 · Windows Bootstrap helper 闭包修复
+
+- 日期：2026-09-15
+- 实机现象：JavaScript 阶段已完整通过（18 Workspace、`pnpm install`、Bun/OpenTUI/Solid 与 TypeScript/Vite/tsx/tsup 验证均成功），进入 `[5/8] Rust / Cargo` 自动安装时立即报“无法将 `Test-XmaWritableDirectory` 识别为 cmdlet/函数”。
+- 根因：Windows Bootstrap 多轮重构后，`xma-prepare.ps1` 仍引用 `Test-XmaWritableDirectory`、`Get-XmaNormalizedPath`、`Get-XmaPathEntries` 三个 XMA helper，但 `xma-common.ps1` 中定义已丢失。上一轮只恢复 `Invoke-XmaProbe` 没有对所有自定义 helper 做闭包检查，因此问题被推迟到 Rust 阶段才暴露。
+- 修复：在 `xma-common.ps1` 恢复三项公共 helper：可写目录真实写入探针、PATH 规范化、PATH 条目解析。Rust 默认 `xma-path`/D 盘/自定义盘安装位置与开发 shim PATH 同步全部复用公共实现。
+- Gate：Windows Gate 新增 `scripts/windows/*.ps1` 自定义 `*-Xma*` helper 静态闭包检查；任何被引用但没有在 Windows 脚本集合中定义的 XMA helper 都会直接失败，避免用户每推进一个阶段才发现下一个“函数不存在”。版本保持 `0.1.0`。
+

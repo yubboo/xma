@@ -5,7 +5,7 @@
  * 职责边界：这里只检查静态约定，真实 Windows 行为仍必须由 Windows CI/用户环境验证。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 const required = [
   'xma-dev.bat', 'XMA-Sync.bat', 'XMA-GitHub.bat',
@@ -360,9 +360,24 @@ for (const forbidden of ['XMA_BUN_HOME','bun-environment.json',"path.join(root, 
 }
 
 // 所有会执行外部命令的 Windows 入口必须复用 xma-common.ps1。
+const windowsPowerShellFiles = readdirSync('scripts/windows')
+  .filter(file => file.endsWith('.ps1'))
+  .map(file => `scripts/windows/${file}`)
+const windowsPowerShellSources = windowsPowerShellFiles.map(file => readFileSync(file, 'utf8')).join('\n')
+const xmaFunctionDefinitions = new Set(
+  Array.from(windowsPowerShellSources.matchAll(/^\s*function\s+([A-Za-z][A-Za-z0-9-]+)/gim), match => match[1]),
+)
+const xmaFunctionReferences = new Set(
+  Array.from(windowsPowerShellSources.matchAll(/\b([A-Za-z][A-Za-z0-9]*-Xma[A-Za-z0-9-]*)\b/g), match => match[1]),
+)
+const missingXmaFunctions = [...xmaFunctionReferences].filter(name => !xmaFunctionDefinitions.has(name)).sort()
+if (missingXmaFunctions.length) {
+  throw new Error(`Windows custom helper closure regression: referenced but not defined/imported: ${missingXmaFunctions.join(', ')}`)
+}
+
 const commonSource = readFileSync('scripts/windows/xma-common.ps1', 'utf8')
 for (const marker of [
-  'function Invoke-XmaExternal', '& $FilePath @ArgumentList', 'function Get-XmaProjectVersion', 'function Test-XmaElectronRuntime',
+  'function Invoke-XmaExternal', '& $FilePath @ArgumentList', 'function Invoke-XmaProbe', 'ExitCode = $exitCode', 'Output = [string[]]$lines', 'function Get-XmaProjectVersion', 'function Test-XmaElectronRuntime', 'function Test-XmaWritableDirectory', 'function Get-XmaNormalizedPath', 'function Get-XmaPathEntries',
   'function Import-XmaRustEnvironment', 'function Save-XmaRustEnvironmentState', 'function Get-XmaLocalPathRoot',
   "return (Join-Path $ProjectRoot 'xma-path')", 'function Get-XmaCheckoutStateRoot', "return (Join-Path $gitEntry 'xma-state')",
   "return (Join-Path $ProjectRoot '.cache\\xma-state')", 'function Test-XmaCargoOfflineDependencies',
@@ -372,6 +387,11 @@ for (const marker of [
 }
 if (/\[string\[\]\]\$Args\b/i.test(commonSource)) throw new Error('xma-common.ps1 must never use PowerShell automatic variable $args as a parameter')
 if (!commonSource.includes('终端进度型命令（尤其 pnpm install）必须直接调用本函数')) throw new Error('Invoke-XmaExternal native-terminal output contract documentation missing')
+if (!commonSource.includes('Probe 只用于 `--version` / `fmt --version` 这类短命令的静默能力探测')) throw new Error('Invoke-XmaProbe capture-only boundary documentation missing')
+for (const file of ['scripts/windows/xma-prepare.ps1','scripts/windows/xma-console.ps1']) {
+  const text = readFileSync(file, 'utf8')
+  if (text.includes('Invoke-XmaProbe') && !commonSource.includes('function Invoke-XmaProbe')) throw new Error(`Windows probe caller requires shared Invoke-XmaProbe: ${file}`)
+}
 
 for (const file of ['scripts/windows/xma-prepare.ps1','scripts/windows/xma-github.ps1','scripts/windows/xma-console.ps1','scripts/windows/xma-build-release.ps1']) {
   const text = readFileSync(file, 'utf8')
