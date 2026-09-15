@@ -583,3 +583,13 @@
 - Unix：`scripts/unix/xma-console.sh` 同步改为 pnpm latest + node_modules，不再自己 curl GitHub Bun ZIP 或维护第二套 OpenTUI node_modules。
 - 发行边界：该改变只简化源码开发依赖。普通用户最终仍应通过 `install.ps1/install.sh` 下载 CI/Release 已预构建的 `xiaoyu`，不要求用户安装 pnpm/Node/Bun/Rust。
 - 验证：OpenTUI 定向测试改为锁定 `latest` 声明、node_modules Bun resolver 与 `--no-install` 运行边界；Windows/Distribution Gate 禁止独立 Bun 安装器回归。历史 ##31–##49 保留作为 0.1.0 调试演进记录，本条为当前有效 Runtime 规则。
+
+##51 · pnpm Runtime latest 可见进度与稳定日志
+
+- 日期：2026-09-15
+- 现象：全新 clone 后执行 `xma-dev.bat -> [1]`，`[4/8] Workspace JavaScript Runtime` 在打印 `> pnpm.cmd run runtime:update` 后可能长时间没有新输出。registry 探针已经显示 npmmirror 很快，但 nested pnpm update 的默认 TTY reporter 在当前 Windows Terminal/PowerShell Host 中没有形成可见的阶段日志，用户无法判断是在解析 latest、下载 binary，还是已经卡住。
+- 修复：Windows 准备器不再用一条嵌套 `pnpm run runtime:update` 黑盒等待。它在已选 registry 下拆成两个明确阶段：`[1/2] Bun Runtime latest` 与 `[2/2] OpenTUI / Solid Runtime latest`，直接调用 `pnpm update --latest`，每步开始/完成都打印状态。
+- Reporter：所有受管 Runtime 更新以及根 `pnpm install` 使用 `--reporter=append-only`。pnpm 的 resolving/reused/downloaded/added 等进度按追加行输出，避免 Windows Terminal 同一行高频重绘，也避免出现“命令已启动但屏幕完全不变化”的假卡死体验。Unix/CI 的 `runtime:update` 同样带 append-only reporter，保持跨平台行为一致。
+- 边界：`latest` 更新仍只发生在 `[1]/[8]`；`[4]/[7]/build:cli` 继续只消费当前 lockfile/node_modules，不联网升级。registry `auto` 的 npm 官方/npmmirror 选择与失败切源逻辑保持不变。
+- 回归：Distribution/Windows Gate 与 OpenTUI 定向测试锁定 `runtime:update` 的 append-only reporter、Windows 两阶段可见更新和 Workspace install append-only。版本继续保持 `0.1.0`。
+

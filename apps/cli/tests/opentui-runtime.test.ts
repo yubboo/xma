@@ -34,7 +34,8 @@ test('Bun and OpenTUI runtime dependencies are registry-latest pnpm workspace de
   assert.equal(runtimePackage.devDependencies?.['@types/bun'], 'latest')
   const workspace = readFileSync('pnpm-workspace.yaml', 'utf8')
   assert.match(workspace, /apps\/cli\/opentui-runtime/)
-  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /pnpm --workspace-root update --latest bun/)
+  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /pnpm --workspace-root update --latest bun --reporter=append-only/)
+  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /@types\/bun --reporter=append-only/)
 })
 
 test('Workspace Trust hides the hardware cursor during raw selection and restores it before OpenTUI starts', () => {

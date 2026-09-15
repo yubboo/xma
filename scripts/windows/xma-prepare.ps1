@@ -892,16 +892,35 @@ function Get-XmaWorkspaceJavaScriptRuntimeInfo {
 function Invoke-XmaManagedJavaScriptLatestUpdate {
   Write-Host '[更新] 正在检查 XMA JS Runtime 最新稳定版本：Bun / OpenTUI / Solid / @types/bun...' -ForegroundColor Cyan
   Write-Host '[策略] Bun/OpenTUI/Solid 使用 registry latest；[1]/[8] 统一刷新 Workspace lockfile + node_modules，运行/检查阶段不联网更新。' -ForegroundColor DarkGray
+  Write-Host '[进度] pnpm 使用 append-only reporter；解析、复用、下载与写入 lockfile 会逐行显示，不做同行动态重绘。' -ForegroundColor DarkCyan
 
   $registrySources = @(Get-XmaNpmRegistrySources)
   $previousRegistry = [string]$env:npm_config_registry
   $lastError = ''
+  $runtimeSteps = @(
+    [pscustomobject]@{
+      Index = 1
+      Total = 2
+      Label = 'Bun Runtime latest'
+      Arguments = @('--workspace-root','update','--latest','bun','--reporter=append-only')
+    },
+    [pscustomobject]@{
+      Index = 2
+      Total = 2
+      Label = 'OpenTUI / Solid Runtime latest'
+      Arguments = @('--filter','@xma/cli-opentui-runtime','update','--latest','@opentui/core','@opentui/solid','solid-js','@types/bun','--reporter=append-only')
+    }
+  )
   try {
     foreach ($registry in $registrySources) {
       $env:npm_config_registry = [string]$registry.Url
       Write-Host "[registry] $($registry.Name) · $($registry.Url)" -ForegroundColor DarkCyan
       try {
-        Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('run','runtime:update')
+        foreach ($step in $runtimeSteps) {
+          Write-Host "[$($step.Index)/$($step.Total)] $($step.Label) · 正在解析 registry latest 并更新 lockfile/node_modules..." -ForegroundColor Cyan
+          Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList ([string[]]$step.Arguments)
+          Write-Host "[完成] $($step.Label)" -ForegroundColor Green
+        }
         return
       } catch {
         $lastError = $_.Exception.Message
@@ -920,7 +939,7 @@ function Ensure-XmaWorkspaceJavaScriptDependencies([switch]$RefreshLatest) {
 
   Write-Host '[安装] 正在同步 Workspace JavaScript 依赖到 node_modules...' -ForegroundColor Yellow
   Write-Host '[安全] pnpm allowBuilds 仅允许 bun + esbuild；Electron Chromium Runtime 不会在这里 postinstall 下载。' -ForegroundColor DarkYellow
-  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')
+  Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install','--reporter=append-only')
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('rebuild','esbuild')
 
   $tsx = Join-Path $Root 'node_modules\.bin\tsx.cmd'

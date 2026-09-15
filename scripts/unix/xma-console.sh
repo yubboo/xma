@@ -68,7 +68,7 @@ refresh_workspace_js_runtime() {
   printf '%s\n' '[更新] Refreshing managed JavaScript Runtime to registry latest: Bun / OpenTUI / Solid / @types/bun...'
   pnpm run runtime:update
   printf '%s\n' '[安装] Syncing Workspace dependencies into node_modules...'
-  pnpm install
+  pnpm install --reporter=append-only
   pnpm rebuild esbuild
   assert_workspace_js_runtime
   bun_version="$(package_version "$ROOT/node_modules/bun/package.json")"

@@ -22,7 +22,7 @@ if (openTuiPackage.dependencies?.['solid-js'] !== 'latest') throw new Error('Xia
 if (openTuiPackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('Xiaoyu Bun types source dependency must use registry latest.')
 const workspaceSource = text('pnpm-workspace.yaml')
 if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('Xiaoyu OpenTUI runtime must participate in root pnpm Workspace install.')
-if (rootPackage.scripts?.['runtime:update'] !== 'pnpm --workspace-root update --latest bun && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun') throw new Error('Managed JS Runtime latest refresh script is missing or drifted.')
+if (rootPackage.scripts?.['runtime:update'] !== 'pnpm --workspace-root update --latest bun --reporter=append-only && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only') throw new Error('Managed JS Runtime latest refresh script is missing or drifted.')
 if (cliPackage.dependencies?.['@earendil-works/pi-tui'] !== '0.74.0') throw new Error('Legacy Workspace Trust/test compatibility still pins Pi TUI until the compatibility layer is retired.')
 if (rootPackage.scripts?.['build:cli'] !== 'tsx scripts/cli/bun.ts build') throw new Error('Xiaoyu portable CLI must build through the pnpm-managed Bun/OpenTUI runner.')
 if (rootPackage.scripts?.['smoke:cli'] !== 'tsx scripts/cli/smoke.ts') throw new Error('Xiaoyu compiled OpenTUI CLI must keep a canonical no-TTY smoke test.')

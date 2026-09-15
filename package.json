@@ -41,7 +41,7 @@
     "release:cli-stage": "tsx scripts/release/cli.ts",
     "gate:distribution": "tsx scripts/gates/distribution.ts",
     "release:source-manifest": "tsx scripts/release/source-manifest.ts",
-    "runtime:update": "pnpm --workspace-root update --latest bun && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun"
+    "runtime:update": "pnpm --workspace-root update --latest bun --reporter=append-only && pnpm --filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
