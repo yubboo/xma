@@ -670,3 +670,13 @@
 - 修复：`[1]` 的唯一 Workspace 安装改为直接 `Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')`，不再经过 `Invoke-XmaPrepareExternal -> Out-Host`。安装动作与 Runtime 读取仍严格分离，因此 stdout 不会被赋值捕获；pnpm 直接继承 Windows Terminal，显示行为与开发者在项目根手工执行 `pnpm install` 一致。
 - Gate：Windows Gate 明确禁止 `pnpm install` 所在函数出现 `Out-Host`/`ForEach-Object`/管道式 `Write-Host`，并继续要求 `[1]` 只有一次完全原生 `pnpm install`。其它确实需要隔离返回值的非交互 Bootstrap 命令保持现有动作边界。版本仍为 `0.1.0`。
 
+
+##61 · OpenTUI 根依赖收口与 Windows pnpm 链接失败修复
+
+- 日期：2026-09-15
+- 实机现象：Windows `[1]` 已能够按原生 `pnpm install` 正常显示 `Scope / Packages / Progress`，并完成 `resolved 530 / reused 427 / added ...`；最终在链接 `solid-js` 到 `apps/cli/opentui-runtime/node_modules` 时失败，报 `ENOENT ... mkdir apps\\cli\\opentui-runtime\\node_modules`。这证明下载、终端输出与 `[1]` 原生 install 边界已经正常，失败点位于项目依赖结构的最后链接阶段。
+- 根因：`apps/cli` 本身已经是 Workspace package，又把其内部 `apps/cli/opentui-runtime` 注册成第二个嵌套 Workspace package。pnpm 因此需要为这个源码子目录维护独立 `node_modules` 链接岛；Windows 安装在父/子 Workspace 的链接阶段触发 ENOENT。该嵌套依赖岛本身也违背“项目根一次 `pnpm install` 统一管理 JavaScript 依赖”的目标。
+- 修复：Bun `1.4.2`、OpenTUI core/solid `0.5.11`、Solid `1.9.15`、`@types/bun` `1.4.2` 全部固定声明到根 `package.json -> devDependencies`；`pnpm-workspace.yaml` 删除 `apps/cli/opentui-runtime` 显式 Workspace；该目录只保留 `app.tsx` / `build.ts` / ESM package metadata，不再拥有 dependencies/devDependencies 或独立 `node_modules`。
+- Runtime：Windows/Unix 准备器、Console、`scripts/cli/bun.ts` 与 OpenTUI build 统一从根 `node_modules` 读取 Bun/OpenTUI/Solid；Bun 运行时仍以 `apps/cli/opentui-runtime` 作为源码 cwd，但依赖按标准 Node/Bun 向上解析到项目根。`[8]` 改为一次根 Workspace latest update，失败事务只恢复根 manifest/workspace/lockfile。
+- `[1]` 边界不变：每次仍无条件且只在项目根执行一次完全原生 `pnpm install`；不新增 registry/reporter/timeout/purge 参数，不以 stamp/fingerprint/node_modules 存在性跳过。新结构预期 Workspace 数量从 19 降为 18，且安装过程不得再尝试创建 `apps/cli/opentui-runtime/node_modules`。
+- 验证边界：当前 Linux 构建环境无法替代 Windows PowerShell 5.1/pnpm 11 实机链接 E2E；本地以 Runtime 单测、Gate 静态合同、shell/JSON/YAML、PowerShell BOM+CRLF 与最终 Source ZIP 完整性验证，Windows 最终验收仍以删除根 `node_modules` 后运行 `[1]` 为准。

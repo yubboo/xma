@@ -96,16 +96,22 @@ if (prepareSource.includes("New-Object 'System.Collections.Generic.HashSet[strin
   throw new Error('PowerShell 5.1 preparation path/source dedupe must use native hashtables instead of fragile generic HashSet constructor binding.')
 }
 
-// Bun/OpenTUI/Solid belong to pnpm Workspace node_modules. Every [1] runs one plain root pnpm install; [8] alone refreshes latest; [4]/[7]/build only consume installed files.
+// Bun/OpenTUI/Solid are root Workspace dependencies. Every [1] runs one plain root pnpm install; [8] alone refreshes latest; [4]/[7]/build only consume root node_modules.
 const rootRuntimePackage = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }
-const openTuiRuntimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
-if (rootRuntimePackage.devDependencies?.bun !== 'latest') throw new Error('Root Bun dependency must use registry tag latest; [8] owns the explicit refresh boundary.')
-for (const name of ['@opentui/core', '@opentui/solid', 'solid-js']) {
-  if (openTuiRuntimePackage.dependencies?.[name] !== 'latest') throw new Error(`OpenTUI runtime dependency must use registry tag latest: ${name}`)
+const openTuiSourcePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+const expectedRuntimeVersions: Record<string, string> = {
+  bun: '1.4.2',
+  '@opentui/core': '0.5.11',
+  '@opentui/solid': '0.5.11',
+  'solid-js': '1.9.15',
+  '@types/bun': '1.4.2',
 }
-if (openTuiRuntimePackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('@types/bun must use registry tag latest.')
+for (const [name, version] of Object.entries(expectedRuntimeVersions)) {
+  if (rootRuntimePackage.devDependencies?.[name] !== version) throw new Error(`Root JavaScript Runtime dependency must pin the verified version ${name}@${version}.`)
+}
+if (openTuiSourcePackage.dependencies || openTuiSourcePackage.devDependencies) throw new Error('OpenTUI source folder must not own nested dependencies.')
 const workspaceSource = readFileSync('pnpm-workspace.yaml', 'utf8')
-if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI runtime must be a real pnpm workspace package so root pnpm install owns its node_modules.')
+if (workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI source folder must not be a nested pnpm workspace package.')
 if (rootRuntimePackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs') throw new Error('Windows source preparation must share the single scripts/runtime/update.mjs entry.')
 for (const marker of ['strictDepBuilds: true', 'bun: true', 'esbuild: true', 'electron: false', 'electron-winstaller: false', 'koffi: false']) {
   if (!workspaceSource.includes(marker)) throw new Error(`pnpm lifecycle policy regression: missing ${marker}`)
@@ -113,7 +119,7 @@ for (const marker of ['strictDepBuilds: true', 'bun: true', 'esbuild: true', 'el
 if (workspaceSource.includes('set this to true or false')) throw new Error('pnpm lifecycle policy must not contain unresolved allowBuilds decisions.')
 const runtimeUpdaterSource = readFileSync('scripts/runtime/update.mjs', 'utf8')
 const runtimeUpdaterTestSource = readFileSync('scripts/runtime/update.test.mjs', 'utf8')
-for (const marker of ['Bun latest', 'OpenTUI / Solid latest', 'Workspace install belongs to [1]', 'ERR_PNPM_IGNORED_BUILDS', 'transaction snapshot']) {
+for (const marker of ['Bun / OpenTUI / Solid latest', '--workspace-root', 'Workspace install belongs to [1]', 'ERR_PNPM_IGNORED_BUILDS', 'transaction snapshot']) {
   if (!runtimeUpdaterSource.includes(marker)) throw new Error(`Runtime updater transaction contract regression: missing ${marker}`)
 }
 for (const marker of ['mystery-native', 'calls.log', 'restores managed files when explicit runtime refresh fails']) {
@@ -123,6 +129,10 @@ for (const marker of [
   'function Get-XmaWorkspaceJavaScriptRuntimeInfo',
   "Join-Path $Root 'node_modules\\bun\\package.json'",
   "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
+  "Join-Path $Root 'node_modules\\@opentui\\core\\package.json'",
+  "Join-Path $Root 'node_modules\\@opentui\\solid\\package.json'",
+  "Join-Path $Root 'node_modules\\solid-js\\package.json'",
+  "Join-Path $Root 'node_modules\\@types\\bun\\package.json'",
   'function Invoke-XmaPrepareExternal',
   'pnpm install 直接继承当前控制台 stdout/stderr，不经过 Out-Host 或其他 PowerShell pipeline',
   'function Install-XmaWorkspaceJavaScriptDependencies',
@@ -136,14 +146,14 @@ for (const marker of [
   "Invoke-XmaPrepareExternal -FilePath 'node.exe' -ArgumentList @('scripts/runtime/update.mjs')",
   '[4/8] Workspace JavaScript Runtime · Bun / OpenTUI / Toolchain',
   'Workspace JavaScript 依赖直接执行原生 pnpm install',
-  'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules',
+  'Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在根 node_modules；不再创建 OpenTUI 嵌套 node_modules。',
   '[缺少] 当前没有检测到 Git；这是 XMA 源码开发必需工具，正在自动安装稳定版。',
   '[缺少] 当前没有检测到 Node.js；XMA 要求 Node.js 22+，正在自动安装 Node.js LTS。',
   '[3/8] pnpm 11.x · 最低 11.17.0',
   'Ensure-XmaRustToolchain -UseDefaultLocation',
   '这是 XMA Windows Native 构建必需工具，正在自动安装',
 ]) {
-  if (!prepareSource.includes(marker)) throw new Error(`pnpm Workspace JS Runtime contract regression: missing ${marker}`)
+  if (!prepareSource.includes(marker)) throw new Error(`pnpm root Workspace JS Runtime contract regression: missing ${marker}`)
 }
 if (prepareSource.includes('baseline install → Bun latest')) throw new Error('Windows [1] must not use the old five-stage Runtime bootstrap.')
 const installLines = prepareSource.split('\n').filter((line) => line.includes("Invoke-XmaExternal -FilePath 'pnpm.cmd'") && line.includes("'install'"))
@@ -294,7 +304,7 @@ for (const marker of [
   'function Resolve-XmaBunRuntime',
   "Join-Path $Root 'node_modules\\bun\\package.json'",
   "Join-Path $Root 'node_modules\\bun\\bin\\bun.exe'",
-  "Join-Path $runtimeRoot 'node_modules\\@opentui\\core\\package.json'",
+  "Join-Path $Root 'node_modules\\@opentui\\core\\package.json'",
   'Xiaoyu OpenTUI Runtime 已就绪',
   "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','js','bun','rust','update')]",
   "'cli' { Start-Cli -WorkspacePath $Workspace }",
@@ -327,7 +337,7 @@ const bunRunnerSource = readFileSync('scripts/cli/bun.ts', 'utf8')
 for (const marker of [
   "path.join(root, 'node_modules', 'bun')",
   "path.join(packageRoot, 'package.json')",
-  "path.join(runtimeRoot, 'node_modules'",
+  "path.join(root, 'node_modules'",
   'fileURLToPath(import.meta.url)',
   "path.join(root, '.cache', 'bun-compile', version)",
   'function createWindowsCompileAlias',

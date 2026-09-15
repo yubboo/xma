@@ -91,7 +91,7 @@ Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和
 
 - 持续 TUI 输入循环，而不是打印欢迎页后退出；
 - Terminal 对真实 Provider 的 text/reasoning SSE 必须按 Runtime live event 实时绘制，Tool Call/Result 同步可见；禁止“用户提交后静默等待，最终整段一次性出现”。
-- Active Terminal UI 的 Bun/OpenTUI/Solid 由 pnpm Workspace `latest` 刷新并由 lockfile 固化本次解析版本；版本升级必须经过 XMA TypeScript/Test/Gate 验证；OpenTUI 只接管 Terminal 表现/输入/焦点/布局，不接管 XMA Agent Runtime、Provider、Session、Workspace Policy、Tool Approval 或 Rust Native Kernel。
+- Active Terminal UI 的 Bun/OpenTUI/Solid 统一声明在根 `package.json`，由根 pnpm Workspace `node_modules` 提供；`[8]` 才显式刷新 latest 并由 lockfile 固化本次解析版本。`apps/cli/opentui-runtime/` 只保留第一方 Renderer/Build 源码，不拥有嵌套 `node_modules`。版本升级必须经过 XMA TypeScript/Test/Gate 验证；OpenTUI 只接管 Terminal 表现/输入/焦点/布局，不接管 XMA Agent Runtime、Provider、Session、Workspace Policy、Tool Approval 或 Rust Native Kernel。
 - 主 Prompt 使用 OpenTUI 原生 `TextareaRenderable` / `<textarea>` 管理 caret、IME、选择、粘贴与多行输入；Active Renderer 禁止再次输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或 Pi TUI reverse-video 光标补丁。Tab 模式切换、Ctrl+P/Ctrl+K、Esc 返回和 Dialog focus 必须统一走 OpenTUI 键盘/焦点体系。
 - Home / Transcript / Prompt / Shortcut / Notice 使用 OpenTUI Flexbox 响应式布局，左右边距必须对称；Prompt 的真实输入光标必须位于输入组件内部，禁止退回“静态卡片 + 底部 readline”伪 TUI；
 - `/` 使用 Safe Prompt 内建命令补全，只展示已经实现的 Terminal 命令；`Ctrl+P` 打开真正的命令面板，Enter 执行、Esc 返回，Terminal Settings 只管理终端视觉/提示/Logo 等 Shell 层设置，并写入用户级 `tui.json`（Windows `%APPDATA%\\Xiaoyu`、Linux `$XDG_CONFIG_HOME/xiaoyu`、macOS `Application Support/Xiaoyu`）；快捷提示只能显示当前确实可用的按键/能力，禁止为了接近参考图伪造 `@/$` 或尚未接线的业务入口；

@@ -14,18 +14,24 @@ function text(file: string): string {
 
 const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }
 const cliPackage = JSON.parse(text('apps/cli/package.json')) as { dependencies?: Record<string, string> }
-const openTuiPackage = JSON.parse(text('apps/cli/opentui-runtime/package.json')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
-if (rootPackage.devDependencies?.bun !== 'latest') throw new Error('Xiaoyu Bun source runtime must use registry latest and be lockfile-resolved by [1]/[8].')
-if (openTuiPackage.dependencies?.['@opentui/core'] !== 'latest') throw new Error('Xiaoyu OpenTUI core source dependency must use registry latest.')
-if (openTuiPackage.dependencies?.['@opentui/solid'] !== 'latest') throw new Error('Xiaoyu OpenTUI Solid binding source dependency must use registry latest.')
-if (openTuiPackage.dependencies?.['solid-js'] !== 'latest') throw new Error('Xiaoyu Solid runtime source dependency must use registry latest.')
-if (openTuiPackage.devDependencies?.['@types/bun'] !== 'latest') throw new Error('Xiaoyu Bun types source dependency must use registry latest.')
+const openTuiSourcePackage = JSON.parse(text('apps/cli/opentui-runtime/package.json')) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }
+const expectedRuntimeVersions: Record<string, string> = {
+  bun: '1.4.2',
+  '@opentui/core': '0.5.11',
+  '@opentui/solid': '0.5.11',
+  'solid-js': '1.9.15',
+  '@types/bun': '1.4.2',
+}
+for (const [name, version] of Object.entries(expectedRuntimeVersions)) {
+  if (rootPackage.devDependencies?.[name] !== version) throw new Error(`Xiaoyu root JavaScript Runtime version mismatch: ${name} must be ${version}.`)
+}
+if (openTuiSourcePackage.dependencies || openTuiSourcePackage.devDependencies) throw new Error('apps/cli/opentui-runtime is source-only and must not own a nested dependency island.')
 const workspaceSource = text('pnpm-workspace.yaml')
-if (!workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('Xiaoyu OpenTUI runtime must participate in root pnpm Workspace install.')
+if (workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI source folder must not be a nested pnpm workspace package; dependencies belong to the root package.json/node_modules.')
 if (rootPackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs') throw new Error('Managed JS Runtime must use the single transactional updater entry.')
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:runtime')) throw new Error('pnpm check must include Runtime updater transaction tests.')
 const runtimeUpdater = text('scripts/runtime/update.mjs')
-for (const marker of ['Bun latest', 'OpenTUI / Solid latest', 'Workspace install belongs to [1]', 'restored package/runtime/workspace/lockfile transaction snapshot', 'ERR_PNPM_IGNORED_BUILDS']) {
+for (const marker of ['Bun / OpenTUI / Solid latest', '--workspace-root', 'Workspace install belongs to [1]', 'restored package/workspace/lockfile transaction snapshot', 'ERR_PNPM_IGNORED_BUILDS']) {
   if (!runtimeUpdater.includes(marker)) throw new Error(`Managed JS Runtime updater contract missing: ${marker}`)
 }
 for (const marker of ['strictDepBuilds: true', 'electron: false', 'electron-winstaller: false', 'koffi: false']) {

@@ -6,7 +6,6 @@ import { spawn } from 'node:child_process';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const managedFiles = [
   'package.json',
-  'apps/cli/opentui-runtime/package.json',
   'pnpm-workspace.yaml',
   'pnpm-lock.yaml',
 ];
@@ -123,11 +122,10 @@ async function main() {
   if (args.registry) env.npm_config_registry = args.registry;
 
   const stages = [
-    ['1/2', 'Bun latest', ['--workspace-root', 'update', '--latest', 'bun', '--reporter=append-only']],
-    ['2/2', 'OpenTUI / Solid latest', ['--filter', '@xma/cli-opentui-runtime', 'update', '--latest', '@opentui/core', '@opentui/solid', 'solid-js', '@types/bun', '--reporter=append-only']],
+    ['1/1', 'Bun / OpenTUI / Solid latest', ['--workspace-root', 'update', '--latest', 'bun', '@opentui/core', '@opentui/solid', 'solid-js', '@types/bun', '--reporter=append-only']],
   ];
 
-  process.stdout.write('[runtime] Refreshing only XMA managed JavaScript Runtime packages. Workspace install belongs to [1].\n');
+  process.stdout.write('[runtime] Refreshing XMA managed JavaScript Runtime packages from the root workspace. Workspace install belongs to [1].\n');
   try {
     for (const [position, label, commandArgs] of stages) {
       process.stdout.write(`[runtime ${position}] ${label}\n`);
@@ -143,7 +141,7 @@ async function main() {
     process.stdout.write('[runtime] Managed JavaScript Runtime refresh completed successfully.\n');
   } catch (error) {
     await restoreFiles(baseRoot, snapshots);
-    process.stderr.write('[runtime] refresh failed; restored package/runtime/workspace/lockfile transaction snapshot.\n');
+    process.stderr.write('[runtime] refresh failed; restored package/workspace/lockfile transaction snapshot.\n');
     throw error;
   }
 }

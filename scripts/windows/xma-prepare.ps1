@@ -861,11 +861,10 @@ function Get-XmaInstalledPackageVersion([string]$PackageJson) {
 function Get-XmaWorkspaceJavaScriptRuntimeInfo {
   $bunPackage = Join-Path $Root 'node_modules\bun\package.json'
   $bunExe = if ($IsWindows -or $env:OS -eq 'Windows_NT') { Join-Path $Root 'node_modules\bun\bin\bun.exe' } else { Join-Path $Root 'node_modules\.bin\bun' }
-  $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
-  $corePackage = Join-Path $runtimeRoot 'node_modules\@opentui\core\package.json'
-  $solidPackage = Join-Path $runtimeRoot 'node_modules\@opentui\solid\package.json'
-  $solidJsPackage = Join-Path $runtimeRoot 'node_modules\solid-js\package.json'
-  $bunTypesPackage = Join-Path $runtimeRoot 'node_modules\@types\bun\package.json'
+  $corePackage = Join-Path $Root 'node_modules\@opentui\core\package.json'
+  $solidPackage = Join-Path $Root 'node_modules\@opentui\solid\package.json'
+  $solidJsPackage = Join-Path $Root 'node_modules\solid-js\package.json'
+  $bunTypesPackage = Join-Path $Root 'node_modules\@types\bun\package.json'
 
   foreach ($file in @($bunPackage,$corePackage,$solidPackage,$solidJsPackage,$bunTypesPackage)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return $null }
@@ -933,7 +932,7 @@ function Assert-XmaWorkspaceJavaScriptDependencies {
 
   Write-Host "[通过] Workspace JS Runtime：Bun $($runtime.BunVersion) · OpenTUI core $($runtime.OpenTuiCoreVersion) / solid $($runtime.OpenTuiSolidVersion) · Solid $($runtime.SolidJsVersion)" -ForegroundColor Green
   Write-Host "[Bun] $($runtime.BunExe)" -ForegroundColor DarkGray
-  Write-Host '[位置] Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在 Workspace node_modules。' -ForegroundColor DarkGray
+  Write-Host '[位置] Bun/OpenTUI/Solid 全部由 pnpm 管理并存放在根 node_modules；不再创建 OpenTUI 嵌套 node_modules。' -ForegroundColor DarkGray
 }
 
 function Prepare-XmaCurrentJavaScriptDependencies {

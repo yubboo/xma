@@ -2,7 +2,7 @@
 /**
  * 文件作用：把 Xiaoyu OpenTUI CLI 编译为当前平台的 Bun 单文件可执行程序。
  * 关联模块：apps/cli/src/main.ts、@opentui/solid/bun-plugin、scripts/release/cli.ts。
- * 当前实现：使用 pnpm Workspace 当前安装的 OpenTUI Solid transform plugin，并把 parser worker 一并嵌入 BunFS，输出到 dist/cli/xiaoyu[.exe]。
+ * 当前实现：使用根 pnpm Workspace node_modules 中的 OpenTUI Solid transform plugin，并把 parser worker 一并嵌入 BunFS，输出到 dist/cli/xiaoyu[.exe]。
  * 职责边界：本脚本只构建当前平台 CLI；Server/Web 仍由根 Node/tsup/Vite 构建链负责，不伪造跨平台二进制。
  */
 
@@ -32,11 +32,9 @@ if (!compileStageRoot) throw new Error('Bun compile staging cache is not configu
 fs.mkdirSync(compileStageRoot, { recursive: true })
 const stagedOutfile = path.join(compileStageRoot, `xiaoyu-${process.pid}-${Date.now()}${process.platform === 'win32' ? '.exe' : ''}`)
 
-const localParserWorker = path.join(scriptDir, 'node_modules', '@opentui', 'core', 'parser.worker.js')
-const rootParserWorker = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
-const parserWorkerCandidate = fs.existsSync(localParserWorker) ? localParserWorker : rootParserWorker
+const parserWorkerCandidate = path.join(root, 'node_modules', '@opentui', 'core', 'parser.worker.js')
 if (!fs.existsSync(parserWorkerCandidate)) {
-  throw new Error(`OpenTUI parser worker missing: ${parserWorkerCandidate}. Run xma-dev -> [1] to prepare the pnpm Workspace OpenTUI runtime first.`)
+  throw new Error(`OpenTUI parser worker missing: ${parserWorkerCandidate}. Run xma-dev -> [1] to prepare the root pnpm Workspace dependencies first.`)
 }
 const parserWorker = fs.realpathSync(parserWorkerCandidate)
 const workerRelativePath = path.relative(scriptDir, parserWorker).replaceAll('\\', '/')

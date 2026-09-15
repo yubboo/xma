@@ -269,10 +269,10 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
 - Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.git/xma-state/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
-- `[1]` 是当前源码依赖同步入口：Workspace JavaScript 只执行一次标准 `pnpm install`，不主动追 latest、不包自定义 reporter；默认尊重当前 registry，仅在未配置自定义 registry 且 npm 官方不可达时允许本次进程临时回退 npmmirror；package/workspace 以后新增或调整依赖，用户重新运行 `[1]` 即同步。`[8]` 才是 Bun/OpenTUI/Solid 的显式 latest 刷新入口。`pnpm-workspace.yaml -> allowBuilds` 只能批准经过审核的 `bun` 与 `esbuild` lifecycle；Electron 不得进入 allowBuilds，Chromium Runtime 仍由 Desktop 明确流程按需准备。
+- `[1]` 是当前源码依赖同步入口：Workspace JavaScript 只执行一次完全原生的 `pnpm install`，不主动追 latest、不包自定义 registry/reporter/timeout。Bun/OpenTUI/Solid/@types-bun 统一声明在根 `package.json` 并从根 `node_modules` 解析；`apps/cli/opentui-runtime/` 只保留源码，不得成为嵌套 Workspace。package/workspace 以后新增或调整依赖，用户重新运行 `[1]` 即同步。`[8]` 才是 Bun/OpenTUI/Solid 的显式 latest 刷新入口。`pnpm-workspace.yaml -> allowBuilds` 只能批准经过审核的 `bun` 与 `esbuild` lifecycle；Electron 不得进入 allowBuilds，Chromium Runtime 仍由 Desktop 明确流程按需准备。
 - `[1]` 写入开发态 `.git/xma-state/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量；旧 `.xma/dev-bin` 只允许作为迁移清理对象。
 - Windows `[1]` 必须自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript、Rust/Cargo、rustfmt、MSVC 与 Cargo crates 完整可用。工具缺失或低于项目硬要求时自动安装/修正；已满足要求的版本直接复用，不为追新强制升级。主菜单 `[8]` 仅负责显式刷新 JavaScript Runtime latest；`[9]` 用于单独修复/重装 Rust/Cargo。
-- `xma-path` 只承载 Rust/Cargo 等非 npm Native Toolchain：`[1]` 缺失 Rust 时自动使用 `<当前 checkout>/xma-path`；`[9]` 单独准备时可选项目默认、`D:/xma-path` 或用户输入真实存在的盘符。Bun/OpenTUI/Solid 必须只存在于 pnpm Workspace `node_modules`，禁止 `xma-path/bun|opentui`。项目控制状态与开发 shim 使用 `.git/xma-state/`（非 Git 树回退 `.cache/xma-state/`）。Rust 位置菜单只属于 `[9]`，使用原位 `↑/↓`/Enter/数字直选，且禁止 `rustup override set stable`。
+- `xma-path` 只承载 Rust/Cargo 等非 npm Native Toolchain：`[1]` 缺失 Rust 时自动使用 `<当前 checkout>/xma-path`；`[9]` 单独准备时可选项目默认、`D:/xma-path` 或用户输入真实存在的盘符。Bun/OpenTUI/Solid/@types-bun 必须统一存在于根 pnpm `node_modules`，禁止 `xma-path/bun|opentui`，也禁止 `apps/cli/opentui-runtime/node_modules` 依赖岛。项目控制状态与开发 shim 使用 `.git/xma-state/`（非 Git 树回退 `.cache/xma-state/`）。Rust 位置菜单只属于 `[9]`，使用原位 `↑/↓`/Enter/数字直选，且禁止 `rustup override set stable`。
 - JavaScript Runtime 下载/更新交给 pnpm/npm registry；禁止维护 Bun ZIP/tgz/SourceForge/独立 checksum 下载链。Rustup 的官方/RsProxy 切换只能作用于当前准备进程，不写全局配置。
 - `[4]`、`[7]`、`build:cli` 的 JavaScript Runtime 必须直接从 Workspace `node_modules` 读取并真实验证，不得依赖 Bun checkout state 或盘符扫描；Rust/Cargo 继续从 `.git/xma-state` 恢复并做 executable/version/offline crates 校验。旧 `.xma` 与旧 `xma-path/bun|opentui|state|dev-bin` 只作为清理/迁移兼容。
 - Web / CLI 已准备后直接运行，不再次安装依赖；Bun/OpenTUI 运行与构建使用 `--no-install`，禁止 `[4]/[7]` 运行阶段隐式 `pnpm update/install` 或联网补包。
@@ -354,7 +354,7 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 ## JavaScript Runtime Bootstrap 补充规则（0.1.0）
 
 - `[1]` / Linux/macOS prepare / CI / Release 只安装当前 Workspace 依赖，不主动追 latest；首次准备固定为一次 `pnpm install`。
-- `scripts/runtime/update.mjs` 只服务显式 `[8]` Runtime 刷新，固定两阶段：Bun latest → OpenTUI/Solid latest。
-- `[8]` updater 必须事务保存并在失败时恢复 `package.json`、`apps/cli/opentui-runtime/package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；registry 切换只能发生在回滚之后。
+- `scripts/runtime/update.mjs` 只服务显式 `[8]` Runtime 刷新；Bun/OpenTUI/Solid/@types-bun 已统一到根 manifest，因此使用一次 root workspace `pnpm update --latest` 定向刷新。
+- `[8]` updater 必须事务保存并在失败时恢复根 `package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；OpenTUI/Solid/@types-bun 已归入根 manifest，`apps/cli/opentui-runtime/package.json` 不再拥有依赖。
 - pnpm lifecycle policy 必须显式：`bun/esbuild=true`，`electron/electron-winstaller/koffi=false`，并启用 `strictDepBuilds: true`；发现新的 lifecycle package 必须打印包名并失败，禁止自动批准。
 - Runtime updater 必须透传真实 pnpm stdout/stderr；禁止重新退化成只显示“pnpm failed with exit code 1”的黑盒错误。

@@ -1,13 +1,12 @@
 #!/bin/sh
 # 文件作用：XMA Linux/macOS 源码开发控制台，对应根 `xma-dev`。
 # 关联模块：package.json、pnpm-workspace.yaml、Cargo.toml、apps/cli、apps/web、apps/desktop。
-# 当前实现：Bun/OpenTUI/Solid 统一由 pnpm Workspace 管理并存放在 node_modules；prepare 直接执行标准 pnpm install 同步当前 Workspace，运行/检查阶段只复用现有依赖；显式 Runtime refresh 才追 latest；Rust/Cargo 继续作为 Native Toolchain 独立准备。
+# 当前实现：Bun/OpenTUI/Solid 统一声明在根 package.json 并由根 pnpm Workspace node_modules 管理；prepare 直接执行标准 pnpm install，运行/检查阶段只复用根 node_modules；显式 Runtime refresh 才追 latest；Rust/Cargo 继续作为 Native Toolchain 独立准备。
 # 职责边界：只服务源码开发；普通用户应使用 xma-install.sh 安装预构建产品，再运行 `xiaoyu` / `xma`。
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 cd "$ROOT"
-RUNTIME_ROOT="$ROOT/apps/cli/opentui-runtime"
 
 say_header() {
   version="$(node -p "require('./package.json').version" 2>/dev/null || printf '0.1.0')"
@@ -61,10 +60,10 @@ assert_workspace_js_runtime() {
   bun="$(resolve_workspace_bun 2>/dev/null || true)"
   [ -n "$bun" ] || { printf '%s\n' '[ERROR] Workspace Bun Runtime is not ready. Run ./xma-dev prepare.' >&2; exit 1; }
   for package in \
-    "$RUNTIME_ROOT/node_modules/@opentui/core/package.json" \
-    "$RUNTIME_ROOT/node_modules/@opentui/solid/package.json" \
-    "$RUNTIME_ROOT/node_modules/solid-js/package.json" \
-    "$RUNTIME_ROOT/node_modules/@types/bun/package.json"; do
+    "$ROOT/node_modules/@opentui/core/package.json" \
+    "$ROOT/node_modules/@opentui/solid/package.json" \
+    "$ROOT/node_modules/solid-js/package.json" \
+    "$ROOT/node_modules/@types/bun/package.json"; do
     [ -f "$package" ] || { printf '[ERROR] Missing Workspace runtime package: %s\n' "$package" >&2; exit 1; }
   done
 }
@@ -74,8 +73,8 @@ install_workspace_js_dependencies() {
   pnpm install
   assert_workspace_js_runtime
   bun_version="$(package_version "$ROOT/node_modules/bun/package.json")"
-  opentui_version="$(package_version "$RUNTIME_ROOT/node_modules/@opentui/core/package.json")"
-  solid_version="$(package_version "$RUNTIME_ROOT/node_modules/solid-js/package.json")"
+  opentui_version="$(package_version "$ROOT/node_modules/@opentui/core/package.json")"
+  solid_version="$(package_version "$ROOT/node_modules/solid-js/package.json")"
   printf '[通过] Workspace JS Runtime · Bun %s · OpenTUI %s · Solid %s\n' "$bun_version" "$opentui_version" "$solid_version"
 }
 

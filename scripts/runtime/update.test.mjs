@@ -10,10 +10,8 @@ const updater = fileURLToPath(new URL('./update.mjs', import.meta.url));
 
 async function makeRepo(mode) {
   const root = await mkdtemp(join(tmpdir(), 'xma-runtime-test-'));
-  await mkdir(join(root, 'apps/cli/opentui-runtime'), { recursive: true });
   await mkdir(join(root, 'bin'), { recursive: true });
-  await writeFile(join(root, 'package.json'), '{"name":"xma","devDependencies":{"bun":"latest"}}\n');
-  await writeFile(join(root, 'apps/cli/opentui-runtime/package.json'), '{"name":"@xma/cli-opentui-runtime","dependencies":{"@opentui/core":"latest"}}\n');
+  await writeFile(join(root, 'package.json'), '{"name":"xma","devDependencies":{"bun":"1.4.2","@opentui/core":"0.5.11","@opentui/solid":"0.5.11","solid-js":"1.9.15","@types/bun":"1.4.2"}}\n');
   await writeFile(join(root, 'pnpm-workspace.yaml'), `packages:
   - "apps/*"
 allowBuilds:
@@ -31,7 +29,7 @@ strictDepBuilds: true
 const root=process.cwd(); const log=path.join(root,'calls.log'); fs.appendFileSync(log, process.argv.slice(2).join(' ')+'\\n');
 const calls=fs.readFileSync(log,'utf8').trim().split(/\\n/).length;
 fs.writeFileSync(path.join(root,'pnpm-lock.yaml'),'lockfileVersion: 9.0\\ncall: '+calls+'\\n');
-if (${JSON.stringify(mode)} === 'fail' && calls === 2) {
+if (${JSON.stringify(mode)} === 'fail' && calls === 1) {
   fs.writeFileSync(path.join(root,'package.json'),'README changed\\n');
   console.error('[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: mystery-native@1.2.3');
   process.exit(1);
@@ -63,22 +61,21 @@ function run(root, fake) {
   });
 }
 
-test('refreshes only Bun and OpenTUI/Solid in two targeted stages', async () => {
+test('refreshes Bun and OpenTUI/Solid together from the root workspace', async () => {
   const { root, fake } = await makeRepo('success');
   const result = await run(root, fake);
   assert.equal(result.code, 0, result.stderr);
   const calls = (await readFile(join(root, 'calls.log'), 'utf8')).trim().split(/\n/);
   assert.deepEqual(calls, [
-    '--workspace-root update --latest bun --reporter=append-only',
-    '--filter @xma/cli-opentui-runtime update --latest @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only',
+    '--workspace-root update --latest bun @opentui/core @opentui/solid solid-js @types/bun --reporter=append-only',
   ]);
-  assert.match(await readFile(join(root, 'pnpm-lock.yaml'), 'utf8'), /call: 2/);
+  assert.match(await readFile(join(root, 'pnpm-lock.yaml'), 'utf8'), /call: 1/);
 });
 
 test('restores managed files when explicit runtime refresh fails', async () => {
   const { root, fake } = await makeRepo('fail');
   const before = {};
-  for (const file of ['package.json', 'apps/cli/opentui-runtime/package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
+  for (const file of ['package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
     before[file] = await readFile(join(root, file), 'utf8');
   }
   const result = await run(root, fake);

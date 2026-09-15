@@ -1,7 +1,7 @@
 /**
  * 文件作用：回归验证 Xiaoyu OpenTUI Active Renderer 的响应式布局、原生输入依赖边界与禁止旧 ANSI 光标控制合同。
  * 关联模块：apps/cli/opentui-runtime、apps/cli/src/opentui-layout.ts、scripts/gates/distribution.ts。
- * 当前实现：纯 Node 环境检查布局函数、pnpm latest Runtime 声明、动态加载入口与 Active Renderer 源码静态合同，不要求本机安装 OpenTUI Native Runtime。
+ * 当前实现：纯 Node 环境检查布局函数、根 package Runtime 声明、动态加载入口与 Active Renderer 源码静态合同，不要求本机安装 OpenTUI Native Runtime。
  * 职责边界：本测试不替代 Windows Terminal 的真实光标、IME、鼠标与动画 E2E；这些仍需由 `[1]` 实际解析出的 Bun/OpenTUI 版本在实机验收。
  */
 
@@ -19,23 +19,25 @@ test('OpenTUI content grid uses a wide centered body with symmetric side padding
   assert.equal(openTuiSidePadding(160), 14)
 })
 
-test('Bun and OpenTUI runtime dependencies are registry-latest pnpm workspace dependencies', () => {
+test('Bun and OpenTUI runtime dependencies live in the root package and avoid a nested dependency island', () => {
   const rootPackage = JSON.parse(readFileSync('package.json', 'utf8')) as {
+    scripts?: Record<string, string>
     devDependencies?: Record<string, string>
   }
   const runtimePackage = JSON.parse(readFileSync('apps/cli/opentui-runtime/package.json', 'utf8')) as {
     dependencies?: Record<string, string>
     devDependencies?: Record<string, string>
   }
-  assert.equal(rootPackage.devDependencies?.bun, 'latest')
-  assert.equal(runtimePackage.dependencies?.['@opentui/core'], 'latest')
-  assert.equal(runtimePackage.dependencies?.['@opentui/solid'], 'latest')
-  assert.equal(runtimePackage.dependencies?.['solid-js'], 'latest')
-  assert.equal(runtimePackage.devDependencies?.['@types/bun'], 'latest')
+  assert.equal(rootPackage.devDependencies?.bun, '1.4.2')
+  assert.equal(rootPackage.devDependencies?.['@opentui/core'], '0.5.11')
+  assert.equal(rootPackage.devDependencies?.['@opentui/solid'], '0.5.11')
+  assert.equal(rootPackage.devDependencies?.['solid-js'], '1.9.15')
+  assert.equal(rootPackage.devDependencies?.['@types/bun'], '1.4.2')
+  assert.equal(runtimePackage.dependencies, undefined)
+  assert.equal(runtimePackage.devDependencies, undefined)
   const workspace = readFileSync('pnpm-workspace.yaml', 'utf8')
-  assert.match(workspace, /apps\/cli\/opentui-runtime/)
-  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /pnpm --workspace-root update --latest bun --reporter=append-only/)
-  assert.match(String(rootPackage.scripts?.['runtime:update'] ?? ''), /@types\/bun --reporter=append-only/)
+  assert.doesNotMatch(workspace, /apps\/cli\/opentui-runtime/)
+  assert.equal(rootPackage.scripts?.['runtime:update'], 'node scripts/runtime/update.mjs')
 })
 
 test('Workspace Trust hides the hardware cursor during raw selection and restores it before OpenTUI starts', () => {
@@ -73,7 +75,7 @@ test('OpenTUI build uses an explicit supported Bun compile target map', () => {
   assert.doesNotMatch(source, /`bun-\$\{platformName\}-\$\{process\.arch\}`/)
 })
 
-test('OpenTUI build embeds the parser worker from the prepared dependency island instead of package export resolution', () => {
+test('OpenTUI build embeds the parser worker from the prepared root dependency instead of package export resolution', () => {
   const source = readFileSync('apps/cli/opentui-runtime/build.ts', 'utf8')
   assert.match(source, /node_modules', '@opentui', 'core', 'parser\.worker\.js'/)
   assert.match(source, /process\.chdir\(scriptDir\)/)
@@ -136,7 +138,7 @@ test('Bun OpenTUI runner consumes pnpm node_modules and forbids implicit depende
   assert.match(source, /const root = path\.resolve\(scriptDir, '\.\.', '\.\.'\)/)
   assert.match(source, /const runtimeRoot = path\.join\(root, 'apps', 'cli', 'opentui-runtime'\)/)
   assert.match(source, /path\.join\(root, 'node_modules', 'bun'\)/)
-  assert.match(source, /path\.join\(runtimeRoot, 'node_modules'/)
+  assert.match(source, /path\.join\(root, 'node_modules'/)
   assert.match(source, /\[1\]\/\[8\]/)
   assert.doesNotMatch(source, /XMA_BUN_HOME/)
   assert.doesNotMatch(source, /bun-environment\.json/)
@@ -220,7 +222,7 @@ test('Xiaoyu logo gradient sweeps a highlight band across the original orange an
   assert.match(source, /const logoFrame = createMemo\(\(\) => Math\.floor\(phase\(\) \/ 2\)\)/)
 })
 
-test('Chinese comment gate never recursively enters the OpenTUI dependency island', () => {
+test('Chinese comment gate keeps OpenTUI source files explicit without recursively scanning generated node_modules', () => {
   const source = readFileSync('scripts/gates/comments.ts', 'utf8')
   assert.match(source, /ignoredDirectories/)
   assert.match(source, /'node_modules'/)

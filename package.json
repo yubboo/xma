@@ -45,11 +45,15 @@
     "runtime:update": "node scripts/runtime/update.mjs"
   },
   "devDependencies": {
+    "@opentui/core": "0.5.11",
+    "@opentui/solid": "0.5.11",
+    "@types/bun": "1.4.2",
     "@types/node": "^24.5.2",
+    "bun": "1.4.2",
+    "solid-js": "1.9.15",
     "tsup": "^8.5.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
-    "vite": "^7.1.5",
-    "bun": "latest"
+    "vite": "^7.1.5"
   }
 }

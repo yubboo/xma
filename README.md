@@ -67,11 +67,11 @@ cd xma
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
-首次进入菜单选择 `[1] 一键准备开发环境`。它的职责只有一个：**把当前这份 XMA 源码需要的开发/运行工具与依赖全部准备到可用状态**。Windows 会检查 Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 与 Cargo crates；缺失或低于项目硬要求时自动安装/修正，已经满足要求的稳定可用版本直接复用，不为了追“最新”强制升级。Bun、OpenTUI、Solid 与 `@types/bun` 已并入 pnpm Workspace，JavaScript 依赖同步就是在项目根直接执行标准 `pnpm install`。以后项目新增 package、Workspace 或调整依赖版本，用户更新源码后重新运行一次 `[1]` 即会自动补齐。
+首次进入菜单选择 `[1] 一键准备开发环境`。它的职责只有一个：**把当前这份 XMA 源码需要的开发/运行工具与依赖全部准备到可用状态**。Windows 会检查 Git、Node.js、pnpm、Rust/Cargo、rustfmt、MSVC 与 Cargo crates；缺失或低于项目硬要求时自动安装/修正，已经满足要求的稳定可用版本直接复用，不为了追“最新”强制升级。Bun、OpenTUI、Solid 与 `@types/bun` 统一声明在根 `package.json`，JavaScript 依赖同步就是在项目根直接执行标准 `pnpm install`。以后项目新增 package、Workspace 或调整依赖版本，用户更新源码后重新运行一次 `[1]` 即会自动补齐。
 
-`[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析交给 pnpm；`[1]` 只执行一次 `pnpm install`。若用户/项目没有自定义 registry 且 npm 官方快速探针不可达，本次安装会临时回退 npmmirror，结束后立即恢复环境，不写入用户 pnpm/npm 配置；不会隐藏 reporter 或重复 install。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
+`[8] 刷新 · JavaScript Runtime` 与 `[1]` 分离，只在用户明确要求时主动刷新 Bun/OpenTUI/Solid latest。`[4]`、`[7]` 与 build 只使用已经准备好的依赖，不会偷偷联网升级。JavaScript Runtime 的下载与版本解析完全交给 pnpm；`[1]` 只执行一次完全原生的 `pnpm install`，不接管 registry/reporter/timeout。Rust/rustup 的独立 Native Toolchain 仍保留官方源/RsProxy 的下载容错，但只用于 Rust 自身安装。
 
-JavaScript 依赖统一位于 Workspace `node_modules/`：根 `node_modules/bun` 提供 Bun Runtime，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types/bun。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。旧 `xma-path/bun`、`xma-path/opentui`、`xma-path/state`、`xma-path/dev-bin` 与 `.xma/` 只做清理/迁移兼容，不再作为当前 JavaScript Runtime。
+JavaScript Runtime 统一位于根 `node_modules/`：`node_modules/bun` 提供 Bun Runtime，`node_modules/@opentui/*`、`node_modules/solid-js` 与 `node_modules/@types/bun` 提供 OpenTUI/Solid Runtime。`apps/cli/opentui-runtime/` 只保留第一方 Renderer/Build 源码，不再是嵌套 pnpm Workspace，也不再拥有自己的 `node_modules`。`xma-path/` 只保留 Rust/Cargo 等非 npm Native Toolchain；checkout 控制状态与开发 shim 位于 `.git/xma-state/{state-files,dev-bin}/`（无 Git 的临时源码树回退 `.cache/xma-state/`）。
 
 删除/清理依赖后的行为按真实文件状态判断：删除 `node_modules/` 后，下一次 `[1]` 会重新安装当前 Workspace JavaScript 依赖；需要主动刷新 Bun/OpenTUI/Solid latest 时使用 `[8]`。删除 `xma-path/rust` 只影响项目内 Rust/Cargo；若此前选择了外部 `D:/E:/<盘符>:/xma-path/rust` 或兼容旧 `D:/XMA/Rust` 且实体仍真实存在，则 Rust 探针通过后可重新接管。`[4]`/`[7]` 只校验和运行，不会偷偷执行 `pnpm update`、`pnpm install` 或 Rust 联网安装。
 

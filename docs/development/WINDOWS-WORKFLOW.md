@@ -142,7 +142,7 @@ XMA 使用 `pnpm-workspace.yaml -> allowBuilds` 显式批准确实需要 install
 
 ## Xiaoyu Terminal · Bun / OpenTUI
 
-`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作 pnpm Workspace Runtime：依赖声明固定为当前 XMA 已验收稳定版本；只有 `[8]` 主动刷新 registry latest 并更新 manifest/lockfile。依赖全部落在 `node_modules`。根 `node_modules/bun` 提供 Bun executable，`apps/cli/opentui-runtime/node_modules` 提供 OpenTUI/Solid/@types-bun；不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除 `node_modules` 后回 `[1]`/`[8]` 重建。
+`xma-dev.bat → [1]` 会把 Bun/OpenTUI/Solid 当作根 pnpm Runtime：当前已验收稳定版本统一声明在根 `package.json`；只有 `[8]` 主动刷新 registry latest 并更新 manifest/lockfile。Bun/OpenTUI/Solid/@types-bun 全部从根 `node_modules` 解析，`apps/cli/opentui-runtime/` 只保留 Renderer/Build 源码，不再创建嵌套 Workspace/node_modules；也不再创建 `xma-path/bun`、`xma-path/opentui`、junction 或 Bun checkout state。`[4]`/`[7]`/`build:cli` 强制 `--no-install`，只消费本次 pnpm 已解析的版本；删除根 `node_modules` 后回 `[1]`/`[8]` 重建。
 
 OpenTUI 的 Windows 实机验收至少覆盖：原生 Textarea caret/IME、Tab/Shift+Tab 模式切换后焦点不漂移、Ctrl+P/Ctrl+K Dialog、Esc 返回、鼠标选择/拖动、窗口 resize 与退出后终端状态恢复。
 

@@ -201,16 +201,15 @@ function Resolve-XmaBunRuntime {
 function Assert-CliJsDependencies {
   Assert-CoreDependencies
   $bunRuntime = Resolve-XmaBunRuntime
-  $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
   $packages = @(
-    (Join-Path $runtimeRoot 'node_modules\@opentui\core\package.json'),
-    (Join-Path $runtimeRoot 'node_modules\@opentui\solid\package.json'),
-    (Join-Path $runtimeRoot 'node_modules\solid-js\package.json'),
-    (Join-Path $runtimeRoot 'node_modules\@types\bun\package.json')
+    (Join-Path $Root 'node_modules\@opentui\core\package.json'),
+    (Join-Path $Root 'node_modules\@opentui\solid\package.json'),
+    (Join-Path $Root 'node_modules\solid-js\package.json'),
+    (Join-Path $Root 'node_modules\@types\bun\package.json')
   )
   foreach ($packageFile in $packages) {
     if (-not (Test-Path -LiteralPath $packageFile -PathType Leaf)) {
-      throw "Xiaoyu OpenTUI Workspace 依赖尚未准备：$packageFile。请运行 [1]，或主菜单 [8] 刷新 JavaScript Runtime。"
+      throw "Xiaoyu OpenTUI 根依赖尚未准备：$packageFile。请运行 [1]，或主菜单 [8] 刷新 JavaScript Runtime。"
     }
   }
   $core = [string]((Get-Content -LiteralPath $packages[0] -Raw -Encoding UTF8 | ConvertFrom-Json).version)
@@ -218,7 +217,7 @@ function Assert-CliJsDependencies {
   $solidJs = [string]((Get-Content -LiteralPath $packages[2] -Raw -Encoding UTF8 | ConvertFrom-Json).version)
   Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $($bunRuntime.Version) + OpenTUI core $core / solid $solidRenderer + Solid $solidJs）。" -ForegroundColor Green
   Write-Host "[Bun] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
-  Write-Host "[OpenTUI] $runtimeRoot\node_modules" -ForegroundColor DarkGray
+  Write-Host "[OpenTUI] $(Join-Path $Root 'node_modules\@opentui')" -ForegroundColor DarkGray
 }
 
 function Assert-DesktopJsDependencies {

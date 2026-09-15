@@ -1,7 +1,7 @@
 /**
  * 文件作用：从 pnpm Workspace 的 node_modules 恢复 Xiaoyu OpenTUI CLI 使用的 Bun Runtime，并统一源码运行与 CLI 构建入口。
- * 关联模块：package.json、pnpm-workspace.yaml、apps/cli/opentui-runtime/package.json、apps/cli/opentui-runtime/build.ts。
- * 当前实现：Bun/OpenTUI 作为普通 Workspace 依赖由 `pnpm install` 管理；运行/构建直接读取 node_modules 中已安装版本，不再维护 xma-path Bun Home、独立下载器或固定 Bun 版本。Windows 中文/特殊字符源码路径构建时，仍用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
+ * 关联模块：package.json、pnpm-workspace.yaml、apps/cli/opentui-runtime/build.ts。
+ * 当前实现：Bun/OpenTUI/Solid 统一声明在根 package.json，由根 `pnpm install` 安装到 Workspace 根 node_modules；运行/构建直接读取根 node_modules 中已安装版本，不再为 OpenTUI 创建嵌套 Workspace/node_modules。Windows 中文/特殊字符源码路径构建时，仍用动态 SUBST 别名把项目 `.cache` 暂时暴露为 ASCII 路径。
  * 职责边界：只启动已经由 `[1]`/`[8]` 准备好的 node_modules，不安装依赖、不联网；SUBST 只在单次 build 生命周期存在，最终 dist/cli/xiaoyu.exe 不依赖它。
  */
 
@@ -58,10 +58,10 @@ function ensureOpenTuiDependencies(): void {
     ['@types', 'bun', 'package.json'],
   ]
   const missing = required
-    .map(parts => path.join(runtimeRoot, 'node_modules', ...parts))
+    .map(parts => path.join(root, 'node_modules', ...parts))
     .filter(file => !existsSync(file))
   if (missing.length > 0) {
-    throw new Error(`OpenTUI Workspace 依赖不完整：${missing.join('；')}。请运行 xma-dev → [1]，或主菜单 [8] 刷新 JavaScript Runtime。`)
+    throw new Error(`OpenTUI 根依赖不完整：${missing.join('；')}。请运行 xma-dev → [1]，或主菜单 [8] 刷新 JavaScript Runtime。`)
   }
 }
 
