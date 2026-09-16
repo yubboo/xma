@@ -1,7 +1,7 @@
 /**
- * 文件作用：把 Host-neutral SessionRuntimeMetrics 格式化为 Terminal 状态栏项目，不依赖 OpenTUI Renderable。
- * 关联模块：session-status-bar.tsx、xma-session metrics、未来 Terminal 快照测试。
- * 职责边界：只做 Terminal 文本投影；Provider 品牌、价格、余额、套餐数据必须已经由 canonical metrics 提供。
+ * 文件作用：把 Host-neutral SessionRuntimeMetrics 格式化为 Terminal 状态栏项目与可见行，不依赖 OpenTUI Renderable。
+ * 关联模块：session-status-bar.tsx、xma-session metrics、Terminal formatter tests。
+ * 职责边界：只做 Terminal 文本投影与行打包；Provider 品牌、价格、余额、套餐数据必须已经由 canonical metrics 提供。
  */
 
 import type { SessionCostMetrics, SessionRuntimeMetrics } from '../contracts.ts'
@@ -81,11 +81,56 @@ function subscriptionQuota(metrics: SessionRuntimeMetrics): string | undefined {
   return undefined
 }
 
+function isZeroWidthCodePoint(codePoint: number): boolean {
+  return (
+    (codePoint >= 0x0300 && codePoint <= 0x036f) ||
+    (codePoint >= 0x1ab0 && codePoint <= 0x1aff) ||
+    (codePoint >= 0x1dc0 && codePoint <= 0x1dff) ||
+    (codePoint >= 0x20d0 && codePoint <= 0x20ff) ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
+    (codePoint >= 0xfe20 && codePoint <= 0xfe2f) ||
+    (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+  )
+}
+
+function isWideCodePoint(codePoint: number): boolean {
+  return codePoint >= 0x1100 && (
+    codePoint <= 0x115f ||
+    codePoint === 0x2329 ||
+    codePoint === 0x232a ||
+    (codePoint >= 0x2e80 && codePoint <= 0x303e) ||
+    (codePoint >= 0x3040 && codePoint <= 0xa4cf) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+    (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+    (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+    (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
+    (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  )
+}
+
+/**
+ * 估算字符串在等宽 Terminal 中占用的列数。状态栏主要包含 ASCII 与 CJK，
+ * 这里覆盖 combining mark / CJK / 常见 emoji，避免用 JS string.length 低估中文宽度。
+ */
+export function terminalTextColumns(value: string): number {
+  let width = 0
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    if (codePoint === 0 || codePoint < 0x20 || (codePoint >= 0x7f && codePoint < 0xa0)) continue
+    if (isZeroWidthCodePoint(codePoint)) continue
+    width += isWideCodePoint(codePoint) ? 2 : 1
+  }
+  return width
+}
+
 /**
  * Prompt 主状态行中的首要 Session 指标。
  *
- * 这里刻意只放用户需要持续关注的“会话健康”信息；Provider/Model/Ready
- * 由 PromptDock 的 Provider truth 独立展示，避免模型身份在两行重复。
+ * headline 仍然可以为最右侧 Model truth 让位；完整 telemetry 由下方 detail block
+ * 负责全量直显，因此窄屏时这里允许只保留 context 或完全让出空间。
  */
 export function sessionHeadlineItems(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
   if (width < 82) return []
@@ -94,20 +139,17 @@ export function sessionHeadlineItems(metrics: SessionRuntimeMetrics, width: numb
   const quota = subscriptionQuota(metrics)
   const account = metrics.billing.kind === 'api' ? `余额 ${balance(metrics)}` : quota
 
-  // 窄屏只保留 context；常见宽度增加账户真值。
-  // Provider group 自己 flexShrink=0，因此 headline 即使空间不足也只能被裁，不能挤掉 Provider truth。
   if (width < 100) return [context]
   return account ? [context, account] : [context]
 }
 
 /**
- * Prompt 下方的次要 Session 指标。
+ * Prompt 下方完整的 canonical Session detail 项目。
  *
- * #11 重新把 #05 已存在的 cache/token/turn 真值带回常见宽度，但不恢复旧版
- * model/context/balance 重复。常见宽度使用紧凑标签保留所有关键值；超宽屏再展开
- * 用户可读的完整标签。compaction 仍只消费 canonical truth，未实现时必须显示 —。
+ * #12 起 width 不再决定“显示哪些字段”；不同宽度只影响 sessionStatusRows() 如何分行。
+ * 这样 Home 的窄 Dock 也不会把 cache/token/turn/cost/permission 悄悄裁掉。
  */
-export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
+export function sessionStatusItems(metrics: SessionRuntimeMetrics, _width?: number): readonly string[] {
   const turnTokens = exactInteger(metrics.currentTurn?.usage.totalTokens)
   const sessionTokens = exactInteger(metrics.sessionUsage.totalTokens)
   const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
@@ -118,50 +160,6 @@ export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number
     ? percent(metrics.compaction.thresholdRatio, 2)
     : '—'
   const sessionCost = metrics.billing.kind === 'api' ? money(metrics.sessionCost) : '—'
-
-  if (width < 82) return [permission]
-
-  // 很窄时继续优先保证“计费 + 本次 token + 费用 + 权限”；不让 detail row 自动换行挤高 Dock。
-  if (width < 104) {
-    return [
-      billing,
-      `本次 ${turnTokens}`,
-      ...(sessionCost !== '—' ? [`费用 ${sessionCost}`] : []),
-      permission,
-    ]
-  }
-
-  // 常见 Windows Terminal 宽度用短标签保留用户要求的全部真实 telemetry。
-  // 这里刻意不显示 requestCount/model/context/balance，避免把 #10 已去重的字段重新堆回来。
-  if (width < 124) {
-    return [
-      billing,
-      `本次命中${turnHit}`,
-      `平均命中${averageHit}`,
-      `会话${sessionTokens}t`,
-      `本次${turnTokens}t`,
-      `压缩${compactionThreshold}`,
-      `${metrics.turnCount}轮`,
-      ...(sessionCost !== '—' ? [`费用${sessionCost}`] : []),
-      metrics.permission?.label ?? '权限—',
-    ]
-  }
-
-  // 中宽屏优先把本次/平均命中、精确 token、压缩阈值和轮次用完整标签展开；
-  // 费用/权限仍使用短标签，避免在常见 130~150 列窗口被裁掉。
-  if (width < 150) {
-    return [
-      billing,
-      `本次命中${turnHit}`,
-      `平均命中${averageHit}`,
-      `会话 tokens${sessionTokens}`,
-      `本次 tokens${turnTokens}`,
-      `压缩阈值${compactionThreshold}`,
-      `当前会话${metrics.turnCount}轮`,
-      ...(sessionCost !== '—' ? [`费用${sessionCost}`] : []),
-      metrics.permission?.label ?? '权限—',
-    ]
-  }
 
   return [
     billing,
@@ -176,3 +174,35 @@ export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number
   ]
 }
 
+/**
+ * 把完整 detail items 按真实 Terminal 列宽贪心打包为多行。字段集合恒定；
+ * 这里仅决定换行，不允许通过窄屏分支隐藏 telemetry。
+ */
+export function sessionStatusRows(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
+  const separator = ' · '
+  const separatorWidth = terminalTextColumns(separator)
+  const available = Math.max(1, Math.floor(width) - 2) // SessionStatusBar 左右各保留 1 列 padding。
+  const rows: string[] = []
+  let currentItems: string[] = []
+  let currentWidth = 0
+
+  for (const item of sessionStatusItems(metrics)) {
+    const itemWidth = terminalTextColumns(item)
+    const nextWidth = currentItems.length === 0
+      ? itemWidth
+      : currentWidth + separatorWidth + itemWidth
+
+    if (currentItems.length > 0 && nextWidth > available) {
+      rows.push(currentItems.join(separator))
+      currentItems = [item]
+      currentWidth = itemWidth
+      continue
+    }
+
+    currentItems.push(item)
+    currentWidth = nextWidth
+  }
+
+  if (currentItems.length > 0) rows.push(currentItems.join(separator))
+  return rows
+}

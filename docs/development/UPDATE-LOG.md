@@ -995,3 +995,16 @@
 - 强制恢复：`YES` 后先在 `.git/xma-state/update-backups/<timestamp>/` 保存 metadata；tracked 修改写 `tracked.patch`，local ahead commit 写 `local-commits.patch`，再 `reset --hard origin/main`。禁止删除 clone、禁止自动 `git clean`，继续复用 runtime/node_modules/.cache/dist。
 - 下一步提示：只有依赖 manifest 在更新前后发生变化才要求重新 `[1]`；否则可直接重启 `[4]`。自动验证：Activity 35/35 定向测试 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS；Source Manifest 242 files、成品 243 entries 独立解压缺失/额外/哈希差异均为 0。Windows Terminal 点击展开与 Windows PowerShell 5.1 `[10]` 实机同步仍待用户 E2E。
 
+##89 · Terminal 用户消息整行 band、Prompt 垂直节奏与 Metrics 全量直显
+
+- 日期：2026-09-16
+- 流程：严格按 `REPAIR-WORKFLOW.md` 先建立不可变 `REPAIR-PROMPTS #12`，再实施代码；本轮引用 #03/#04/#05/#10/#11，不覆盖旧 Repair 结论。
+- 实机反馈：#11 用户消息仍是右侧浅色小块，缺少上下 padding；Home Prompt 视觉偏低，Prompt/detail/快捷区过挤；约 78 列 Home Dock 因 width 分支 + `height=1/overflow=hidden` 只剩少量 metrics，看起来像“数据被删”。
+- 上游参考：固定审阅 Pi commit `71dca871bc80b6bc97be37f0ca3189399d651fff` 的 `UserMessageComponent`；只吸收“整条内容列背景 + 横向 outputPad + 纵向 1 行 padding”的布局原则，不复制 Pi Renderer/品牌/Agent 语义。
+- 用户消息：`TranscriptViewport` 删除 `justifyContent=flex-end + maxWidth=72%` 小气泡，改为 content column 内 `width=100%` 的浅色 user band，左右/上下各 1 单位 padding；长消息继续完整换行，Transcript 仍只有一个 ScrollBox owner。
+- Metrics：`sessionStatusItems()` 不再根据宽度删 canonical detail；新增 CJK/emoji-aware `terminalTextColumns()` 与 `sessionStatusRows()`，完整 billing/cache/session+turn tokens/compaction/turn count/真实费用/permission 只按终端列宽换行。`SessionStatusBar` 删除固定一行裁剪，改为 PromptDock 内自适应多行并保留上下 padding。
+- Home/Prompt：`xiaoyu-workbench` 仅在 center/Home 模式增加受控 bottom flex padding，让 Logo+Prompt 视觉中心轻微上提；Conversation bounded Transcript slot、PromptDock `flexShrink=0`、Textarea caret/IME 与 sticky scroll 合同不变。
+- 回归：formatter 测试锁定 78/100/136/220 列字段集合恒定且窄宽多行；静态 Host 合同锁定 full-width padded user band、禁止 maxWidth bubble、detail 不再 fixed-height overflow；真实 OpenTUI layout 测试新增 user band 尺寸/padding 与 multi-row metrics dock 留在 viewport 的 Renderable 断言。
+- 状态：#12 进入**验证中**。`session-status` 8/8、OpenTUI 静态/快捷键 35/35、Runtime updater 2/2、修改文件 TS/TSX 语法转译与 Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate 均 PASS；Workspace node_modules 不存在且 registry DNS 失败，真实 OpenTUI Renderable layout 测试与完整 `pnpm check` 不能在沙箱冒充通过。Windows Terminal 仍需用户目视验收 user band、Home 上移、多行 metrics 与常见窗口高度。
+- 版本/发行：版本仍为 `0.1.0`；Source Manifest 242 files，候选 ZIP 243 entries，独立解压 missing/extra/hash differences 均为 0，并从解压树再次通过 formatter 8/8、静态/快捷键 35/35、Runtime updater 2/2 与 9 项 Gate。正式源码包继续只使用 `xma-0.1.0.zip` + SHA-256，不引入 repair/final/v2 正式包名。
+

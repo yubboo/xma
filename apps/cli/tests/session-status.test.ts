@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SessionRuntimeMetrics } from 'xma-session'
-import { sessionHeadlineItems, sessionStatusItems } from '../opentui-runtime/ui/session-status.ts'
+import { sessionHeadlineItems, sessionStatusItems, sessionStatusRows, terminalTextColumns } from '../opentui-runtime/ui/session-status.ts'
 
 function baseMetrics(): SessionRuntimeMetrics {
   return {
@@ -88,7 +88,7 @@ test('unknown telemetry stays unknown instead of rendering fake zeros', () => {
   const headline = sessionHeadlineItems(metrics, 110).join(' | ')
   const detail = sessionStatusItems(metrics, 110).join(' | ')
   assert.match(headline, /上下文 —/)
-  assert.match(detail, /本次—t/)
+  assert.match(detail, /本次 tokens—/)
   assert.doesNotMatch(headline + detail, /80%|0\.0000|12\.93/)
 })
 
@@ -119,7 +119,7 @@ test('common-width API headline keeps real balance beside context', () => {
 
 
 
-test('common-width detail restores exact cache/token/turn telemetry without inventing compaction', () => {
+test('detail keeps the same complete canonical field set at narrow, common, and wide widths', () => {
   const metrics = baseMetrics()
   metrics.billing = { kind: 'api', label: 'API' }
   metrics.currentTurn!.usage = {
@@ -141,23 +141,32 @@ test('common-width detail restores exact cache/token/turn telemetry without inve
     averageCacheHitRatio: 0,
   }
   metrics.turnCount = 35
+  metrics.sessionCost = { status: 'complete', amount: 0.0011, currency: 'CNY', precision: 'estimated', sources: ['price-source'] }
   metrics.permission = { id: 'smart', label: '替我审批' }
 
-  const compact = sessionStatusItems(metrics, 120).join(' · ')
-  assert.match(compact, /本次命中0\.00%/)
-  assert.match(compact, /平均命中0\.00%/)
-  assert.match(compact, /会话63,112,938t/)
-  assert.match(compact, /本次198,157t/)
-  assert.match(compact, /压缩—/)
-  assert.match(compact, /35轮/)
-  assert.match(compact, /替我审批/)
-  assert.doesNotMatch(compact, /80\.00%|63\.1m|198\.2k/)
+  const items = sessionStatusItems(metrics)
+  assert.deepEqual(items, [
+    'API',
+    '本次命中0.00%',
+    '平均命中0.00%',
+    '会话 tokens63,112,938',
+    '本次 tokens198,157',
+    '压缩阈值—',
+    '当前会话35轮',
+    '会话费用≈¥0.0011',
+    '权限 替我审批',
+  ])
 
-  const common = sessionStatusItems(metrics, 136).join(' · ')
-  assert.match(common, /会话 tokens63,112,938/)
-  assert.match(common, /本次 tokens198,157/)
-  assert.match(common, /压缩阈值—/)
-  assert.match(common, /当前会话35轮/)
+  for (const width of [78, 100, 136, 220]) {
+    const rows = sessionStatusRows(metrics, width)
+    assert.ok(rows.length >= 1)
+    assert.equal(rows.join(' · '), items.join(' · '), `width ${width} must not hide or reorder metrics`)
+    assert.ok(rows.every(row => terminalTextColumns(row) <= Math.max(1, width - 2)), `width ${width} rows must fit inside status padding`)
+  }
+
+  assert.ok(sessionStatusRows(metrics, 78).length >= 2, 'Home-width detail must wrap instead of hiding fields')
+  assert.equal(sessionStatusRows(metrics, 220).length, 1, 'wide detail should stay on one line when it fits')
+  assert.doesNotMatch(items.join(' · '), /80\.00%|63\.1m|198\.2k/)
 })
 
 test('compaction threshold is rendered only from canonical available truth', () => {
@@ -166,7 +175,7 @@ test('compaction threshold is rendered only from canonical available truth', () 
   assert.match(sessionStatusItems(metrics, 220).join(' | '), /压缩阈值80\.00%/)
 })
 
-test('very narrow headline yields space back to Provider truth while detail keeps permission', () => {
+test('very narrow headline yields space back to Provider truth while detail still exposes every canonical metric', () => {
   const metrics = baseMetrics()
   metrics.billing = { kind: 'api', label: 'API' }
   metrics.context = { usedTokens: 1_791, windowTokens: 1_000_000, ratio: 1_791 / 1_000_000 }
@@ -179,5 +188,15 @@ test('very narrow headline yields space back to Provider truth while detail keep
     balances: [{ currency: 'CNY', total: '8.88' }],
   }
   assert.deepEqual(sessionHeadlineItems(metrics, 80), [])
-  assert.deepEqual(sessionStatusItems(metrics, 80), ['权限 请求批准'])
+  const rows = sessionStatusRows(metrics, 80)
+  const detail = rows.join(' · ')
+  assert.ok(rows.length >= 2)
+  assert.match(detail, /API/)
+  assert.match(detail, /本次命中40\.00%/)
+  assert.match(detail, /平均命中20\.00%/)
+  assert.match(detail, /会话 tokens1,000/)
+  assert.match(detail, /本次 tokens120/)
+  assert.match(detail, /压缩阈值—/)
+  assert.match(detail, /当前会话3轮/)
+  assert.match(detail, /权限 请求批准/)
 })

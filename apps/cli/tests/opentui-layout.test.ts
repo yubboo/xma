@@ -89,3 +89,106 @@ test('conversation layout keeps prompt dock visible and gives transcript a real 
     setup.renderer.destroy()
   }
 })
+
+test('Pi-style user message band fills the content column and keeps one row of vertical padding', async () => {
+  const setup = await createTestRenderer({ width: 80, height: 16 })
+  try {
+    const shell = new BoxRenderable(setup.renderer, {
+      id: 'shell-user-band',
+      width: 80,
+      height: 16,
+      alignItems: 'center',
+    })
+    const content = new BoxRenderable(setup.renderer, {
+      id: 'content-column',
+      width: 60,
+      flexDirection: 'column',
+    })
+    const userBand = new BoxRenderable(setup.renderer, {
+      id: 'user-band',
+      width: '100%',
+      paddingTop: 1,
+      paddingBottom: 1,
+      paddingLeft: 1,
+      paddingRight: 1,
+      flexShrink: 0,
+    })
+    const text = new TextRenderable(setup.renderer, { content: '你好' })
+
+    userBand.add(text)
+    content.add(userBand)
+    shell.add(content)
+    setup.renderer.root.add(shell)
+    await setup.renderOnce()
+
+    assert.equal(userBand.width, content.width, 'user background must span the complete transcript content column')
+    assert.ok(userBand.height >= 3, 'one text row plus top/bottom padding must occupy at least three terminal rows')
+    assert.equal(text.x, userBand.x + 1, 'user text must keep one column of horizontal inset')
+    assert.equal(text.y, userBand.y + 1, 'user text must keep one row of top inset')
+  } finally {
+    setup.renderer.destroy()
+  }
+})
+
+test('a taller multi-row metrics dock remains atomic and inside a 24-row terminal', async () => {
+  const setup = await createTestRenderer({ width: 80, height: 24 })
+  try {
+    const shell = new BoxRenderable(setup.renderer, {
+      id: 'shell-metrics',
+      width: 80,
+      height: 24,
+      flexDirection: 'column',
+    })
+    const transcriptSlot = new BoxRenderable(setup.renderer, {
+      id: 'slot-metrics',
+      width: '100%',
+      height: 0,
+      flexBasis: 0,
+      flexGrow: 1,
+      flexShrink: 1,
+      minHeight: 0,
+      overflow: 'hidden',
+    })
+    const promptDock = new BoxRenderable(setup.renderer, {
+      id: 'prompt-dock-metrics',
+      width: '100%',
+      flexShrink: 0,
+      flexDirection: 'column',
+    })
+    const inputPanel = new BoxRenderable(setup.renderer, {
+      id: 'input-panel',
+      width: '100%',
+      height: 4,
+      flexShrink: 0,
+    })
+    const detail = new BoxRenderable(setup.renderer, {
+      id: 'detail-block',
+      width: '100%',
+      flexDirection: 'column',
+      flexShrink: 0,
+      paddingTop: 1,
+      paddingBottom: 1,
+    })
+    for (let index = 0; index < 3; index += 1) {
+      const row = new BoxRenderable(setup.renderer, { width: '100%', height: 1, flexShrink: 0 })
+      row.add(new TextRenderable(setup.renderer, { content: `metrics-row-${index}` }))
+      detail.add(row)
+    }
+    const shortcuts = new BoxRenderable(setup.renderer, { width: '100%', height: 3, flexShrink: 0 })
+
+    promptDock.add(inputPanel)
+    promptDock.add(detail)
+    promptDock.add(shortcuts)
+    shell.add(transcriptSlot)
+    shell.add(promptDock)
+    setup.renderer.root.add(shell)
+    await setup.renderOnce()
+
+    assert.equal(detail.height, 5, 'three metrics rows plus top/bottom padding must remain fully visible')
+    assert.ok(promptDock.height >= 12, 'the fixed dock must grow to include all multi-row detail content')
+    assert.ok(promptDock.y + promptDock.height <= shell.height, 'the complete atomic dock must remain inside the terminal')
+    assert.equal(transcriptSlot.height, shell.height - promptDock.height, 'transcript must consume only the remaining height')
+  } finally {
+    setup.renderer.destroy()
+  }
+})

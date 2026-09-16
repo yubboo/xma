@@ -968,3 +968,107 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 - 自动验证：`session-status.test.ts` 8/8、`opentui-runtime.test.ts` 34/34、`terminal-shortcuts.test.ts` 1/1，定向合计 43/43 PASS；Runtime updater 2/2 PASS；9 项静态 Gate 全部 PASS。
 - 残留实机验收：当前环境没有 Windows PowerShell 5.1 / Windows Terminal，因此仍需在含中文 checkout 路径上执行 `xma-dev.bat -> [10]`，以及目视确认常见窗口主状态/metrics/user message 的最终宽度与对比度；在此之前状态保持“验证中”。
 
+
+# 12 Terminal 用户消息整行高亮 / Prompt 垂直节奏与 Metrics 全量直显优化
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：Terminal Host UI / Session Metrics projection 后续优化
+- 影响范围：`TranscriptViewport`、`PromptDock`、`SessionStatusBar`、Home workbench 布局、Terminal UI 回归测试与长期规则
+- 关联历史：#03 Transcript bounded scroll、#04 caret/IME ownership、#05 Session Runtime Metrics、#10 Prompt 状态分层、#11 用户消息高亮与 Metrics 常见宽度恢复
+- 编号说明：#11 已存在且保留为不可变历史；本轮是 #11 的实机视觉反馈与 #05 Metrics 投影后续优化，因此按规则新建下一个 Repair ID #12，不覆盖旧结论。
+
+## 用户可见症状
+
+1. #11 把用户提问做成右侧浅色小块，但实机效果仍像“小标签/气泡”，没有达到用户要求的 Pi 风格整行消息块；文字上下几乎没有内边距，视觉过于拥挤。
+2. Home 状态下 Prompt/Input 区域整体视觉位置偏低；用户希望在不破坏 Logo、Textarea caret 和固定 Dock ownership 的前提下，适度向上提，保持更舒服的上下留白。
+3. Prompt 主面板、Session detail、快捷栏/提示之间垂直间距不足，实机出现“挤在一块”的观感。
+4. #11 的 `sessionStatusItems(metrics, width)` 仍按宽度主动裁字段；Home `dockWidth≈78` 时 `<82` 分支只返回 `权限`，所以图中大量真实 metrics 看起来“突然没了”。用户明确要求：这些 canonical metrics 不要隐藏，要直接显示。
+5. 全屏宽度下完整 metrics 可以显示，说明数据源没有被删；问题在 Terminal formatter + `SessionStatusBar(height=1, overflow=hidden)` 的展示策略，而不是 #05 canonical metrics 丢失。
+
+## 已确认事实与证据
+
+- 当前上传的正式包 `xma-0.1.0.zip` 中 `REPAIR-PROMPTS.md`、`prompt-dock.tsx`、`transcript-viewport.tsx` 与 GitHub `main` 最新提交 `78a39abe74f4937866c04972c66293237e089553` 对应内容一致；本轮以该状态为第一事实源。
+- 当前用户消息实现为外层 `justifyContent="flex-end"` + 内层 `maxWidth=contentWidth*0.72`，只有左右 padding，没有 `paddingTop/paddingBottom`，因此必然渲染成随文字宽度变化的小块。
+- XMA 锁定的 Pi 参考 commit `71dca871bc80b6bc97be37f0ca3189399d651fff` 中 `packages/coding-agent/src/modes/interactive/components/user-message.ts` 使用一个占满传入宽度的 `Box(outputPad, 1, background)` 包住用户 Markdown：横向 padding=`outputPad`、纵向 padding=`1`，背景覆盖整条消息容器，而不是右侧小气泡。本轮只吸收这个布局原则，不复制 Pi 品牌/Renderer/Agent 语义。
+- 当前 `SessionStatusBar` 强制 `height={1}` + `overflow="hidden"`；`sessionStatusItems()` 又在 `<82 / <104 / <124 / <150` 各档裁掉不同字段，因此 Home 的约 78 列 Dock 只剩 permission 是现有代码的确定行为。
+- #05 `SessionRuntimeMetrics` 仍是唯一 metrics 数据源；cache hit、session/turn tokens、compaction truth、turn count、cost、permission 都存在于 canonical projection。不得在 Host 另建账本。
+- `compaction.available=false` 仍意味着阈值未知；“全量直显”不等于伪造 `80%`，未知必须继续显示 `压缩阈值—`。
+
+## 明确排除 / 禁止的错误修法
+
+- 禁止再次把用户消息做成 maxWidth 小气泡、只给左右 padding，或为了“一行”截断长文本。
+- 禁止为了 Home 窄宽度继续裁掉 cache/token/turn/cost/permission；用户已明确要求直接显示。
+- 禁止通过横向超长单行 + `overflow=hidden` 假装“显示了全部字段”；窄宽度必须允许 detail metrics 在 **PromptDock 内部**稳定分成多行，但不能把内部节点拆成 Workbench 的兄弟。
+- 禁止写死 DeepSeek、model id、余额、费用、命中率、token、轮次或 `80%`。
+- 禁止为了把 Prompt 往上提而改坏 #03 Transcript bounded slot、sticky scroll，或让 PromptDock 参与压缩。
+- 禁止把 Home 上移实现成应用层绝对坐标/按具体 Windows 像素定位；必须使用稳定 Flex 布局语义。
+- 禁止修改 Agent Runtime、Provider telemetry、Tool/Approval 语义；本轮属于 Host 投影与视觉节奏优化。
+
+## 修复 / 优化 Prompt
+
+> 以 GitHub `yubboo/xma` 当前 `main` 与用户提供的 `xma-0.1.0.zip` 为第一事实源，严格遵守 `AGENTS.md`、`REPAIR-WORKFLOW.md` 与 #03/#04/#05/#10/#11 既有合同。先完成本 #12 Prompt，再实施代码；不得修完后倒填。
+>
+> 1. **用户消息改成 Pi 风格整行块**：参考锁定 Pi commit 的 `UserMessageComponent`，在 XMA `TranscriptViewport` 的 `contentWidth` 内容列内让 user message 背景占 `width="100%"`；去掉右侧小气泡 `justifyContent=flex-end + maxWidth=72%`。给消息块明确 `paddingLeft/Right=1` 与 `paddingTop/Bottom=1`；短消息也保持整行浅色背景，长消息完整换行。只吸收 full-width + vertical padding 视觉原则，不改变 Transcript 单一 ScrollBox ownership。
+> 2. **Metrics 不再按宽度隐藏**：`sessionStatusItems()` 生成固定的完整 canonical detail 项目集合：billing、本次命中、平均命中、会话 tokens、本次 tokens、压缩阈值、当前会话轮次、真实会话费用（仅真实可用时）、permission。不同宽度只决定如何排成几行，不决定字段是否存在；unknown 继续显示 `—`。
+> 3. **新增纯 formatter 行打包**：建立 Host-neutral `sessionStatusRows(metrics, width)`（或等价纯函数），按 Terminal 可用列宽把完整 items 稳定打包为 1~N 行。常见/全屏尽量一行；Home 约 78 列允许 2~3 行，字段一个也不丢。行打包需要考虑中日韩宽字符的终端列宽，不能只用 JS `string.length` 造成明显溢出。
+> 4. **SessionStatusBar 自适应高度**：删除固定 `height=1 + overflow=hidden` 的“裁掉即算完成”策略；按 `sessionStatusRows` 渲染多个 `height=1` 行，并在 detail block 上增加上下留白，使 metrics 与主 Prompt、快捷键不再贴在一起。多行仍是 `PromptDock` 内部原子内容，外层 `xiaoyu-prompt-dock` 继续唯一 `flexShrink=0`。
+> 5. **Prompt Dock 垂直节奏**：输入 panel、headline、detail metrics、快捷栏、提示区之间建立稳定 padding/gap。用户要求文字上下有内边距，因此不要把所有信息压成连续 1 行。调整后必须避免常见 Windows Terminal 高度下挤出 viewport；Transcript 继续只消费剩余高度。
+> 6. **Home Prompt 适度上提**：不要绝对定位。优先通过 Home 模式父容器的对称/非对称 flex 留白、Logo→Dock 间距与 PromptDock 自身新增高度共同实现；必要时加入 Home-only 的受控底部 spacer，使 Home 内容组视觉中心上移约 1~2 行。Conversation 模式不得因此改变 Transcript/Dock ownership。
+> 7. **长期规则同步**：更新 `AGENTS.md` / `DEVELOPMENT-RULES.md`，把 #10/#11 “空间不足可裁 detail 字段、禁止多行”的旧规则修正为当前用户确认的新合同：headline 仍保护右侧 Model truth；detail canonical metrics 不隐藏，窄宽度允许在 PromptDock 内稳定换成多行。用户消息从“右对齐小块”更新为“content column 内 full-width user band”。
+> 8. **测试必须可失败**：纯 formatter 测试验证 78/100/136/220 等宽度下 `sessionStatusRows` 合并后字段集合完全一致、没有隐藏，且 78 列产生多行；OpenTUI layout 测试增加 full-width user message + vertical padding / Prompt detail 多行仍留在 viewport 的真实 Renderable 断言；静态合同只补 ownership/禁止旧 maxWidth bubble 等无法通过 layout test 表达的边界。
+> 9. **文档与发行**：完成后回填本条最终根因、实际修改、测试/Gate、残留 Windows 实机验收；追加 `UPDATE-LOG.md`，若状态变化同步 `PROJECT-STATUS.md`。重新生成 Source Manifest，正式交付仍叫 `xma-0.1.0.zip` + `xma-0.1.0.sha256.txt`，不得使用 repair/final/v2 等正式包名。
+
+## 不允许回归
+
+- #03：Transcript 仍是唯一 ScrollBox owner；mouse wheel / PageUp/Down / sticky-bottom 行为不变。
+- #04：focused OpenTUI Textarea 继续原生拥有 caret/IME；不得新增 cursor timer/绝对坐标。
+- #05：所有 metrics 来自 canonical `SessionRuntimeMetrics`，unknown 就是 unknown。
+- #08：Ctrl+C selection-first 路由不变。
+- #10/#11：主状态行仍保持 `Build ... context/account ... ● canonical-model · reasoning`，正常态不重新常驻 Provider 品牌与“模型已就绪”。
+- PromptDock 仍是 Workbench 中唯一 `flexShrink=0` 原子；即使 detail 变成多行，也不能把其内部行拆到父级。
+- 长用户提问不能被截断；Assistant/Activity 既有左侧槽位与流式增量不变。
+
+## 验收条件
+
+- 用户消息在 Transcript `contentWidth` 内表现为 **一整条浅色背景 band**，左右各至少 1 列、上下各 1 行内边距；“你好”不再只是右上角一块小白标签。
+- Home/Conversation Prompt 输入区与 metrics/快捷栏之间明显更松；Home 输入区相对 #11 实机截图适度上提，不再视觉坠底。
+- 约 78 列 Home Dock、常见 100~140 列、全屏宽度下，detail canonical metrics 都不因宽度被删除。窄屏可以变 2~3 行，但合并文本仍包含 billing / 两项命中率 / session tokens / turn tokens / compaction / turn count / cost（可用时）/ permission。
+- detail 多行没有横向隐藏，也没有把快捷栏/提示与 metrics 粘成一块；PromptDock 仍完整留在 viewport。
+- `compaction.available=false` 显示 `压缩阈值—`，只有 canonical threshold 真实存在才显示真实百分比。
+- 定向测试、Runtime updater、项目 Gate 与 Source Manifest/ZIP 一致性通过；当前环境不能替代的 Windows Terminal 视觉 E2E 明确保留为待实机验收。
+
+## #12 实施结果
+
+### 最终根因
+
+- **用户消息视觉根因**：#11 使用 `justifyContent=flex-end + maxWidth≈72%`，背景面积由短文本宽度决定，并且只有左右 padding，所以“你好”必然表现成右上角小标签；这与用户要求的 Pi-style full-width message band 不一致。
+- **Metrics 消失根因**：#11 formatter 仍把 `width` 同时用于“决定字段集合”，Home `dockWidth≈78` 会走极窄分支；同时 `SessionStatusBar` 固定 `height=1 + overflow=hidden`，导致即使增加内容也无法在窄宽度可靠展示。#05 canonical metrics 本身没有被删除。
+- **拥挤/位置根因**：detail 没有自己的垂直 breathing room，Home 的居中工作组又没有为新增信息高度预留视觉重心，因此输入/状态/快捷区在 Windows Terminal 中显得贴得过紧且偏低。
+
+### 实际修改
+
+- `ui/transcript-viewport.tsx`：user item 改为 Transcript `contentWidth` 内 `width=100%` band，`paddingLeft/Right/Top/Bottom=1`，移除右侧 maxWidth 小气泡；Assistant/Activity 与 ScrollBox ownership 不变。
+- `ui/session-status.ts`：`sessionStatusItems()` 固定生成完整 canonical detail；新增 `terminalTextColumns()` 与 `sessionStatusRows()`，按 Terminal 列宽（含 CJK/常见 emoji 双列）打包为多行，宽度只影响换行、不影响字段存在。
+- `ui/session-status-bar.tsx`：detail 改为自适应 column rows，去掉固定 `height=1 + overflow=hidden`，并增加上下/左右 padding；仍位于单一 `PromptDock` 原子内部。
+- `app.tsx`：Home/center 模式使用 Flex `paddingBottom` 形成轻微向上视觉偏移，不使用绝对坐标，不改变 Conversation bounded slot。
+- 测试：formatter 锁定 78/100/136/220 列下字段集合恒定；静态 Host 合同锁定 full-width padded user band / no maxWidth bubble / multi-row status；新增真实 OpenTUI Renderable layout 场景验证 band 尺寸与高 Dock 留在 viewport。
+- 长期规则：`AGENTS.md` / `DEVELOPMENT-RULES.md` / `CODEMAP.md` 已把旧“窄宽可裁 detail、用户消息右对齐小块”的合同更新为 #12 用户确认后的 full-width band + detail no-hide/multi-row 合同。
+
+### 自动验证与限制
+
+- `session-status.test.ts`：8/8 PASS。
+- `opentui-runtime.test.ts + terminal-shortcuts.test.ts`：35/35 PASS。
+- `opentui-layout.test.ts` 已增加真实 Renderable 用例，但当前沙箱没有 Workspace `node_modules/@opentui/core`；尝试经 Corepack 使用项目 pnpm 时 registry DNS 返回 `EAI_AGAIN`，因此本项保留为**未在当前环境执行**，禁止伪报 PASS。
+- Runtime updater：2/2 PASS。
+- 修改涉及的 TS/TSX 文件使用本机 TypeScript `transpileModule` 完成语法转译检查：PASS。
+- Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository：9/9 Gate PASS。
+- 完整 `pnpm check` 同理由于依赖不可用不能在当前沙箱执行。Source Manifest 已重新生成 242 个受管源码文件；候选 ZIP 为 242 files + manifest = 243 entries，独立解压后 missing=0 / extra=0 / hash differences=0，并从解压树再次通过 formatter 8/8、静态/快捷键 35/35、Runtime updater 2/2 与 9 项 Gate。
+
+### Windows 实机待验收
+
+- “你好”等短消息应显示为 transcript 内容列内的一整条浅色 band，文字上下有明显留白；长问题完整换行。
+- Home Logo + Prompt 组相对 #11 轻微上提，Prompt/detail/hints 不再粘连。
+- Home 约 78 列、常见 100~140 列与全屏宽度均能直接看到完整 canonical detail；窄屏允许 2~3 行，但不能少字段。
+- PromptDock 始终留在 viewport；长历史滚动、sticky follow、caret/IME、Ctrl+C 与实时 streaming 不回归。
+

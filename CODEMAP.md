@@ -42,7 +42,7 @@
 | CLI / TUI | `apps/cli/src/`（Host 入口/Trust/Provider 状态/权限 UI）+ `apps/cli/opentui-runtime/`（Bun/OpenTUI Active Renderer；只投影 Runtime，不拥有 Agent 状态） |
 | Work Mode / Plan handoff | `packages/xma-agent-loop/src/work-mode.ts` + `plan-control.ts` + `packages/xma-session/src/contract.ts` | 模型可见 Build/Plan/Compose；`xma.plan.ready` → durable Plan → Host Yes/No → Build |
 | Terminal Ctrl+C shortcut contract | `apps/cli/src/terminal-shortcuts.ts` + `apps/cli/opentui-runtime/app.tsx` | selection copy → busy cancel → modal cancel → guarded exit |
-| Terminal Session Metrics projection | `apps/cli/opentui-runtime/ui/session-status.ts` + `session-status-bar.tsx` + `prompt-dock.tsx` | #05 canonical metrics → headline(context/account) + detail(billing/tokens/cost/permission)，不复制 Provider 业务逻辑 |
+| Terminal Session Metrics projection | `apps/cli/opentui-runtime/ui/session-status.ts` + `session-status-bar.tsx` + `prompt-dock.tsx` | #05 canonical metrics → headline(context/account) + 完整 detail rows(cache/tokens/compaction/cost/permission)；窄宽度只换行不隐藏，不复制 Provider 业务逻辑 |
 | Terminal Activity presentation | `apps/cli/opentui-runtime/ui/activity-view.ts` + `transcript-viewport.tsx` | 真实 elapsed 的“已处理/正在思考/用时”投影；不暴露 raw reasoning |
 | Desktop | `apps/desktop/`（GUI Host；消费同一 Runtime/App Protocol，不复制 Agent/Permission） |
 | Web | `apps/web/`（Browser UI Host；云部署时 Native capability 默认作用于 Server Host） |
@@ -52,7 +52,7 @@
 | 迁移期旧入口 | `core/`（Compatibility Facade only） |
 | Terminal OpenTUI 父级协调 | `apps/cli/opentui-runtime/app.tsx` |
 | Terminal Prompt Dock | `apps/cli/opentui-runtime/ui/prompt-dock.tsx`（单一 `flexShrink=0` Dock；Textarea/状态/快捷键/提示的唯一布局 owner） |
-| Terminal Transcript viewport | `apps/cli/opentui-runtime/ui/transcript-viewport.tsx`（会话唯一 ScrollBox owner，只消费 Prompt 之外的剩余高度） |
+| Terminal Transcript viewport | `apps/cli/opentui-runtime/ui/transcript-viewport.tsx`（会话唯一 ScrollBox owner，只消费 Prompt 之外的剩余高度；用户消息为 contentWidth 内 full-width padded band） |
 | Terminal UI 子模块 | `apps/cli/opentui-runtime/ui/`（Transcript / Prompt / Decoration / Logo / Dialog） |
 | Terminal 子模块稳定合同 | `apps/cli/opentui-runtime/contracts.ts` |
 

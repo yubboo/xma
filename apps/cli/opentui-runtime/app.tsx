@@ -1081,6 +1081,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         alignItems="center"
         justifyContent={centerMode() ? 'center' : 'flex-start'}
         paddingTop={1}
+        paddingBottom={centerMode() ? 3 : 0}
       >
         <Show when={showLogo()}>
           <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>

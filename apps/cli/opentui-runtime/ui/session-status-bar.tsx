@@ -1,13 +1,13 @@
 /**
- * 文件作用：把 Host-neutral SessionRuntimeMetrics 投影成 Prompt 主状态行的精简摘要与下方次要指标。
+ * 文件作用：把 Host-neutral SessionRuntimeMetrics 投影成 Prompt 主状态行摘要与下方全量 detail block。
  * 关联模块：session-status.ts、prompt-dock.tsx、contracts.ts。
- * 当前实现：Headline 显示 context + 真实账户/套餐摘要；Detail Row 恢复真实 cache/tokens/compaction/turn/cost/permission，并按宽度裁标签。
+ * 当前实现：Headline 显示 context + 真实账户/套餐摘要；Detail 不隐藏 canonical metrics，窄宽度在 PromptDock 内稳定分成多行。
  * 职责边界：禁止在组件内按 Provider 品牌计算 usage、价格、余额或套餐额度。
  */
 
-import { Show } from 'solid-js'
+import { For, Show } from 'solid-js'
 import type { SessionRuntimeMetrics } from '../contracts.ts'
-import { sessionHeadlineItems, sessionStatusItems } from './session-status.ts'
+import { sessionHeadlineItems, sessionStatusRows } from './session-status.ts'
 import { COLOR } from './theme.ts'
 
 export function SessionStatusHeadline(props: { width: number; metrics: SessionRuntimeMetrics }) {
@@ -31,19 +31,24 @@ export function SessionStatusHeadline(props: { width: number; metrics: SessionRu
 }
 
 export function SessionStatusBar(props: { width: number; metrics: SessionRuntimeMetrics }) {
-  const items = () => sessionStatusItems(props.metrics, props.width)
+  const rows = () => sessionStatusRows(props.metrics, props.width)
   return (
-    <Show when={items().length > 0}>
+    <Show when={rows().length > 0}>
       <box
         id="xiaoyu-session-status-bar"
         width="100%"
-        height={1}
+        flexDirection="column"
         flexShrink={0}
-        overflow="hidden"
+        paddingTop={1}
+        paddingBottom={1}
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={COLOR.faint}>{items().join(' · ')}</text>
+        <For each={rows()}>{row => (
+          <box width="100%" flexShrink={0}>
+            <text fg={COLOR.faint}>{row}</text>
+          </box>
+        )}</For>
       </box>
     </Show>
   )
