@@ -53,7 +53,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 - `XMA-Sync.bat`：负责把源码包同步到**已经存在且 origin 正确**的 Git 工作目录；不 `git init`、不改 origin、不创建替代 worktree，也不安装/刷新任何依赖。正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 checkout 本地 `.git/xma-state/source-sync-last.txt`（Git worktree 使用其真实 gitdir）；复制/删除结束后再对 Manifest 全量受管文件做 SHA-256 源/目标复核，复核失败直接报错，禁止假成功。若当前用户已经注册过开发态 `xiaoyu/xma`，Sync 会只重绑开发 shim/User PATH 到本次目标 checkout 并做 `source-root.txt` 自检，不运行 `pnpm install`/Cargo/winget；从未注册过开发 shim 时不新增 PATH。源码包专用 `.xma-package` 不属于长期 Git 工作目录，旧版遗留会在确认目标身份后清理。
 - `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。由于 Windows 文件系统没有 Unix executable bit，暂存后必须用纯 Git `update-index --chmod=+x` 保证 `xma-dev`、`scripts/unix/xma-console.sh`、`scripts/install/xma-install.sh` 在 Linux/macOS clone 后可执行。
-- `xma-dev.bat`：负责本地基础环境、项目运行、检查和构建；主菜单 `[10] 更新项目` 可在正确 `yubboo/xma` clone 中执行安全更新（fetch + pull --rebase --autostash）或经明确确认后强制恢复 `origin/main`。源码包目录不会开放该更新入口。
+- `xma-dev.bat`：负责本地基础环境、项目运行、检查和构建；主菜单 `[10] 同步 GitHub 最新源码` 只对正确 `yubboo/xma` clone 生效。它先 `fetch --prune` 并显示 HEAD/origin-main/ahead-behind；安全模式原地 `pull --rebase --autostash`，强制模式在明确 `YES` 后先写 `.git/xma-state/update-backups/` 恢复材料再 `reset --hard origin/main`。不删除 clone、不自动 git clean、复用 runtime/node_modules/.cache 等本地状态。源码包目录不会开放该更新入口。
 
 ## xma-dev.bat 的依赖准备规则
 

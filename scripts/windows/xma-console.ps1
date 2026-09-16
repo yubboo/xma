@@ -1,7 +1,7 @@
 ﻿<#
 文件作用：XMA Windows 开发控制台，统一开发环境准备、Web/CLI/Desktop 运行、构建发布、全量检查和 Git 源码更新。
 关联模块：xma-dev.bat、xma-prepare.ps1、apps/desktop、package.json、Cargo.toml、xma-build-release.ps1。
-当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 固定从当前项目 runtime\rust 解析并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上执行安全更新或显式强制恢复 GitHub main。
+当前实现：[1] 自动确保 Git/Node/pnpm/Workspace JS/Rust/MSVC/Native crates 等当前源码所需开发依赖完整并注册开发态 xiaoyu/xma 命令；Bun/OpenTUI/Solid 统一由 pnpm Workspace node_modules 管理，[4]/[7] 只验证已安装依赖；Rust/Cargo 固定从当前项目 runtime\rust 解析并做 offline 校验；Desktop 以 Electron 41.2.0 为主运行时，Tauri 2 为备用运行时；[10] 在当前正确 Git clone 上原地同步 GitHub 最新 main，支持安全更新、状态核验与显式强制恢复。
 职责边界：GitHub push 仍只由 XMA-GitHub.bat 负责；[10] 只更新当前 clone，不提交/推送；运行/检查阶段不偷偷安装依赖；Electron Chromium Runtime 与 Tauri Rust crates 仍只在用户明确选择对应 Desktop 后准备。
 #>
 
@@ -92,9 +92,96 @@ function Assert-XmaGitCloneForUpdate {
 function Confirm-XmaGitReset {
   Write-Host ''
   Write-Host '[警告] 强制恢复会丢弃 Git 已跟踪文件的本地修改，并让源码与 origin/main 一致。' -ForegroundColor Yellow
-  Write-Host '[保留] .git/xma-state、runtime、node_modules、.cache、dist 等 Git 忽略的本地依赖/缓存不会被 reset --hard 删除；历史 xma-path 如仍存在也不会被 reset。' -ForegroundColor DarkGray
+  Write-Host '[备份] 如检测到已跟踪修改，会先写入 .git/xma-state/update-backups/<时间>/tracked.patch。' -ForegroundColor DarkGray
+  Write-Host '[保留] 未跟踪文件与 Git 忽略的 runtime、node_modules、.cache、dist、.git/xma-state 等本地依赖/缓存不会被删除。' -ForegroundColor DarkGray
   $answer = (Read-Host '确认强制恢复？请输入 YES 继续').Trim()
   return ($answer -ceq 'YES')
+}
+
+function Get-XmaGitSyncState {
+  $head = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','HEAD')).Trim()
+  $remote = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','origin/main')).Trim()
+  $counts = (Invoke-XmaGitCapture -ArgumentList @('rev-list','--left-right','--count','HEAD...origin/main')).Trim() -split '\s+'
+  if ($counts.Count -lt 2) { throw "无法解析 Git ahead/behind：$($counts -join ' ')" }
+  $dirty = (Invoke-XmaGitCapture -ArgumentList @('status','--short')).Trim()
+  return [pscustomobject]@{
+    Head = $head
+    Remote = $remote
+    Ahead = [int]$counts[0]
+    Behind = [int]$counts[1]
+    Dirty = (-not [string]::IsNullOrWhiteSpace($dirty))
+    Status = $dirty
+  }
+}
+
+function Write-XmaGitSyncState {
+  param([Parameter(Mandatory = $true)]$State, [string]$Prefix = '状态')
+  $headShort = if ($State.Head.Length -ge 8) { $State.Head.Substring(0, 8) } else { $State.Head }
+  $remoteShort = if ($State.Remote.Length -ge 8) { $State.Remote.Substring(0, 8) } else { $State.Remote }
+  Write-Host "[$Prefix] 本地 HEAD=$headShort · origin/main=$remoteShort · ahead=$($State.Ahead) · behind=$($State.Behind)" -ForegroundColor DarkGray
+  if ($State.Dirty) {
+    Write-Host "[$Prefix] 工作区存在本地修改；安全同步会保留，强制恢复会先备份已跟踪修改。" -ForegroundColor Yellow
+  } else {
+    Write-Host "[$Prefix] 工作区干净。" -ForegroundColor DarkGray
+  }
+}
+
+function Save-XmaTrackedUpdateBackup {
+  param(
+    [Parameter(Mandatory = $true)][string]$Head,
+    [Parameter(Mandatory = $true)][string]$Remote,
+    [Parameter(Mandatory = $true)][int]$Ahead
+  )
+  $trackedStatus = (Invoke-XmaGitCapture -ArgumentList @('status','--short','--untracked-files=no')).Trim()
+  if ([string]::IsNullOrWhiteSpace($trackedStatus) -and $Ahead -eq 0) { return $null }
+
+  $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+  $backupDir = Join-Path $Root ".git\xma-state\update-backups\$stamp"
+  New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+  @(
+    "created=$(Get-Date -Format o)"
+    "head=$Head"
+    "originMain=$Remote"
+    "ahead=$Ahead"
+    "worktree=$Root"
+    'reason=xma-dev [10] force restore backup'
+  ) | Set-Content -LiteralPath (Join-Path $backupDir 'metadata.txt') -Encoding UTF8
+
+  if (-not [string]::IsNullOrWhiteSpace($trackedStatus)) {
+    $patchPath = Join-Path $backupDir 'tracked.patch'
+    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('diff','--binary',"--output=$patchPath",'HEAD')
+    Write-Host "[备份] 已跟踪未提交修改：$patchPath" -ForegroundColor Green
+  }
+
+  if ($Ahead -gt 0) {
+    $mergeBase = (Invoke-XmaGitCapture -ArgumentList @('merge-base','HEAD','origin/main')).Trim()
+    $commitPatchPath = Join-Path $backupDir 'local-commits.patch'
+    Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('diff','--binary',"--output=$commitPatchPath",$mergeBase,'HEAD')
+    Write-Host "[备份] 本地提交相对共同基线的内容：$commitPatchPath" -ForegroundColor Green
+  }
+
+  Write-Host "[备份] 恢复元数据：$(Join-Path $backupDir 'metadata.txt')" -ForegroundColor DarkGray
+  return $backupDir
+}
+
+function Test-XmaDependencyManifestChanged {
+  param([Parameter(Mandatory = $true)][string]$Before, [Parameter(Mandatory = $true)][string]$After)
+  if ($Before -eq $After) { return $false }
+  $changed = Invoke-XmaGitCapture -ArgumentList @('diff','--name-only',"$Before..$After")
+  foreach ($line in @($changed -split "`r?`n")) {
+    $normalized = $line.Trim().Replace('\\','/')
+    if ($normalized -match '(^|/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|Cargo\.toml|Cargo\.lock)$') { return $true }
+  }
+  return $false
+}
+
+function Write-XmaUpdateNextStep {
+  param([bool]$DependenciesChanged)
+  if ($DependenciesChanged) {
+    Write-Host '[下一步] 检测到依赖清单变化：请重新运行 xma-dev.bat → [1]，让 pnpm/Rust 依赖与最新源码同步。' -ForegroundColor Yellow
+  } else {
+    Write-Host '[下一步] 依赖清单未变化；关闭当前控制台后可直接重新运行 xma-dev.bat → [4]。如需完整复核也可运行 [1]/[7]。' -ForegroundColor Green
+  }
 }
 
 function Update-XmaProject {
@@ -102,33 +189,60 @@ function Update-XmaProject {
   while ($true) {
     Write-Host ''
     Write-Host '====================================================================' -ForegroundColor DarkCyan
-    Write-Host '  XMA 项目更新' -ForegroundColor Cyan
+    Write-Host '  XMA · 同步 GitHub 最新源码' -ForegroundColor Cyan
     Write-Host "  Repo: $origin" -ForegroundColor DarkGray
     Write-Host "  Worktree: $Root" -ForegroundColor DarkGray
+    Write-Host '  原地更新当前 clone；不需要删除 xma 目录重新 git clone。' -ForegroundColor Green
     Write-Host '====================================================================' -ForegroundColor DarkCyan
-    Write-Host '  [1] 安全更新                         fetch + pull --rebase --autostash' -ForegroundColor Green
-    Write-Host '      保留本地修改；如出现冲突会停止并明确提示。' -ForegroundColor DarkGray
-    Write-Host '  [2] 强制恢复 GitHub main             fetch + reset --hard origin/main'
-    Write-Host '      丢弃已跟踪文件本地修改；不删除 Git 忽略的依赖/缓存。' -ForegroundColor DarkGray
+    Write-Host '  [1] 安全同步 GitHub main             ← 推荐' -ForegroundColor Green
+    Write-Host '      fetch --prune + pull --rebase --autostash；保留本地修改，冲突时停止。' -ForegroundColor DarkGray
+    Write-Host '  [2] 强制恢复 GitHub main' -ForegroundColor Yellow
+    Write-Host '      先备份已跟踪修改，再 reset --hard origin/main；不删除未跟踪/忽略缓存。' -ForegroundColor DarkGray
     Write-Host '  [0] 返回'
     Write-Host ''
     $updateChoice = (Read-Host '请选择更新方式').Trim()
     switch ($updateChoice) {
       '1' {
-        Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main')
-        Write-Host '[更新] 正在安全同步当前分支...' -ForegroundColor Cyan
+        $beforeHead = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','HEAD')).Trim()
+        Write-Host '[同步] 正在刷新 origin/main 与远端删除引用...' -ForegroundColor Cyan
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','--prune','origin','main')
+        $beforeState = Get-XmaGitSyncState
+        Write-XmaGitSyncState -State $beforeState -Prefix '同步前'
+        if ($beforeState.Behind -eq 0) {
+          if ($beforeState.Ahead -eq 0) {
+            Write-Host '[完成] 当前源码已经是 GitHub main 最新版本，无需重新 clone。' -ForegroundColor Green
+          } else {
+            Write-Host '[完成] origin/main 没有比本地更新；当前 main 含本地提交，未做破坏性覆盖。' -ForegroundColor Green
+          }
+          Write-XmaUpdateNextStep -DependenciesChanged:$false
+          exit 0
+        }
+        Write-Host '[同步] 检测到 GitHub 新提交，正在原地安全更新当前 clone...' -ForegroundColor Cyan
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main')
-        Write-Host '[完成] XMA 源码已安全更新。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步新版本新增/调整的全部工具与依赖。' -ForegroundColor Green
+        $afterState = Get-XmaGitSyncState
+        Write-XmaGitSyncState -State $afterState -Prefix '同步后'
+        if ($afterState.Behind -ne 0) { throw "同步完成后仍落后 origin/main $($afterState.Behind) 个提交，已停止；请检查 Git 输出。" }
+        $dependenciesChanged = Test-XmaDependencyManifestChanged -Before $beforeHead -After $afterState.Head
+        Write-Host '[完成] XMA 已在原目录同步到 GitHub 最新 main；本地依赖/缓存目录保持不动。' -ForegroundColor Green
+        Write-XmaUpdateNextStep -DependenciesChanged:$dependenciesChanged
         exit 0
       }
       '2' {
         if (-not (Confirm-XmaGitReset)) { Write-Host '[取消] 未执行强制恢复。' -ForegroundColor Yellow; continue }
-        Write-Host '[更新] 正在获取 origin/main...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','origin','main')
+        $beforeHead = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','HEAD')).Trim()
+        Write-Host '[同步] 正在刷新 origin/main 与远端删除引用...' -ForegroundColor Cyan
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','--prune','origin','main')
+        $beforeState = Get-XmaGitSyncState
+        Write-XmaGitSyncState -State $beforeState -Prefix '恢复前'
+        [void](Save-XmaTrackedUpdateBackup -Head $beforeHead -Remote $beforeState.Remote -Ahead $beforeState.Ahead)
         Write-Host '[恢复] 正在用 origin/main 覆盖当前已跟踪源码...' -ForegroundColor Yellow
         Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('reset','--hard','origin/main')
-        Write-Host '[完成] 当前源码已强制恢复到 GitHub main。请关闭本控制台并重新运行 xma-dev.bat → [1]，自动同步当前源码全部工具与依赖。' -ForegroundColor Green
+        $afterState = Get-XmaGitSyncState
+        Write-XmaGitSyncState -State $afterState -Prefix '恢复后'
+        if ($afterState.Ahead -ne 0 -or $afterState.Behind -ne 0) { throw '强制恢复后 HEAD 与 origin/main 仍不一致，已停止。' }
+        $dependenciesChanged = Test-XmaDependencyManifestChanged -Before $beforeHead -After $afterState.Head
+        Write-Host '[完成] 当前 clone 已强制恢复为 GitHub main；未执行 git clean，未跟踪/忽略的依赖缓存仍保留。' -ForegroundColor Green
+        Write-XmaUpdateNextStep -DependenciesChanged:$dependenciesChanged
         exit 0
       }
       '0' { return }
@@ -435,7 +549,7 @@ while ($true) {
   Write-Host '  [7] 全量检查                          使用已准备依赖，不偷偷下载'
   Write-Host '  [8] 刷新 · JavaScript Runtime         pnpm latest：Bun / OpenTUI / Solid'
   Write-Host '  [9] 单独准备 · Rust / Cargo           项目 runtime\rust · stable + rustfmt + crates'
-  Write-Host '  [10] 更新项目                         安全更新 / 强制恢复 GitHub main'
+  Write-Host '  [10] 同步 GitHub 最新源码              原地更新，无需删除 xma 重新 clone'
   Write-Host '  [0] 退出'
   Write-Host ''
   $choice = (Read-Host '请选择').Trim()

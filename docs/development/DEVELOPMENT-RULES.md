@@ -155,6 +155,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 
 - 中文 canonical identity 只有“**小鱼 / 小鱼管理智能体**”；Agent Context 必须显式告诉真实模型这一身份，不能只提供 `Xiaoyu` 拼音让模型自行音译。中文回复不得出现“小禹 / 小宇 / 晓雨”等替代名。
 - Provider 的 SSE text/reasoning delta 必须保持增量语义穿过 `Provider → RuntimeLiveEvent → Host Renderer`；Tool Call/Result 通过同一 Runtime 事件面投影。不得在 TUI 层等完整 Turn 结束后再一次性显示。
+- `reasoning-delta` 的原始正文属于隐藏模型推理，不得进入默认 Transcript/Activity；Host 只能把它当作“模型正在分析”的阶段信号。可展开 Activity 只展示真实公开状态、脱敏 Tool 行为和显式 public plan/control 事件，elapsed 必须来自真实 Turn 生命周期。
 - Active Terminal 默认把原始 `reasoning-delta` 投影为实时“正在思考”状态，不直接显示原始思维正文；首个正式 `text-delta` 到达时移除思考占位并立即开始回答流式输出。只有 Provider 明确提供面向用户的 reasoning summary 且协议能与原始 reasoning 区分时才允许展示摘要；不得本地伪造“思考过程”。
 - TUI 渲染器如果因为差分缓存导致流式区域漏刷，必须在 Host 层做有节流的强制 repaint 或等价修复，并补回归测试；不能把“内存里已收到 chunk”冒充“用户已经实时看到”。
 - Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。Active TUI 必须由固定 Bun/OpenTUI Renderer 统一管理 mouse、selection、focus、caret 与 terminal lifecycle；主 Prompt 必须是 OpenTUI 原生 Textarea，Tab/Shift+Tab 模式切换后必须把真实输入焦点留在 Textarea，Esc/Ctrl+P/Ctrl+K/Dialog 也必须走同一 key/focus 系统。Active Renderer 禁止输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或自绘假硬件光标，避免 Windows Terminal Text Cursor Indicator 锚点漂移；Windows Text Cursor Indicator 若稳定跟随真实 caret，视为 OS 辅助功能正常装饰，不得由 XMA 静默改系统设置或因此关闭原生 Textarea caret；只有锚点漂移/错位才属于 Host cursor bug。旧 Pi TUI 只允许留在 Workspace Trust/纯兼容层。Home/Transcript/Prompt/快捷栏必须共享响应式居中宽度，左右留白对称；Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
@@ -407,3 +408,5 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - OpenTUI/Solid 子模块必须显式 import 自己调用的 hooks/helpers；模块拆分后必须删除父级遗留 import，并用测试锁定 ownership，防止 `usePaste is not defined` 一类运行时错误。
 - Provider Setup、Tool Approval、命令面板等 modal 必须被局部 ErrorBoundary/等价边界保护。子 modal 异常只能 settle 当前操作并恢复 Prompt；不得让整个 renderer root 停止响应。
 - 异常恢复必须清除 stale dialog/setup state、settle awaiting Promise、恢复 focus/caret；不得删除已经成功持久化的 Provider Profile 或 Secret reference。
+
+- Windows `xma-dev.bat → [10] 同步 GitHub 最新源码` 必须原地更新正确 `yubboo/xma` clone：先 fetch/prune + ahead/behind 核验，安全模式保留本地修改，强制模式先在 `.git/xma-state/update-backups/` 留恢复材料再 reset；禁止自动删仓库重 clone、禁止自动 git clean。

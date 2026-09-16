@@ -936,3 +936,45 @@
 - 新视觉现象：输入框真实 caret 上下出现蓝色水滴标记。截图与 Microsoft Windows 辅助功能语义一致，确认这是系统“文本光标指示器（Text cursor indicator）”，不是 XMA/OpenTUI 自绘第二套 cursor。
 - 决策：保持 #71/#80 已验证的 focused Textarea 原生 caret ownership；禁止为了隐藏 OS 指示器重新关闭 `showCursor`、恢复 `CURSOR_MARKER`/软件假光标或全局 cursor timer。XMA 也不得静默修改 Windows 辅助功能设置。
 - 用户控制：若不希望显示蓝色上下标记，由用户在 Windows“设置 → 辅助功能 → 文本光标 → 文本光标指示器”关闭或调整大小/颜色。未来若蓝色标记发生漂移而不是稳定跟随 caret，再开新的 Repair 编号调查 Host cursor ownership。
+
+##84 · 统一 Session Runtime Metrics 与 Provider Telemetry
+
+- 日期：2026-09-16
+- 目的：把 Terminal 底部运行指标从品牌/UI 私有字符串提升为 Host-neutral `SessionRuntimeMetrics`，供 CLI/Desktop/Web/Server 后续复用同一真实数据源。
+- 数据：从 durable Session events + 当时真实 Provider/Profile/Model 投影会话/本轮 tokens、请求数、轮次、cache、latency、context、API cost、余额、subscription quota、permission 与 compaction 状态；未知字段显示 `—`，禁止示例/假值。
+- Provider：Telemetry Registry 区分 API/subscription/unknown；DeepSeek official 仅在官方 base URL + 可读 credential 时允许调用真实 `/user/balance`，第三方 OpenAI-compatible 不外发凭据。
+- Context：占用按最近真实 Step 的 input tokens / 该 Step 模型 context window 计算，小比例保留 `<0.1%/0.x%` 精度，不再四舍五入成 0%。
+- 状态：核心/Terminal 已实现，Desktop/Web 后续只消费同一 Contract，不复制统计逻辑。
+
+##85 · Provider 配置 SecretInput 与 TUI 局部错误隔离
+
+- 日期：2026-09-16
+- 实机根因：模块化后 `SecretInput` 已迁入 `ui/dialogs.tsx`，但 `usePaste/decodePasteBytes/PasteEvent` import 仍留在父级，进入 API Key 输入即抛 `usePaste is not defined`，异常又会让当前 modal/render 链失活。
+- 修复：paste hook/helper ownership 回到 Dialog 模块；Provider Setup / Model Picker / SecretInput 等 modal 增加局部 ErrorBoundary + Promise settlement，异常只关闭当前流程并恢复 Prompt focus，不允许拖死整个 TUI。
+- 安全：Secret 粘贴仍只显示掩码，明文不进入画面/日志；取消/失败不破坏已成功持久化的 Profile。
+
+##86 · 真实模型身份、Work Mode、三档权限与 Plan 交接
+
+- 日期：2026-09-16
+- Model Identity：Xiaoyu 固定为 Agent/Product identity；每个真实 Step 继续由用户选定的 Provider/Profile/Model 执行，禁止额外隐藏“小鱼模型”替代旗舰模型决策。
+- Work Mode：Build/Plan/Compose 与 Permission Profile 分离。Plan ToolPlan 强制只读；Work Mode 进入 model-visible Context，让真实模型知道自己当前模式和能力边界。
+- Permission：`ask/smart/full` 进入真实 Tool Policy；ask 产品 UI 使用 fail-safe `Yes/No`，Yes 仅 allow-once，No durable deny 后对应 Tool 零执行。
+- Plan Handoff：新增纯 control `xma.plan.ready`；只有真实模型明确计划已就绪时才生成 durable Plan。Host 再询问 Yes/No；No 保留 Plan，Yes 记录 decision、切 Build，并让后续 Turn 读取 retained Plan 执行。
+
+##87 · Ctrl+C 文本选择复制与中止/退出路由
+
+- 日期：2026-09-16
+- 根因：Renderer 已 `exitOnCtrlC=false`，但 XMA Root handler 未优先检查真实 Selection，空闲 Ctrl+C 直接 onExit，导致鼠标选择模型回复后无法正常复制。
+- 路由：真实选区 → OpenTUI OSC52/Host Clipboard 复制；无选区+busy → Abort 当前 Turn；modal → cancel/deny；idle 首次 Ctrl+C 只提示，短时间二次 Ctrl+C 或 `/exit` 才退出。
+- 兼容：Esc 有选区只清 Selection；复制失败不退出、不清 Transcript；保留 caret/IME/scroll/sticky 已验收行为。
+
+##88 · 正在思考实时活动体验与 GitHub 原地最新同步
+
+- 日期：2026-09-16
+- Activity UX：运行中使用真实 Turn `startedAtMs` 实时显示 `已处理 N`，下一行 `Xiaoyu · 正在思考 ▸/▾` 可展开；完成/取消/失败时冻结为 `用时 N ▸/▾`。时间使用秒/分/小时真实格式，不使用固定/预估值。
+- Activity 内容：展开区按真实事件顺序展示开始处理、Work Mode 公开目标、模型进入分析阶段、脱敏 Tool Call/Result、开始整理最终回答。Provider 原始 `reasoning-delta.text` 继续禁止进入 Activity/Transcript，因此这里是公开执行摘要，不是 hidden chain-of-thought。
+- Terminal 结构：thinking placeholder 仍保留为内部流式槽位，但不再重复绘制第二条“Xiaoyu · 正在思考”；可点击 Activity 行是唯一运行状态展示，首个 text delta 继续原位进入最终回答。
+- GitHub 更新：`xma-dev.bat -> [10]` 改为“同步 GitHub 最新源码”，真实逻辑仍归 `xma-console.ps1`。正确 clone 中先 `fetch --prune`，显示 HEAD/origin-main/ahead-behind/dirty；无远端差异直接报告已最新，有差异才 `pull --rebase --autostash`。
+- 强制恢复：`YES` 后先在 `.git/xma-state/update-backups/<timestamp>/` 保存 metadata；tracked 修改写 `tracked.patch`，local ahead commit 写 `local-commits.patch`，再 `reset --hard origin/main`。禁止删除 clone、禁止自动 `git clean`，继续复用 runtime/node_modules/.cache/dist。
+- 下一步提示：只有依赖 manifest 在更新前后发生变化才要求重新 `[1]`；否则可直接重启 `[4]`。自动验证：Activity 35/35 定向测试 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS；Source Manifest 242 files、成品 243 entries 独立解压缺失/额外/哈希差异均为 0。Windows Terminal 点击展开与 Windows PowerShell 5.1 `[10]` 实机同步仍待用户 E2E。
+

@@ -184,19 +184,28 @@ for (const forbidden of [
 const updateConsoleSource = readFileSync('scripts/windows/xma-console.ps1', 'utf8')
 for (const marker of [
   "'update' { Update-XmaProject }",
-  '[10] 更新项目',
+  '[10] 同步 GitHub 最新源码',
   'function Assert-XmaGitCloneForUpdate',
+  'function Get-XmaGitSyncState',
+  'function Save-XmaTrackedUpdateBackup',
+  'function Test-XmaDependencyManifestChanged',
   'https://github.com/yubboo/xma.git',
-  "@('fetch','origin','main')",
+  "@('fetch','--prune','origin','main')",
+  "@('rev-list','--left-right','--count','HEAD...origin/main')",
   "@('pull','--rebase','--autostash','origin','main')",
   "@('reset','--hard','origin/main')",
+  'tracked.patch',
   '确认强制恢复？请输入 YES 继续',
+  '当前源码已经是 GitHub main 最新版本，无需重新 clone',
   '.xma-package\\source-manifest.json',
 ]) {
   if (!updateConsoleSource.includes(marker)) throw new Error(`XMA [10] project update contract regression: missing ${marker}`)
 }
-if (updateConsoleSource.includes("@('clean','-fd')") || updateConsoleSource.includes('git clean -fd')) {
+if (updateConsoleSource.includes("@('clean','-fd')") || updateConsoleSource.includes('git clean -fd') || updateConsoleSource.includes("@('clean','-fdx')")) {
   throw new Error('XMA [10] force update must not automatically git clean local dependencies/caches.')
+}
+if (/Invoke-XmaExternal[^\r\n]*ArgumentList\s+@\('clone'/.test(updateConsoleSource) || /git\.exe\s+clone/i.test(updateConsoleSource)) {
+  throw new Error('XMA [10] must update the existing clone in-place instead of deleting/re-cloning the repository.')
 }
 
 const devLauncherSource = readFileSync('xma-dev.bat', 'utf8')
@@ -339,7 +348,7 @@ for (const marker of [
   '项目本地 Rust/Cargo 已就绪：CARGO_HOME=',
   '[8] 刷新 · JavaScript Runtime',
   '[9] 单独准备 · Rust / Cargo',
-  '[10] 更新项目',
+  '[10] 同步 GitHub 最新源码',
   "'js' { Prepare-JavaScriptRuntime }",
   "'bun' { Prepare-JavaScriptRuntime }",
   "'rust' { Prepare-RustRuntime }",

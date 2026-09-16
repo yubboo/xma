@@ -252,7 +252,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       if (event.text.length === 0) return
       if (!activeRunReasoningLogged) {
         activeRunReasoningLogged = true
-        recordRunActivity({ kind: 'status', text: '模型思考与规划' })
+        recordRunActivity({ kind: 'status', text: '模型正在分析与规划' })
       }
       setActivity('thinking')
       renderer.requestRender()
@@ -273,7 +273,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     if (event.text.length === 0) return
     if (!activeRunAnswerLogged) {
       activeRunAnswerLogged = true
-      recordRunActivity({ kind: 'status', text: '开始生成最终回复' })
+      recordRunActivity({ kind: 'status', text: '开始整理最终回答' })
     }
     setActivity('streaming')
 
@@ -810,6 +810,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       return
     }
 
+    const runMode = mode()
     const placeholder: TerminalTranscriptItem = { role: 'reasoning', text: '', placeholder: true }
     clearEventBuffer()
     const runActivity = resetRunActivity()
@@ -821,11 +822,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       placeholder,
     ])
     recordRunActivity({ kind: 'status', text: '开始处理请求' })
+    recordRunActivity({
+      kind: 'status',
+      text: runMode === 'plan'
+        ? 'Plan · 分析任务并形成可执行计划'
+        : runMode === 'compose'
+          ? 'Compose · 编排任务并整理结果'
+          : 'Build · 理解任务并推进交付',
+    })
     setBusy(true)
     controller = new AbortController()
     refresh()
     try {
-      const runMode = mode()
       const turnResult = await props.backend.sendMessage(
         line,
         runMode,

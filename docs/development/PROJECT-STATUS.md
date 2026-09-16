@@ -144,6 +144,8 @@ XMA 当前固定五条参考线：
 - #05 完整 Gate / Manifest / Windows 状态栏实机验收完成后标记已完成。
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
+- `REPAIR-PROMPTS #09` 当前**验证中**：Terminal Turn Activity 已升级为真实 `已处理 N + Xiaoyu · 正在思考` / 完成态 `用时 N`，展开区只显示公开阶段与脱敏 Tool 活动，不展示 hidden reasoning；Windows `[10]` 已升级为正确 clone 原地 fetch/prune + ahead/behind 核验 + 安全同步/带恢复备份的强制恢复。35/35 Activity 定向回归、Runtime updater 2/2 与 9 项 Gate 已通过；Source Manifest 242 files/成品 243 entries 已做独立解压一致性复核，仍待 Windows Terminal 点击展开和 PowerShell 5.1 Git 同步实机验收。
+- `REPAIR-PROMPTS #08` 当前**验证中**：Ctrl+C 已改为真实 Selection 复制优先，其次 busy Abort、modal cancel、idle 二次确认退出；等待 Windows Terminal 真实鼠标选择 + Clipboard E2E。
 - `REPAIR-PROMPTS #07` 当前**验证中**：已把 Work Mode 与三档 Permission Profile 分离并接入真实 Tool Policy；Plan 保持只读上限；Context 小比例/used-window、DeepSeek 官方余额可见性与 V4 Pro 当前路由计费已修正。等待 Windows 权限切换、Plan+full、真实余额与 context 实机验收。
 - `REPAIR-PROMPTS #06` 已通过用户实机核心路径并标记**已完成**：模型配置 SecretInput 在模块拆分后调用 `usePaste` 但未在 `dialogs.tsx` 导入，触发 `ReferenceError`；已修正 hook/helper ownership，并用 Dialog ErrorBoundary + Promise settlement 防止单个弹窗异常拖死整个 TUI。等待 Windows 实机完成首次配置、Ctrl+P 重配、API Key 粘贴与失败后继续操作验收。
 

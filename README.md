@@ -65,7 +65,7 @@ cd xma
 .\xma-dev.bat
 ```
 
-标准源码流程固定就是上面三条命令。`git clone` 只用于第一次下载：当前父目录已经存在非空 `xma/XMA` 时，Git 会按安全规则拒绝覆盖。已有正确 clone 后不要重复 clone，直接运行 `xma-dev.bat → [10] 更新项目`：`[1] 安全更新` 使用 `fetch + pull --rebase --autostash`；本地已跟踪源码确实需要完全恢复时可选择 `[2] 强制恢复 GitHub main`，确认后执行 `fetch + reset --hard origin/main`。该强制恢复不会自动执行 `git clean`，因此不会主动删除 Git 忽略的 `xma-path/node_modules/.cache/dist/.git/xma-state`。
+标准源码流程固定就是上面三条命令。`git clone` 只用于第一次下载：已有正确 clone 后**不要删除 xma 目录重新 clone**，直接运行 `xma-dev.bat → [10] 同步 GitHub 最新源码`。入口会先 `fetch --prune` 并显示本地 HEAD、origin/main、ahead/behind；`[1] 安全同步` 使用 `pull --rebase --autostash` 原地更新并保留本地修改；确实需要完全回到远端 main 时选择 `[2] 强制恢复`，确认后先把已跟踪修改/本地提交恢复材料放到 `.git/xma-state/update-backups/`，再执行 `reset --hard origin/main`。它不会自动 `git clean`，因此不会删除未跟踪文件和 Git 忽略的 `runtime/node_modules/.cache/dist/.git/xma-state`。
 
 XMA 自己的维护脚本也不得再自动创建同级 `xma` 来抢占 Git 默认目标名。`XMA-Sync.bat` 默认只复用已经存在且 origin 属于 `yubboo/xma` 的长期仓库；没有可复用仓库时会提示先按上面的标准命令 clone，或由维护者显式设置 `XMA_TARGET_ROOT`。
 
@@ -154,7 +154,7 @@ XMA-GitHub.bat
 xma-dev.bat
 ```
 
-菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查、`[8] 刷新 JavaScript Runtime`、`[9] Rust/Cargo` 与 `[10] 更新项目`。首次运行 `[1]` 会自动准备 Git/Node/pnpm/Rust/MSVC 等工具，并通过标准 `pnpm install` / Cargo 流程补齐当前源码依赖；项目以后新增或调整依赖，更新源码后重新运行 `[1]` 即可同步。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
+菜单提供：一键准备开发环境、Web、Desktop、Xiaoyu CLI、构建发布、全量检查、`[8] 刷新 JavaScript Runtime`、`[9] Rust/Cargo` 与 `[10] 同步 GitHub 最新源码`。首次运行 `[1]` 会自动准备 Git/Node/pnpm/Rust/MSVC 等工具，并通过标准 `pnpm install` / Cargo 流程补齐当前源码依赖；项目以后新增或调整依赖，更新源码后重新运行 `[1]` 即可同步。Electron Chromium Runtime / Tauri Rust crates 仍在明确选择对应 Desktop 时才准备。
 
 
 ## Terminal / Distribution 第一批

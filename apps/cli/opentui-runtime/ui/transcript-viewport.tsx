@@ -7,6 +7,7 @@
 import type { BoxRenderable, ScrollBoxRenderable } from '@opentui/core'
 import { For, Show, createSignal } from 'solid-js'
 import type { TerminalActivitySummary, TerminalTranscriptItem } from '../contracts.ts'
+import { formatTerminalActivityElapsed, terminalActivityPresentation } from './activity-view.ts'
 import { COLOR } from './theme.ts'
 
 function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color: string } {
@@ -18,37 +19,36 @@ function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color:
   return { label: '系统', color: COLOR.soft }
 }
 
-function formatRunElapsed(elapsedMs: number): string {
-  const seconds = Math.max(0, Math.floor(elapsedMs / 1000))
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remaining = seconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m ${remaining}s`
-  if (minutes > 0) return `${minutes}m ${remaining}s`
-  return `${remaining}s`
-}
-
 function RunActivityRow(props: { summary: TerminalActivitySummary; nowMs: number; onToggle: () => void }) {
-  const elapsedMs = () => props.summary.outcome === 'running'
-    ? Math.max(props.summary.elapsedMs, props.nowMs - props.summary.startedAtMs)
-    : props.summary.elapsedMs
-  const outcomeSuffix = props.summary.outcome === 'running' || props.summary.outcome === 'completed'
-    ? ''
-    : props.summary.outcome === 'cancelled'
-      ? ' · 已中止'
-      : ' · 失败'
+  const presentation = () => terminalActivityPresentation(props.summary, props.nowMs)
+  const toggle = (event: { stopPropagation(): void }) => {
+    event.stopPropagation()
+    props.onToggle()
+  }
   return (
     <box width="100%" flexDirection="column" paddingTop={1} paddingBottom={1} flexShrink={0}>
       <box
         width="100%"
         flexDirection="row"
         onMouseDown={event => event.stopPropagation()}
-        onMouseUp={event => { event.stopPropagation(); props.onToggle() }}
+        onMouseUp={toggle}
       >
         <text fg={props.summary.outcome === 'failed' ? COLOR.red : COLOR.soft}>
-          {`思考了 ${formatRunElapsed(elapsedMs())}${outcomeSuffix} ${props.summary.expanded ? '▾' : '▸'}`}
+          {`${presentation().timeLabel}${props.summary.outcome === 'running' ? '' : ` ${props.summary.expanded ? '▾' : '▸'}`}`}
         </text>
       </box>
+      <Show when={props.summary.outcome === 'running'}>
+        <box
+          width="100%"
+          flexDirection="row"
+          paddingTop={1}
+          onMouseDown={event => event.stopPropagation()}
+          onMouseUp={toggle}
+        >
+          <text fg={COLOR.orange}><strong>Xiaoyu</strong></text>
+          <text fg={COLOR.faint}>{` · ${presentation().stateLabel} ${props.summary.expanded ? '▾' : '▸'}`}</text>
+        </box>
+      </Show>
       <Show when={props.summary.expanded}>
         <box width="100%" flexDirection="column" paddingTop={1} paddingLeft={2} gap={1} flexShrink={0}>
           <For each={props.summary.entries}>{entry => (
@@ -61,8 +61,8 @@ function RunActivityRow(props: { summary: TerminalActivitySummary; nowMs: number
               <box flexGrow={1} minWidth={0}>
                 <text fg={entry.kind === 'status' ? COLOR.faint : COLOR.soft}>{entry.text}</text>
               </box>
-              <box width={9} flexShrink={0} justifyContent="flex-end">
-                <text fg={COLOR.faint}>{`+${formatRunElapsed(entry.elapsedMs)}`}</text>
+              <box width={10} flexShrink={0} justifyContent="flex-end">
+                <text fg={COLOR.faint}>{`+${formatTerminalActivityElapsed(entry.elapsedMs)}`}</text>
               </box>
             </box>
           )}</For>
@@ -141,14 +141,7 @@ export function TranscriptViewport(props: {
                 </box>
               )
             }
-            if (item.placeholder) {
-              return (
-                <box width="100%" flexDirection="row" flexShrink={0}>
-                  <text fg={COLOR.orange}><strong>Xiaoyu</strong></text>
-                  <text fg={COLOR.faint}> · 正在思考</text>
-                </box>
-              )
-            }
+            if (item.placeholder) return <></>
             if (item.role === 'assistant') {
               return (
                 <box width="100%" flexDirection="column" flexShrink={0}>

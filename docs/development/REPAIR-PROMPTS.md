@@ -748,3 +748,80 @@
 - 无选区时：busy 中止当前 Turn；modal 只 cancel/deny；idle 第一次 Ctrl+C 仅提示，1.5 秒内再次 Ctrl+C 才退出。`/exit` 仍是明确退出入口。
 - Esc 在有选区时只清 Selection。
 - 自动测试覆盖快捷键优先级与 OpenTUI 静态合同；本轮 #07/#08 相关回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS。Windows 实机 clipboard E2E 完成前 #08 保持“验证中”。
+
+# 09 正在思考实时活动体验与 GitHub 远程最新同步优化
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：Terminal 可观测性体验 + Windows 开发链更新流程
+- 影响范围：OpenTUI Turn Activity、Runtime 公开事件投影、`xma-dev.bat -> [10]`、`scripts/windows/xma-console.ps1`
+- 关联记录：#05 Session Metrics、#07 Work Mode/Approval、#08 Ctrl+C Selection
+- 编号说明：用户本轮口头命名为“#08”，但 #08 已被 Ctrl+C 修复历史占用；按 `REPAIR-WORKFLOW.md` 的“编号不得复用”规则自动顺延为 #09，禁止覆盖历史。
+
+## 用户可见目标
+
+1. 用户提交问题后立即进入“正在思考”状态；活动区必须是真实 Turn 生命周期，不是固定文案或假计时。
+2. Turn 运行中显示“已处理 N秒/分”；用户点击“正在思考”可展开查看当前公开工作活动：任务处理阶段、真实 Tool Call、Tool Result 摘要、开始生成最终回答等。
+3. Turn 完成后状态折叠为“用时 N秒/分 ▸”，点击后仍可查看这一轮真实发生过的公开活动。
+4. 展开区只能展示**可公开的执行摘要**，不得展示 Provider 原始 hidden reasoning / chain-of-thought。可以展示“正在分析任务 / 读取文件 / 搜索 / 运行程序 / 工具结果 / 整理回答”等可验证活动，以及简短的执行计划摘要；不得把模型内部逐 token reasoning 原文暴露给 Host。
+5. 最终回答继续由用户真实配置的 Provider/Model 生成；Xiaoyu 只是 Agent/Product identity，不增加第二个隐藏模型。
+6. `xma-dev.bat -> [10]` 必须把已存在的正确 `yubboo/xma` Git clone **原地同步到 GitHub 最新 main**，不要求用户删除整个 `xma` 目录再 `git clone`，并尽量复用 `node_modules/runtime/.cache/.git/xma-state` 等本地依赖和缓存。
+
+## 已确认事实
+
+- 当前 Terminal 已有真实 Turn Activity 结构：`TerminalActivitySummary`、实时 elapsed、公开 Tool Call/Result 摘要和展开/折叠；但运行中标题固定为“思考了 N”，与 Codex 类产品“已处理 N + 正在思考”体验不一致。
+- 当前 `reasoning-delta` 已明确丢弃原始 reasoning 正文，只记一次公开状态“模型思考与规划”；这一安全边界必须保留。
+- 当前 `[10]` 已支持 `fetch + pull --rebase --autostash` 和明确确认后的 `reset --hard origin/main`，实际上不需要重新 clone；但 UI/验证不足，用户很难确认本地/远程版本、是否已经最新、更新是否真正同步成功。
+- `xma-dev.bat` 本身只负责进入源码根并转发给 `scripts/windows/xma-console.ps1`；[10] 的真实业务逻辑 ownership 在 `xma-console.ps1`，不得把 Git 更新逻辑复制进 BAT。
+
+## 禁止的错误修法
+
+- 禁止把“正在思考”做成固定 28 秒、固定活动清单或随机假工具记录。
+- 禁止展示模型原始 chain-of-thought、reasoning token 正文、隐藏系统提示词或 Secret。
+- 禁止为了做 Activity 再实现一套 Agent Loop；Terminal 只能投影现有 Runtime/Session/Tool 真值。
+- 禁止 `[10]` 自动删除整个仓库、自动重新 clone、自动 `git clean -fdx`、删除 `node_modules/runtime/.cache/dist/.git/xma-state`。
+- 禁止 `[10]` 在 origin 不是 `yubboo/xma`、不是 main、不是 Git 顶层时擅自修改源码。
+- 禁止安全更新吞掉 Git 冲突；有冲突必须 fail loud 并保留可恢复状态。
+
+## 修复 / 优化 Prompt
+
+> 1. 把 Terminal Turn Activity 的显示状态改成明确生命周期：运行中第一行显示 `已处理 <真实elapsed>`，第二行显示可点击的 `正在思考 ▸/▾`；完成后折叠标题变成 `用时 <真实elapsed> ▸/▾`；取消/失败在同一标题追加结果状态。
+> 2. elapsed 必须从当前 Turn 的真实 `startedAtMs` 到 Runtime 完成/取消/失败时刻计算，支持秒、分、小时；禁止 UI 固定值。
+> 3. 展开内容按真实发生顺序显示公开事件：开始处理、当前 Work Mode 的公开目标（Build=理解任务并推进交付，Plan=分析并形成计划，Compose=编排/整理）、模型进入分析阶段、Tool Call、Tool Result、开始整理最终回答。工具参数/结果继续走既有脱敏器。
+> 4. Provider 原始 reasoning delta 只作为“模型正在分析与规划”的阶段信号；不得保存或显示 `event.text`。如果未来需要“计划摘要”，只能来自显式 public plan/control event 或模型最终公开内容，不能从 hidden reasoning 截取。
+> 5. 点击运行中“正在思考”和完成后“用时”都必须切换同一个 Activity Summary 的 expanded 状态；manual scroll/sticky-bottom/PromptDock/caret 不得回归。
+> 6. `[10]` 改名/文案为“同步 GitHub 最新源码”，进入后先 `fetch --prune origin main`，显示本地 HEAD、origin/main、ahead/behind、工作区修改状态；让用户清楚知道是否已经最新。
+> 7. 安全同步优先原地更新：没有远端差异时直接报告“已是最新”；存在远端提交时使用 `pull --rebase --autostash origin main`，冲突必须停止并提示解决方法，不删除 clone。
+> 8. 强制恢复仍需输入 `YES`；执行前如果存在 tracked 修改，先把 `git diff --binary HEAD` 备份到 `.git/xma-state/update-backups/<timestamp>/tracked.patch` 并记录原 HEAD；然后 `fetch --prune + reset --hard origin/main`。不得自动清理 untracked/ignored 文件。
+> 9. 更新完成后重新验证：当前分支 main、origin URL、remote behind=0；打印更新前后 commit。只有依赖清单（`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`Cargo.toml`、`Cargo.lock` 等）发生变化时才提示重新运行 `[1]`；否则可直接重新启动 `[4]`。
+> 10. 更新 Windows Gate/文档/REPAIR/UPDATE-LOG，增加可失败测试：Activity lifecycle 格式、hidden reasoning 不泄露、[10] fetch/prune/版本比较/备份/禁止 clone 和 clean。
+
+## 不允许回归的既有行为
+
+- #03 Transcript 真实滚动范围、mouse wheel、sticky follow。
+- #04 OpenTUI Textarea 原生 caret / IME ownership。
+- #05 真实 Session Metrics/Provider Telemetry，不得造假。
+- #07 用户真实 Provider/Model、Plan/Build、Permission/Approval 语义。
+- #08 选中文本 Ctrl+C 复制优先，不得重新变成直接退出。
+- `[4]/[7]` 不得因为 [10] 改造而偷偷联网安装依赖。
+
+## 验收条件
+
+- 真实长 Turn 运行时看到 `已处理 42秒` 等实时增长；点击 `正在思考` 能展开/折叠真实公开活动。
+- Turn 完成后显示真实 `用时 1分35秒`，展开后仍能看到这一轮发生过的 Tool/状态摘要。
+- 展开区不出现 Provider hidden reasoning 原文、API Key、token/password/Authorization 等 Secret。
+- 正确 Git clone 内 `[10]` 能原地 fetch/sync 到远端最新 main，不需要删除 `xma` 目录重 clone；已是最新时明确显示。
+- 强制恢复前 tracked 修改存在时生成 recovery patch；ignored 依赖/cache 不被删除。
+- 更新后如果依赖清单未变化，提示可直接运行 `[4]`；变化时明确提示运行 `[1]`。
+
+## #09 实施结果
+
+- Terminal 新增 `apps/cli/opentui-runtime/ui/activity-view.ts` 纯展示合同：真实 elapsed 使用中文秒/分/小时格式；运行态投影为 `已处理 N` + `正在思考 ▸/▾`，Turn 结算后冻结为 `用时 N ▸/▾`，取消/失败追加结果状态。
+- `TranscriptViewport` 的同一个 Activity Summary 在运行中和完成后都可点击展开；展开内容继续只消费真实公开活动。提交时新增 Work Mode 公开阶段：Build=`理解任务并推进交付`、Plan=`分析任务并形成可执行计划`、Compose=`编排任务并整理结果`；首个 reasoning 只记 `模型正在分析与规划`，首个正式 text delta 记 `开始整理最终回答`。
+- 安全边界保持：`reasoning-delta` 的 `event.text` 不进入 Transcript/Activity；Tool Call/Result 继续使用 `activity-format.ts` 做路径/参数/Secret 脱敏。当前实现不会提供或保存隐藏 chain-of-thought，只展示可验证的执行摘要。
+- `[10]` 的业务 ownership 继续留在 `scripts/windows/xma-console.ps1`，`xma-dev.bat` 仍只做稳定 launcher。菜单改为 `同步 GitHub 最新源码`，明确“原地更新当前 clone，不需要删除 xma 目录重新 clone”。
+- `[10]/[1] 安全同步`：`fetch --prune origin main` 后显示本地 HEAD、origin/main、ahead/behind 与 dirty 状态；behind=0 直接报告已是最新；有远端新提交才执行 `pull --rebase --autostash origin main`，完成后再次验证 behind=0。
+- `[10]/[2] 强制恢复`：保持 `YES` 明确确认；fetch 后如果存在 tracked 修改或本地 ahead commit，会在 `.git/xma-state/update-backups/<timestamp>/` 写 `metadata.txt`，未提交 tracked 变化写 `tracked.patch`，本地提交相对共同基线写 `local-commits.patch`，之后才 `reset --hard origin/main`。仍禁止 `git clean`，因此未跟踪文件与 ignored runtime/node_modules/.cache/dist 不被自动删除。
+- 更新前后 commit 用于判断依赖清单是否变化；只有 `package.json/pnpm-lock.yaml/pnpm-workspace.yaml/Cargo.toml/Cargo.lock` 等依赖清单变化才提示重新运行 `[1]`，否则提示可直接重新启动 `[4]`。
+- 自动验证：`activity-view.test.ts` 2/2 PASS；`opentui-runtime.test.ts` 33/33 PASS（两者合计 35/35）；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 为 242 个受管源码文件；成品 ZIP 为 243 entries（242 source + manifest），独立解压后缺失 0、额外 0、内容哈希差异 0，并从解压成品再次跑过 35/35 + 2/2 + 9/9。当前环境没有 Windows PowerShell 5.1 和真实 Windows Terminal，因此 `[10]` Git 更新交互、鼠标点击 Activity 展开仍保留 Windows 实机 E2E，状态为“验证中”。
+

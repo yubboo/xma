@@ -139,7 +139,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - **同逻辑优先聚合，不按 class/interface/helper 碎拆文件。** 只有职责、生命周期或安全边界确实不同才拆，例如 `tool/router.ts`、`tool/policy.ts`、`tool/schema.ts`；
 - 一个领域通常达到 3 个左右稳定文件、或已经有独立生命周期时才建立子目录；只有 1～2 个小文件时保持扁平，禁止为了“架构感”制造单文件目录；
 - 顶层源码开发入口 `xma-dev.bat`（Windows）/ `xma-dev`（Linux/macOS）、维护者入口 `XMA-GitHub.bat` / `XMA-Sync.bat` 以及平台脚本属于稳定外部入口；命名必须明确区分源码开发与正式产品命令。
-- Windows `xma-dev.bat → [1]` 可以注册开发态 `xiaoyu / xma`，但只允许把 checkout 本地控制状态 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）加到当前用户 User PATH；禁止把整个仓库或维护脚本目录加入 PATH，禁止写 Machine PATH。`xma-dev.bat → [10] 更新项目` 只允许在 origin 属于 `yubboo/xma` 的真实 Git clone 上执行：安全更新使用 `fetch + pull --rebase --autostash`；强制恢复必须二次确认后才允许 `fetch + reset --hard origin/main`，且不得自动 `git clean` 删除本地依赖/缓存。
+- Windows `xma-dev.bat → [1]` 可以注册开发态 `xiaoyu / xma`，但只允许把 checkout 本地控制状态 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）加到当前用户 User PATH；禁止把整个仓库或维护脚本目录加入 PATH，禁止写 Machine PATH。`xma-dev.bat → [10] 同步 GitHub 最新源码` 只允许在 origin 属于 `yubboo/xma` 的真实 Git clone 上原地执行：先 `fetch --prune` 并显示本地/远端 ahead/behind；安全同步使用 `pull --rebase --autostash`；强制恢复必须二次确认，先把已跟踪修改/本地提交恢复材料写入 `.git/xma-state/update-backups/`，再 `reset --hard origin/main`。禁止删除整个 clone 重新拉取，禁止自动 `git clean` 删除未跟踪文件或本地依赖/缓存。
 - 新增/改名文件必须通过 `pnpm gate:naming`。Naming Gate 负责可机械判断的大小写、分隔符、长度和已锁定分组；“是否应该拆文件”仍需按本节架构语义人工判断。 Naming Gate 只治理 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存与生成目录。
 
 当前平台主要 ownership 已迁到：`packages/xma-agent-loop/`、`packages/xma-ai/`、`packages/xma-plugin/`、`packages/xma-tools/`、`packages/xma-session/`、`packages/xma-context/`、`packages/xma-native/`；插件按本体聚合在 `plugins/deepseek/`、`plugins/native-tools/`、`plugins/dsh-compat/`。`core/` 只允许 Compatibility Facade 与尚未迁出的薄层。
