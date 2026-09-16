@@ -66,6 +66,7 @@ export type ProviderErrorCode =
   | 'permission_denied'
   | 'model_not_found'
   | 'rate_limited'
+  | 'insufficient_balance'
   | 'timeout'
   | 'network'
   | 'context_too_large'
@@ -81,9 +82,58 @@ export class ProviderRequestError extends Error {
     message: string,
     readonly retryable: boolean,
     readonly status?: number,
+    /** 已脱敏的 Provider wire detail，仅供诊断；Host 主文案不得直接 dump。 */
+    readonly detail?: string,
   ) {
     super(message)
     this.name = 'ProviderRequestError'
+  }
+}
+
+export interface ProviderErrorPresentation {
+  code: ProviderErrorCode
+  message: string
+  retryable: boolean
+  status?: number
+  /** 仅供诊断/展开区使用；普通 Transcript/notice 不应直接展示。 */
+  detail?: string
+}
+
+function providerFriendlyMessage(code: ProviderErrorCode): string {
+  if (code === 'insufficient_balance') return 'API 余额不足，请充值后重试。'
+  if (code === 'auth_invalid') return 'API Key 无效或不可用，请检查模型 / 提供方配置。'
+  if (code === 'permission_denied') return 'API 凭据没有当前请求所需权限。'
+  if (code === 'model_not_found') return '当前模型不可用，请切换模型后重试。'
+  if (code === 'rate_limited') return '请求过于频繁，请稍后重试。'
+  if (code === 'timeout') return '模型服务响应超时，请稍后重试。'
+  if (code === 'network') return '无法连接模型服务，请检查网络后重试。'
+  if (code === 'context_too_large') return '当前上下文超过模型限制，请新开会话或压缩上下文后重试。'
+  if (code === 'unsupported_capability') return '当前模型不支持这项能力。'
+  if (code === 'server_error') return '模型服务暂时不可用，请稍后重试。'
+  if (code === 'malformed_response') return '模型服务返回了无法解析的响应。'
+  if (code === 'cancelled') return '已中止当前响应。'
+  return '模型请求失败，请检查提供方状态后重试。'
+}
+
+/** Host-neutral Provider 错误投影：主 UX 使用友好 summary，wire detail 只留诊断。 */
+export function providerErrorPresentation(error: unknown): ProviderErrorPresentation {
+  if (error instanceof ProviderRequestError) {
+    const presentation: ProviderErrorPresentation = {
+      code: error.code,
+      message: providerFriendlyMessage(error.code),
+      retryable: error.retryable,
+    }
+    if (error.status !== undefined) presentation.status = error.status
+    const detail = error.detail ?? error.message
+    if (detail.trim()) presentation.detail = detail
+    return presentation
+  }
+  const detail = error instanceof Error ? error.message : String(error)
+  return {
+    code: 'unknown',
+    message: providerFriendlyMessage('unknown'),
+    retryable: false,
+    ...(detail.trim() ? { detail } : {}),
   }
 }
 

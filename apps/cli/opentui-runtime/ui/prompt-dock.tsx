@@ -31,6 +31,7 @@ export function PromptDock(props: {
   onPromptReady: (prompt: TextareaRenderable) => void
   onPromptFocus: () => void
   onSubmit: (text: string) => void
+  onOpenCommandPalette: () => void
   onCycleMode: (direction: 1 | -1) => void
 }) {
   let prompt: TextareaRenderable | undefined
@@ -70,6 +71,11 @@ export function PromptDock(props: {
                 showCursor={true}
                 cursorColor={COLOR.text}
                 cursorStyle={{ style: 'block', blinking: true }}
+                onContentChange={() => {
+                  if ((prompt?.plainText ?? '') !== '/') return
+                  prompt?.clear()
+                  queueMicrotask(() => props.onOpenCommandPalette())
+                }}
                 onSubmit={() => props.onSubmit(prompt?.plainText ?? '')}
                 onKeyDown={(event: KeyEvent) => {
                   if (event.name !== 'tab') return

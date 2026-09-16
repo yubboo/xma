@@ -192,7 +192,9 @@ for (const marker of [
   'https://github.com/yubboo/xma.git',
   "@('fetch','--prune','origin','main')",
   "@('rev-list','--left-right','--count','HEAD...origin/main')",
-  "@('pull','--rebase','--autostash','origin','main')",
+  'function Invoke-XmaGitFetchMain',
+  "@('-c','http.version=HTTP/1.1','fetch','--prune','origin','main')",
+  "@('rebase','--autostash','origin/main')",
   "@('reset','--hard','origin/main')",
   'tracked.patch',
   '确认强制恢复？请输入 YES 继续',
@@ -201,6 +203,9 @@ for (const marker of [
   "@('rev-parse','--show-prefix')",
 ]) {
   if (!updateConsoleSource.includes(marker)) throw new Error(`XMA [10] project update contract regression: missing ${marker}`)
+}
+if (updateConsoleSource.includes("@('config','--global','http.version','HTTP/1.1')") || updateConsoleSource.includes('git config --global http.version')) {
+  throw new Error('XMA [10] HTTP/1.1 fallback must stay command-scoped and never modify global Git config.')
 }
 if (updateConsoleSource.includes("@('rev-parse','--show-toplevel')") || updateConsoleSource.includes('[IO.Path]::GetFullPath($top)')) {
   throw new Error('XMA [10] must not parse native show-toplevel text through GetFullPath; Unicode checkout validation uses .git + show-prefix.')

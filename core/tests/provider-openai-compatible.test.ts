@@ -13,6 +13,7 @@ import {
   MemoryCredentialResolver,
   ProviderRegistry,
   ProviderRequestError,
+  providerErrorPresentation,
   type ProviderProfile,
 } from '../src/provider.ts'
 import { OpenAiCompatibleAdapter, OPENAI_COMPATIBLE_ADAPTER_ID } from 'xma-ai'
@@ -279,3 +280,50 @@ test('OpenAI-compatible streaming cancellation is normalized and does not leak t
     })
   })
 })
+
+test('OpenAI-compatible insufficient balance is canonical and user-facing presentation never dumps raw JSON', async () => {
+  await withServer(async (request, response) => {
+    if (request.url !== '/v1/chat/completions') {
+      response.writeHead(404)
+      response.end('not found')
+      return
+    }
+    await readJson(request)
+    response.writeHead(400, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({
+      error: {
+        message: 'Insufficient Balance',
+        type: 'unknown_error',
+        param: null,
+        code: 'invalid_request_error',
+      },
+    }))
+  }, async baseUrl => {
+    const credentials = new MemoryCredentialResolver()
+    credentials.set('fixture-key', 'secret-balance-test')
+    const adapter = new OpenAiCompatibleAdapter()
+    const provider = adapter.createModel(profile(baseUrl), 'fixture-model', credentials)
+
+    await assert.rejects(async () => {
+      for await (const _event of provider.stream({
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [],
+        signal: new AbortController().signal,
+      })) {
+        // no-op
+      }
+    }, error => {
+      assert.ok(error instanceof ProviderRequestError)
+      assert.equal(error.code, 'insufficient_balance')
+      assert.equal(error.message, 'Insufficient Balance')
+      const presentation = providerErrorPresentation(error)
+      assert.equal(presentation.code, 'insufficient_balance')
+      assert.equal(presentation.message, 'API 余额不足，请充值后重试。')
+      assert.doesNotMatch(presentation.message, /\{|invalid_request_error|unknown_error/)
+      assert.match(presentation.detail ?? '', /Insufficient Balance/)
+      assert.equal((presentation.detail ?? '').includes('secret-balance-test'), false)
+      return true
+    })
+  })
+})
+

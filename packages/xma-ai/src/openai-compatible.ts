@@ -83,18 +83,44 @@ function redactSecret(text: string, headers: Readonly<Record<string, string>>): 
   return text.split(secret).join('[REDACTED]')
 }
 
-function mapStatus(status: number, body: string): ProviderRequestError {
-  const lower = body.toLowerCase()
-  if (status === 401) return new ProviderRequestError('auth_invalid', body || 'Provider authentication failed.', false, status)
-  if (status === 403) return new ProviderRequestError('permission_denied', body || 'Provider permission denied.', false, status)
-  if (status === 404) return new ProviderRequestError('model_not_found', body || 'Provider model or endpoint not found.', false, status)
-  if (status === 408) return new ProviderRequestError('timeout', body || 'Provider request timed out.', true, status)
-  if (status === 429) return new ProviderRequestError('rate_limited', body || 'Provider rate limit exceeded.', true, status)
-  if (status >= 500) return new ProviderRequestError('server_error', body || `Provider server error ${status}.`, true, status)
-  if (status === 400 && (lower.includes('context') || lower.includes('token limit') || lower.includes('maximum'))) {
-    return new ProviderRequestError('context_too_large', body || 'Provider context limit exceeded.', false, status)
+function providerBodyMessage(body: string): string {
+  const trimmed = body.trim()
+  if (!trimmed) return ''
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      const error = record.error
+      if (error && typeof error === 'object' && !Array.isArray(error)) {
+        const message = (error as Record<string, unknown>).message
+        if (typeof message === 'string' && message.trim()) return message.trim()
+      }
+      if (typeof record.message === 'string' && record.message.trim()) return record.message.trim()
+    }
+  } catch {
+    // 非 JSON body 直接沿用文本；wire detail 仍由 ProviderRequestError.detail 保留。
   }
-  return new ProviderRequestError('unknown', body || `Provider request failed with HTTP ${status}.`, false, status)
+  return trimmed
+}
+
+function mapStatus(status: number, body: string): ProviderRequestError {
+  const message = providerBodyMessage(body)
+  const lower = `${message}
+${body}`.toLowerCase()
+  const detail = body || undefined
+  if (lower.includes('insufficient balance') || lower.includes('insufficient_balance') || lower.includes('balance is insufficient')) {
+    return new ProviderRequestError('insufficient_balance', message || 'Provider balance is insufficient.', false, status, detail)
+  }
+  if (status === 401) return new ProviderRequestError('auth_invalid', message || 'Provider authentication failed.', false, status, detail)
+  if (status === 403) return new ProviderRequestError('permission_denied', message || 'Provider permission denied.', false, status, detail)
+  if (status === 404) return new ProviderRequestError('model_not_found', message || 'Provider model or endpoint not found.', false, status, detail)
+  if (status === 408) return new ProviderRequestError('timeout', message || 'Provider request timed out.', true, status, detail)
+  if (status === 429) return new ProviderRequestError('rate_limited', message || 'Provider rate limit exceeded.', true, status, detail)
+  if (status >= 500) return new ProviderRequestError('server_error', message || `Provider server error ${status}.`, true, status, detail)
+  if (status === 400 && (lower.includes('context') || lower.includes('token limit') || lower.includes('maximum'))) {
+    return new ProviderRequestError('context_too_large', message || 'Provider context limit exceeded.', false, status, detail)
+  }
+  return new ProviderRequestError('unknown', message || `Provider request failed with HTTP ${status}.`, false, status, detail)
 }
 
 async function providerFetch(url: string, init: RequestInit, signal: AbortSignal, headersForRedaction: Readonly<Record<string, string>>): Promise<Response> {

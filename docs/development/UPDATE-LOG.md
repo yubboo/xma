@@ -1025,3 +1025,15 @@
 - 修复：新增 `sessionIdleStatusItems()` 统一格式化 billing/permission。`turnCount=0` 时 `SessionStatusBar` 使用单行 `justifyContent=space-between` 投影左 billing / 右 permission；`sessionStatusItems()` 同步只返回这两个字段。`turnCount>0` 后恢复 cache hit、精确 session/turn tokens、真实 compaction、轮次、真实费用和 permission 的完整 detail，窄屏继续只换行不裁字段。
 - 回归：新增“0轮只显示 billing/permission、1轮自动恢复完整 telemetry”的 formatter 测试，并在 OpenTUI 静态合同锁定 idle helper、`turnCount > 0` 边界与 `space-between` 左右布局。`node --experimental-strip-types --test apps/cli/tests/session-status.test.ts apps/cli/tests/opentui-runtime.test.ts` 43/43 PASS；Runtime updater 2/2 PASS；修改文件 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。
 - 状态：#14 进入**验证中**，等待 Windows Terminal Home 截图确认；Prompt headline、Provider/model 右对齐、PromptDock 高度、Transcript/scroll/caret 本轮未改。
+
+##92 · GitHub fetch 容错 / Provider 错误归一 / user band 降亮 / slash 命令真唤起
+
+- 日期：2026-09-16
+- 流程：按 `REPAIR-WORKFLOW.md` 先建立不可变 #15/#16/#17/#18，再实施；四个问题各自保留独立 Repair ID，不覆盖 #09/#11/#12/#13 历史。
+- #15 `[10]`：GitHub fetch 对明确 transport reset 做默认重试 + 单次 command-scoped HTTP/1.1 fallback；最终失败提供不泄漏代理值的中文网络诊断。fetch 成功后改为本地 `rebase --autostash origin/main`，强制恢复仍先备份再 reset，禁止 clone/clean/global config。
+- #16 Provider：新增 `insufficient_balance` 与统一 `providerErrorPresentation()`；OpenAI-compatible 抽取 wire message 并保留已脱敏 detail，Terminal 主正文只显示友好 system failure message，不再 dump JSON 为 Xiaoyu 回复。
+- #17 视觉：user band 降为 `#2d2d30`，正文 `#e2e2e2`；full-width、右对齐、padding、ScrollBox ownership 不变。
+- #18 命令：Active Prompt 输入单独 `/` 直接打开与 Ctrl+P/Ctrl+K 同源的真实 command palette；不维护第二套假命令。补齐 `/vivid` shortcut → `visual` 内部 action 的 alias，使直接 `/vivid` 也真实执行。
+- 自动证据：OpenTUI 合同 38/38 PASS；session/activity/shortcut 12/12 PASS；legacy TUI 29/29 PASS；Provider mock 5/5 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。 Source Manifest 242 files；正式 ZIP 243 entries，独立解压 missing=0 / extra=0 / byte differences=0，并从解压树复跑 OpenTUI 38/38、session/activity/shortcut 12/12、legacy TUI 29/29、Provider 5/5、Runtime updater 2/2 与 9/9 Gate 全部 PASS。
+- 待实机：Windows PowerShell 5.1/Git for Windows 网络链路、真实 Provider 余额错误、user band 最终亮度、Active slash 面板键盘/Esc 焦点均必须由用户 Windows Terminal 继续验收，当前不标“已完成”。
+

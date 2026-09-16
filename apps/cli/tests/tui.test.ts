@@ -123,7 +123,10 @@ test('configured model readiness depends on credential availability, not a manda
   const tui = readFileSync('apps/cli/src/tui.ts', 'utf8')
   const runtime = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   assert.match(tui, /return `模型已就绪 · \$\{HOME_TIPS\[normalized\]!\}`/)
-  assert.match(runtime, /providerReady\(\) \? '模型已就绪' : '凭据未就绪'/)
+  assert.match(runtime, /label: providerReady\(\) \? modelLabel : `\$\{modelLabel\} · 凭据未就绪`/)
+  const providerStatusStart = runtime.indexOf('  const providerStatus = createMemo')
+  const providerStatusEnd = runtime.indexOf('  const [spinnerFrame', providerStatusStart)
+  assert.doesNotMatch(runtime.slice(providerStatusStart, providerStatusEnd), /模型已就绪/)
 })
 
 test('TUI home falls back to a compact identity on narrow terminals', () => {

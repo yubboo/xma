@@ -11,7 +11,7 @@ import path from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
-import type { JsonObject } from 'xma-ai'
+import { providerErrorPresentation, type JsonObject } from 'xma-ai'
 import type { SessionRuntimeMetrics } from 'xma-session'
 import type { PermissionProfileId, ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
@@ -2094,10 +2094,14 @@ class XiaoyuSurface {
       if (placeholder.placeholder && this.transcript.includes(placeholder)) placeholder.text = '(没有文本输出)'
       this.notice = '完成'
     } catch (error) {
-      const message = `请求失败 · ${error instanceof Error ? error.message : String(error)}`
-      if (placeholder.placeholder && this.transcript.includes(placeholder)) placeholder.text = message
-      else this.transcript.push({ role: 'assistant', text: message })
-      this.notice = this.activeController.signal.aborted ? '已中止当前响应' : '请求失败'
+      const aborted = this.activeController.signal.aborted
+      const presentation = providerErrorPresentation(error)
+      const message = aborted ? '已中止当前响应' : `请求失败 · ${presentation.message}`
+      if (placeholder.placeholder && this.transcript.includes(placeholder)) {
+        const index = this.transcript.indexOf(placeholder)
+        this.transcript.splice(index, 1, { role: 'system', text: message })
+      } else this.transcript.push({ role: 'system', text: message })
+      this.notice = aborted ? '已中止当前响应' : presentation.message
     } finally {
       this.busy = false
       this.editor.disableSubmit = false

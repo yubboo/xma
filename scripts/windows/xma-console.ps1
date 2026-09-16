@@ -44,22 +44,90 @@ function Prepare-RustRuntime {
 
 
 
-function Invoke-XmaGitCapture {
+function Invoke-XmaGitCommandResult {
   param([Parameter(Mandatory = $true)][string[]]$ArgumentList)
   $previousPreference = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
+  $lines = @()
+  $exitCode = -1
   try {
-    $output = & git.exe @ArgumentList 2>&1
-    $exitCode = $LASTEXITCODE
+    $rawOutput = & git.exe @ArgumentList 2>&1
+    $exitCode = if ($null -eq $LASTEXITCODE) { -1 } else { [int]$LASTEXITCODE }
+    $lines = @($rawOutput | ForEach-Object { [string]$_ })
+  } catch {
+    $exitCode = if ($null -eq $LASTEXITCODE -or [int]$LASTEXITCODE -eq 0) { -1 } else { [int]$LASTEXITCODE }
+    $lines = @([string]$_.Exception.Message)
   } finally {
     $ErrorActionPreference = $previousPreference
   }
-  if ($exitCode -ne 0) {
-    $message = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
-    if ([string]::IsNullOrWhiteSpace($message)) { $message = "git.exe $($ArgumentList -join ' ') failed with exit code $exitCode" }
+  return [pscustomobject]@{ ExitCode = $exitCode; Output = [string[]]$lines }
+}
+
+function Invoke-XmaGitCapture {
+  param([Parameter(Mandatory = $true)][string[]]$ArgumentList)
+  $result = Invoke-XmaGitCommandResult -ArgumentList $ArgumentList
+  $message = (@($result.Output) -join "`n").Trim()
+  if ($result.ExitCode -ne 0) {
+    if ([string]::IsNullOrWhiteSpace($message)) { $message = "git.exe $($ArgumentList -join ' ') failed with exit code $($result.ExitCode)" }
     throw $message
   }
-  return ((@($output | ForEach-Object { [string]$_ }) -join "`n").Trim())
+  return $message
+}
+
+function Test-XmaGitNetworkFailure {
+  param([string]$Message)
+  if ([string]::IsNullOrWhiteSpace($Message)) { return $false }
+  return $Message -match '(?i)(curl\s+(6|7|28|35|52|55|56|92)\b|recv failure|connection (was )?reset|connection reset by peer|failed to connect|could not resolve host|couldn.t connect|operation timed out|connection timed out|tls|schannel|ssl_connect|http/2 stream|early eof|remote end hung up|unexpected disconnect)'
+}
+
+function Get-XmaGitProxySummary {
+  $gitProxyResult = Invoke-XmaGitCommandResult -ArgumentList @('config','--show-origin','--get-regexp','^(http|https)\..*proxy$')
+  $hasGitProxy = $gitProxyResult.ExitCode -eq 0 -and @($gitProxyResult.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0
+  $envProxyNames = @()
+  foreach ($name in @('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy')) {
+    if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { $envProxyNames += $name }
+  }
+  $gitText = if ($hasGitProxy) { '已检测到（值已隐藏）' } else { '未检测到' }
+  $envText = if ($envProxyNames.Count -gt 0) { ($envProxyNames | Select-Object -Unique) -join ',' } else { '未检测到' }
+  return "Git proxy=$gitText · 环境代理=$envText"
+}
+
+function Invoke-XmaGitFetchMain {
+  param([Parameter(Mandatory = $true)][string]$Origin)
+
+  $attempts = @()
+  $attempts += [pscustomobject]@{ Label = '默认链路'; Arguments = [string[]]@('fetch','--prune','origin','main') }
+  $attempts += [pscustomobject]@{ Label = '默认链路重试'; Arguments = [string[]]@('fetch','--prune','origin','main') }
+  if ($Origin -match '^https?://') {
+    $attempts += [pscustomobject]@{ Label = 'HTTP/1.1 兼容链路'; Arguments = [string[]]@('-c','http.version=HTTP/1.1','fetch','--prune','origin','main') }
+  }
+
+  $lastMessage = ''
+  for ($index = 0; $index -lt $attempts.Count; $index++) {
+    $attempt = $attempts[$index]
+    if ($index -gt 0) { Start-Sleep -Seconds 2 }
+    Write-Host "> git.exe $($attempt.Arguments -join ' ')" -ForegroundColor DarkGray
+    $result = Invoke-XmaGitCommandResult -ArgumentList $attempt.Arguments
+    foreach ($line in @($result.Output)) { if (-not [string]::IsNullOrWhiteSpace([string]$line)) { Write-Host ([string]$line) } }
+    if ($result.ExitCode -eq 0) {
+      if ($index -gt 0) { Write-Host "[网络] GitHub fetch 已通过 $($attempt.Label) 恢复。" -ForegroundColor Green }
+      return
+    }
+
+    $lastMessage = (@($result.Output) -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($lastMessage)) { $lastMessage = "git.exe $($attempt.Arguments -join ' ') failed with exit code $($result.ExitCode)" }
+    if (-not (Test-XmaGitNetworkFailure -Message $lastMessage)) { throw $lastMessage }
+
+    if ($index -eq 0) {
+      Write-Host '[网络] GitHub 连接在 fetch 过程中中断；2 秒后自动重试一次。' -ForegroundColor Yellow
+    } elseif ($index -eq 1 -and $attempts.Count -gt 2) {
+      Write-Host '[网络] 默认链路仍失败；将仅对下一次 fetch 临时使用 HTTP/1.1，不修改 Git 全局配置。' -ForegroundColor Yellow
+    }
+  }
+
+  $proxySummary = Get-XmaGitProxySummary
+  $fallbackText = if ($Origin -match '^https?://') { '并尝试一次仅本命令 HTTP/1.1 兼容链路' } else { '' }
+  throw "GitHub 网络连接失败：fetch 多次遇到连接重置/传输错误。XMA 已完成有限重试$fallbackText。`n[代理] $proxySummary`n[建议] 检查当前网络、代理/VPN、防火墙或 HTTPS/TLS 检查后重新执行 [10]。`n[最后错误] $lastMessage"
 }
 
 function Assert-XmaGitCloneForUpdate {
@@ -202,7 +270,7 @@ function Update-XmaProject {
     Write-Host '  原地更新当前 clone；不需要删除 xma 目录重新 git clone。' -ForegroundColor Green
     Write-Host '====================================================================' -ForegroundColor DarkCyan
     Write-Host '  [1] 安全同步 GitHub main             ← 推荐' -ForegroundColor Green
-    Write-Host '      fetch --prune + pull --rebase --autostash；保留本地修改，冲突时停止。' -ForegroundColor DarkGray
+    Write-Host '      fetch --prune + rebase --autostash origin/main；保留本地修改，冲突时停止。' -ForegroundColor DarkGray
     Write-Host '  [2] 强制恢复 GitHub main' -ForegroundColor Yellow
     Write-Host '      先备份已跟踪修改，再 reset --hard origin/main；不删除未跟踪/忽略缓存。' -ForegroundColor DarkGray
     Write-Host '  [0] 返回'
@@ -212,7 +280,7 @@ function Update-XmaProject {
       '1' {
         $beforeHead = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','HEAD')).Trim()
         Write-Host '[同步] 正在刷新 origin/main 与远端删除引用...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','--prune','origin','main')
+        Invoke-XmaGitFetchMain -Origin $origin
         $beforeState = Get-XmaGitSyncState
         Write-XmaGitSyncState -State $beforeState -Prefix '同步前'
         if ($beforeState.Behind -eq 0) {
@@ -225,7 +293,7 @@ function Update-XmaProject {
           exit 0
         }
         Write-Host '[同步] 检测到 GitHub 新提交，正在原地安全更新当前 clone...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('pull','--rebase','--autostash','origin','main')
+        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('rebase','--autostash','origin/main')
         $afterState = Get-XmaGitSyncState
         Write-XmaGitSyncState -State $afterState -Prefix '同步后'
         if ($afterState.Behind -ne 0) { throw "同步完成后仍落后 origin/main $($afterState.Behind) 个提交，已停止；请检查 Git 输出。" }
@@ -238,7 +306,7 @@ function Update-XmaProject {
         if (-not (Confirm-XmaGitReset)) { Write-Host '[取消] 未执行强制恢复。' -ForegroundColor Yellow; continue }
         $beforeHead = (Invoke-XmaGitCapture -ArgumentList @('rev-parse','HEAD')).Trim()
         Write-Host '[同步] 正在刷新 origin/main 与远端删除引用...' -ForegroundColor Cyan
-        Invoke-XmaExternal -FilePath 'git.exe' -ArgumentList @('fetch','--prune','origin','main')
+        Invoke-XmaGitFetchMain -Origin $origin
         $beforeState = Get-XmaGitSyncState
         Write-XmaGitSyncState -State $beforeState -Prefix '恢复前'
         [void](Save-XmaTrackedUpdateBackup -Head $beforeHead -Remote $beforeState.Remote -Ahead $beforeState.Ahead)

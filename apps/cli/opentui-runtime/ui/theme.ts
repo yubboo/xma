@@ -9,8 +9,8 @@ import type { TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts
 export const COLOR = {
   background: '#0b0c0c',
   panel: '#151515',
-  userMessage: '#bdbdbd',
-  userMessageText: '#181818',
+  userMessage: '#2d2d30',
+  userMessageText: '#e2e2e2',
   panelSelected: '#261911',
   orange: '#ff7e3f',
   text: '#e2e2e2',

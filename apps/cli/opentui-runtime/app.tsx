@@ -16,6 +16,7 @@ import {
 import { render, useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { ErrorBoundary, For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import { PERMISSION_PROFILE_LABELS, type PermissionProfileId, type ToolApprovalDecision, type ToolApprovalRequest } from 'xma-tools'
+import { providerErrorPresentation } from 'xma-ai'
 import {
   applyTerminalRunEvent,
   commandPaletteOptions,
@@ -764,7 +765,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   const runCommand = async (command: string): Promise<boolean> => {
     if (command === 'settings') { await settingsDialog(); return true }
-    if (command === 'visual') {
+    if (command === 'visual' || command === 'vivid') {
       const next = toggleTerminalVisual(settings())
       commitSettings(next, `终端视觉 · ${next.visual === 'vivid' ? '丰富显示' : '简洁显示'}`)
       return true
@@ -874,13 +875,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       const endedAtMs = Date.now()
       clearEventBuffer()
       finalizeRunActivity(aborted ? 'cancelled' : 'failed', endedAtMs)
-      const message = `${aborted ? '已中止当前响应' : '请求失败'} · ${error instanceof Error ? error.message : String(error)}`
+      const presentation = providerErrorPresentation(error)
+      const message = aborted ? '已中止当前响应' : `请求失败 · ${presentation.message}`
       setTranscript(current => {
         const next = current.filter(item => !item.placeholder)
-        next.push({ role: 'assistant', text: message })
+        next.push({ role: 'system', text: message })
         return next
       })
-      tell(aborted ? '已中止当前响应' : '请求失败')
+      tell(aborted ? '已中止当前响应' : presentation.message, aborted ? 2600 : 5200)
     } finally {
       setActivity('idle')
       setBusy(false)
@@ -1136,6 +1138,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           }}
           onPromptFocus={() => prompt?.focus()}
           onSubmit={text => { void submit(text) }}
+          onOpenCommandPalette={() => { void commandPalette() }}
           onCycleMode={direction => {
             const next = cycleTerminalAgentMode(mode(), direction)
             setMode(next)

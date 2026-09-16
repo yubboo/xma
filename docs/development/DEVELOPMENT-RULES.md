@@ -158,7 +158,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - `reasoning-delta` 的原始正文属于隐藏模型推理，不得进入默认 Transcript/Activity；Host 只能把它当作“模型正在分析”的阶段信号。可展开 Activity 只展示真实公开状态、脱敏 Tool 行为和显式 public plan/control 事件，elapsed 必须来自真实 Turn 生命周期。
 - Active Terminal 默认把原始 `reasoning-delta` 投影为实时“正在思考”状态，不直接显示原始思维正文；首个正式 `text-delta` 到达时移除思考占位并立即开始回答流式输出。只有 Provider 明确提供面向用户的 reasoning summary 且协议能与原始 reasoning 区分时才允许展示摘要；不得本地伪造“思考过程”。
 - TUI 渲染器如果因为差分缓存导致流式区域漏刷，必须在 Host 层做有节流的强制 repaint 或等价修复，并补回归测试；不能把“内存里已收到 chunk”冒充“用户已经实时看到”。
-- Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板。Active TUI 必须由固定 Bun/OpenTUI Renderer 统一管理 mouse、selection、focus、caret 与 terminal lifecycle；主 Prompt 必须是 OpenTUI 原生 Textarea，Tab/Shift+Tab 模式切换后必须把真实输入焦点留在 Textarea，Esc/Ctrl+P/Ctrl+K/Dialog 也必须走同一 key/focus 系统。Active Renderer 禁止输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或自绘假硬件光标，避免 Windows Terminal Text Cursor Indicator 锚点漂移；Windows Text Cursor Indicator 若稳定跟随真实 caret，视为 OS 辅助功能正常装饰，不得由 XMA 静默改系统设置或因此关闭原生 Textarea caret；只有锚点漂移/错位才属于 Host cursor bug。旧 Pi TUI 只允许留在 Workspace Trust/纯兼容层。Home/Transcript/Prompt/快捷栏必须共享响应式居中宽度，左右留白对称；Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
+- Terminal 菜单必须使用统一列栅格，命令面板固定为“左侧真实命令 / 中间菜单 / 右侧简短说明”，Provider/Model 等无命令列表保持菜单/说明两列；不得靠页面手调空格。`Ctrl+P` 与 `Ctrl+K` 共用同一可搜索命令面板；Prompt 的“输入 / 唤起命令”也必须打开这一**同一真实面板**，不得维护第二套 slash-only 假命令或 legacy-only suggestions。Active TUI 必须由固定 Bun/OpenTUI Renderer 统一管理 mouse、selection、focus、caret 与 terminal lifecycle；主 Prompt 必须是 OpenTUI 原生 Textarea，Tab/Shift+Tab 模式切换后必须把真实输入焦点留在 Textarea，Esc/Ctrl+P/Ctrl+K/Dialog 也必须走同一 key/focus 系统。Active Renderer 禁止输出 `CURSOR_MARKER`、手写 DECTCEM/mouse-reporting 或自绘假硬件光标，避免 Windows Terminal Text Cursor Indicator 锚点漂移；Windows Text Cursor Indicator 若稳定跟随真实 caret，视为 OS 辅助功能正常装饰，不得由 XMA 静默改系统设置或因此关闭原生 Textarea caret；只有锚点漂移/错位才属于 Host cursor bug。旧 Pi TUI 只允许留在 Workspace Trust/纯兼容层。Home/Transcript/Prompt/快捷栏必须共享响应式居中宽度，左右留白对称；Home 底部提示必须自动轮换并对模型未配置/未就绪状态给出对应提示，短暂操作通知不得永久覆盖轮换提示。
 
 
 ## 5. Provider 开发规则
@@ -167,7 +167,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Provider-specific JSON/headers/auth 不得散落 Agent Loop。
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
-- 产品 Ready 状态表示当前 Provider/Profile/Model 已保存且凭据引用当前可读取；`Brain Ready Probe / 连接测试` 是可选的真实连接诊断与 Provider 验收证据，fixture/mock 不能伪造 Probe 通过。Terminal Prompt 正常态可使用绿色 `● + canonical model id` 表达 Ready，而不长期重复“模型已就绪”文字；未配置、凭据不可读或真实发送失败必须明确显示异常。Probe 未执行/失败不得把一个已配置且凭据可用的模型重新标成“尚未就绪”；真实发送失败必须原样暴露 auth/network/model 错误。
+- 产品 Ready 状态表示当前 Provider/Profile/Model 已保存且凭据引用当前可读取；`Brain Ready Probe / 连接测试` 是可选的真实连接诊断与 Provider 验收证据，fixture/mock 不能伪造 Probe 通过。Terminal Prompt 正常态可使用绿色 `● + canonical model id` 表达 Ready，而不长期重复“模型已就绪”文字；未配置、凭据不可读或真实发送失败必须明确显示异常。Probe 未执行/失败不得把一个已配置且凭据可用的模型重新标成“尚未就绪”。真实发送失败必须保留 canonical auth/network/model/balance 等错误类别，但主 Transcript/notice 使用 `xma-ai` 统一友好文案；已脱敏 raw Provider detail 只留诊断，禁止把 wire JSON dump 当成 Xiaoyu 正常回答。
 - Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → 模型 / 提供方` 必须始终可用，并与首次 Setup 复用同一配置实现。工作区信任选择“否，退出”是正常取消，CLI 必须干净退出，不得向开发包装层返回错误状态。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
@@ -251,7 +251,7 @@ TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/proce
 CLI、Desktop、Web、Server 是同一个 Core 的 Shell，禁止复制 Agent Runtime。
 - Terminal 的 `Ctrl+C` 必须按 `真实选区复制 → busy 中止 Turn → modal 取消/deny → idle 二次确认退出` 的顺序路由；有选区时禁止退出。复制优先使用 OpenTUI/Renderer 官方 clipboard 能力，不以 shell `clip.exe` 作为唯一实现。
 - `Ctrl+C` 不进入 Terminal 永久快捷栏；它的含义依赖当前 Selection/busy/modal/idle 状态，只有实际触发时才显示短时反馈。永久快捷栏必须优先保持单行，不能为了描述上下文动作产生换行。
-- Terminal Transcript 的用户消息使用内容列内 **full-width user band**：背景覆盖整条 `contentWidth`，左右至少各 1 列、上下至少各 1 行 padding，长文本完整换行；禁止退回 `maxWidth` 右对齐小气泡。此样式只能改变消息投影，不能新增第二 ScrollBox 或破坏 Transcript 单一滚动 ownership。
+- Terminal Transcript 的用户消息使用内容列内 **full-width user band**：背景覆盖整条 `contentWidth`，用户内容右对齐，左右至少各 1 列、上下至少各 1 行 padding，长文本完整换行；深色主题 band 只应比页面背景亮一档，禁止亮白矩形，也禁止退回 `maxWidth` 小气泡。此样式只能改变消息投影，不能新增第二 ScrollBox 或破坏 Transcript 单一滚动 ownership。
 - Terminal 会话指标必须做层级投影而不是把 canonical metrics 无差别塞一行：主 Mode 行右侧优先显示真实 context used/window + API balance 或 subscription quota，再与 `Ready dot + canonical Model + Reasoning` 保持稳定间距；正常态不长期重复 Provider 品牌或“模型已就绪”。空会话 `turnCount=0` 时 detail 只显示 canonical billing label（左）与 permission（右），cache/tokens/compaction/0轮/cost 占位不得出现；第 1 轮开始恢复完整 detail。已有会话的 detail 禁止重复 model/context/account，并且 **不得因宽度隐藏 canonical 字段**：billing、真实 cache hit、精确 session/turn tokens、真实 compaction threshold（unavailable=`—`）、turn count、真实费用（可用时）和 permission 必须直接可见；窄宽度只允许在同一 PromptDock 内稳定分成多行，不允许 `height=1 + overflow=hidden` 裁掉字段。任何 Host 布局调整都不得改变 `session/metrics` 真值、写死 Provider 品牌或硬编码 `80%`。
 
 当前 0.1.x **底层优先**：在 Agent Runtime、真实 Provider、Tool/Permission、Workspace、App Protocol 没达到计划出口前，不继续大规模堆 Desktop UI。
@@ -412,4 +412,4 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - Provider Setup、Tool Approval、命令面板等 modal 必须被局部 ErrorBoundary/等价边界保护。子 modal 异常只能 settle 当前操作并恢复 Prompt；不得让整个 renderer root 停止响应。
 - 异常恢复必须清除 stale dialog/setup state、settle awaiting Promise、恢复 focus/caret；不得删除已经成功持久化的 Provider Profile 或 Secret reference。
 
-- Windows `xma-dev.bat → [10] 同步 GitHub 最新源码` 必须原地更新正确 `yubboo/xma` clone：先 fetch/prune + ahead/behind 核验，安全模式保留本地修改，强制模式先在 `.git/xma-state/update-backups/` 留恢复材料再 reset；禁止自动删仓库重 clone、禁止自动 git clean。
+- Windows `xma-dev.bat → [10] 同步 GitHub 最新源码` 必须原地更新正确 `yubboo/xma` clone：先 fetch/prune + ahead/behind 核验；transport/network reset 只允许有限重试，HTTPS fallback 只允许单次 `-c http.version=HTTP/1.1`，禁止改 global/local Git 配置；fetch 成功后安全模式基于已更新 `origin/main` 做本地 `rebase --autostash`，避免 `pull` 再 fetch；强制模式先在 `.git/xma-state/update-backups/` 留恢复材料再 reset。最终网络失败要给出代理/VPN/TLS 可行动诊断；禁止自动删仓库重 clone、禁止自动 git clean。

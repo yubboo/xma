@@ -1187,3 +1187,173 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 - 自动验证：`node --experimental-strip-types --test apps/cli/tests/session-status.test.ts apps/cli/tests/opentui-runtime.test.ts` 共 43/43 PASS；Runtime updater 2/2 PASS；修改文件 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。
 - 待验收：Windows Terminal Home 实机确认 `API` 左 / `权限 替我审批` 右的视觉间距；发生第一轮对话后确认完整 metrics 自动出现。
 
+# 15 Windows `[10]` GitHub fetch 连接重置与有限重试
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`scripts/windows/xma-console.ps1`、Windows Gate / Terminal 回归合同
+- 关联历史：#09 GitHub 原地最新同步、#11 Unicode checkout 顶层校验
+
+## 用户可见症状
+
+另一台 Windows 电脑执行 `xma-dev.bat → [10] → [1] 安全同步` 时，仓库、origin、main 与工作树均已正确识别，但首个 `git.exe fetch --prune origin main` 返回 `RPC failed; curl 56 Recv failure: Connection was reset`，随后 `[10]` 直接失败退出。
+
+## 已确认事实与证据
+
+- 失败发生在真实远端 fetch 阶段，不是 #11 已修复的 Unicode checkout / `GetFullPath` 问题。
+- Git 已进入 `fetch --prune origin main`，说明本地 clone、branch 与 origin 白名单验证已通过。
+- Git 官方文档支持用单次命令 `git -c <name>=<value> ...` 临时覆盖配置；`http.version` 支持 `HTTP/2` / `HTTP/1.1`。因此兼容 fallback 可以只作用于本次 fetch，不能偷偷改用户 global config。
+- 当前实现对 fetch 使用 `Invoke-XmaExternal`，失败后没有错误分类、有限重试或 command-scoped HTTP/1.1 fallback。
+
+## 明确排除 / 禁止重复
+
+- 不把网络 reset 误判为仓库损坏；不得自动删除 clone、重新 clone、`git clean` 或 reset。
+- 不通过 `git config --global http.version HTTP/1.1` 永久修改用户 Git 配置。
+- 不用 `http.postBuffer` 作为无证据的万能修复。
+
+## 本次修复 Prompt
+
+> 以当前 XMA `main`/正式源码包为第一事实源，增强 `[10]` 的 GitHub fetch 网络容错。必须保持 #09/#11 的 clone/origin/main/备份安全边界不变。
+>
+> 1. 为 `[10]` 增加专用 fetch helper：第一次按默认 Git 配置执行 `fetch --prune origin main`；仅在明确网络/transport 类失败时有限重试。
+> 2. 默认重试仍失败后，允许再执行一次 command-scoped `git -c http.version=HTTP/1.1 fetch --prune origin main`；禁止写入 global/local Git 配置。
+> 3. 最终失败时给出中文可行动诊断，明确是 GitHub 网络连接/代理/VPN/防火墙/TLS 链路问题，并输出检测到的 Git proxy 配置来源；不得只剩 `exit code 128`。
+> 4. 成功 fetch 后安全同步不得再无必要地发起第二次网络 fetch；优先基于刚更新的 `origin/main` 做本地 `rebase --autostash origin/main`。
+> 5. 强制恢复路径复用同一 fetch helper；其备份、确认、`reset --hard origin/main` 与“不 git clean”合同不变。
+> 6. 增加回归合同并更新长期规则/状态/Update Log；Windows PowerShell 5.1 真实网络 E2E 仍由用户机器验收。
+
+## 不允许回归的行为
+
+- `[10]` 仅允许更新真实 `yubboo/xma` clone 的 `main`。
+- 安全同步保留本地修改；强制恢复先备份 tracked/local commits；未跟踪与忽略目录不删除。
+- Unicode checkout 顶层验证继续使用 `$Root + .git + --show-prefix`，不得恢复 `show-toplevel → GetFullPath`。
+
+## 验收条件
+
+- `curl 56 / connection reset / HTTP2 / TLS` 等 transport 错误触发有限重试，非网络错误不盲目重试。
+- fallback 只通过 `-c http.version=HTTP/1.1` 作用于单次命令。
+- 最终错误包含中文网络诊断与 proxy 状态，不把仓库标成损坏。
+- fetch 成功后本地同步只使用已获取的 `origin/main`。\n## 最终根因\n\n#15 不是仓库损坏，也不是 #11 的 Unicode checkout 回归；本地仓库校验已经通过，失败点是 Git for Windows 与 GitHub HTTPS 之间的 transport 连接被远端/中间网络重置。原 `[10]` 把任意 fetch 失败直接抛出，因此一次瞬时 `curl 56` 就让同步退出，而且安全同步后续 `pull` 还会再次发起网络 fetch。\n\n## 实际修改与验证证据\n\n- `scripts/windows/xma-console.ps1` 新增 `Invoke-XmaGitCommandResult`、`Test-XmaGitNetworkFailure`、`Get-XmaGitProxySummary` 与 `Invoke-XmaGitFetchMain`。\n- 默认 fetch 失败且被识别为 transport/network 错误时只做有限重试；HTTPS 默认链路仍失败时，再用一次 command-scoped `git -c http.version=HTTP/1.1 fetch --prune origin main`。\n- fallback 不写 global/local Git config；proxy 诊断只报告“是否检测到/环境变量名”，不输出代理地址或凭据。\n- 安全同步在 fetch 成功后改为 `git rebase --autostash origin/main`，不再通过 `pull` 重复网络 fetch；强制恢复复用同一 fetch helper，备份与 `reset --hard origin/main` 合同不变。\n- `apps/cli/tests/opentui-runtime.test.ts` 与 `scripts/gates/windows.ts` 已锁定 transport 重试、HTTP/1.1 单命令 fallback、禁止 global config、fetch 后本地 rebase 的合同。\n- 自动验证：OpenTUI 合同 38/38 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。当前 Linux 沙箱没有 Windows PowerShell 5.1/Git for Windows 网络环境，真实 `curl 56` 恢复仍待用户机器 E2E，不能冒充已实机通过。\n
+
+# 16 Provider 原始 JSON 错误直出与余额不足友好提示
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`packages/xma-ai` Provider 错误分类、Terminal Host 错误投影、Provider 协议测试
+- 关联历史：#05 Session Metrics、#07 Provider/Model truth、#09 Activity
+
+## 用户可见症状
+
+Provider 返回 `{"error":{"message":"Insufficient Balance",...}}` 时，Terminal 把整段原始 JSON 作为 Xiaoyu 正常回答追加到 Transcript：`请求失败 · {json}`。用户只需要知道“API 余额不足，请充值后重试”，原始 wire payload 不应占据正常会话正文。
+
+## 已确认事实与证据
+
+- OpenAI-compatible adapter 已有 `ProviderRequestError` 与 status 错误归一化，但 `ProviderErrorCode` 当前没有 `insufficient_balance`。
+- `mapStatus()` 对 400/402 等余额错误会落入 `unknown`，message 保留整段 body。
+- Active OpenTUI 与 legacy TUI catch 均直接拼接 `error.message`，因此 wire JSON 被投影为正常 assistant 文本。
+- Provider 原始细节仍有诊断价值，但应该作为结构化 diagnostic/detail 保留，而非主 UX 文案。
+
+## 明确排除 / 禁止重复
+
+- 不只在 UI 用字符串替换 `Insufficient Balance` 硬编码；分类必须落在 `xma-ai` Provider ownership。
+- 不吞掉错误状态或把失败伪装成模型正常回答。
+- 不泄漏 Secret、Authorization 或完整敏感请求参数。
+
+## 本次修复 Prompt
+
+> 在 `xma-ai` 建立 Host-neutral Provider error presentation。Adapter 负责把 wire/status/body 归一为 canonical code，Host 只消费友好 summary；原始脱敏 detail 可留作诊断，但不得直接成为正常聊天正文。
+>
+> 1. 新增 `insufficient_balance` canonical Provider error code；OpenAI-compatible 对 `insufficient balance` / 同义 wire body 在常见 400/402 场景进行归一化。
+> 2. 新增统一 `providerErrorPresentation(error)`（或等价 Host-neutral API），覆盖余额不足、auth、permission、model_not_found、rate limit、timeout、network、context、server、malformed、unsupported、cancelled、unknown。
+> 3. Active OpenTUI 与 legacy TUI 使用该 presentation；失败 Transcript 显示简洁中文用户文案，不再把原始 JSON 当 Xiaoyu 正常回答。
+> 4. Activity 仍保留真实 failed/cancelled outcome；诊断 detail 只允许脱敏内容。
+> 5. Provider mock HTTP 测试必须覆盖 `Insufficient Balance` 的 code + 用户文案，且证明 body 中 Secret 不进入 presentation。
+
+## 不允许回归的行为
+
+- 真实 Provider 请求仍然失败，不得伪造成功文本。
+- auth/network/model 等错误仍必须明确告诉用户错误类别，只是从 raw wire payload 改为规范化产品文案。
+- Session/metrics/余额 truth 不因错误文案变化而被伪造。
+
+## 验收条件
+
+- 余额不足主文案为“API 余额不足，请充值后重试。”或等价明确中文，不出现整段 JSON。
+- canonical error code 可被测试断言；unknown error 也不直接把 JSON dump 到正文。
+- Provider 协议测试通过。\n## 最终根因\n\n#16 的根因是 Provider adapter 与 Host presentation 的责任边界没有完全闭合：OpenAI-compatible 对余额不足的 400/402 wire body 没有 canonical code，错误会落入 `unknown`；同时 Active/legacy TUI catch 直接把 `error.message` 拼入 assistant Transcript，所以原始 JSON 被误当成 Xiaoyu 正常回答。\n\n## 实际修改与验证证据\n\n- `xma-ai` 新增 canonical `insufficient_balance`，`ProviderRequestError` 增加已脱敏 `detail`；新增 `providerErrorPresentation()` 统一把余额、认证、权限、模型、限流、超时、网络、上下文、服务端、协议、取消与 unknown 投影成用户可读中文。\n- OpenAI-compatible adapter 会从 JSON body 抽取 `error.message/message`，识别 `Insufficient Balance` 同义文本；wire body 只作为已脱敏诊断 detail 保留。\n- Active OpenTUI 与 legacy TUI 失败路径改为 system failure message，主文案显示 `请求失败 · API 余额不足，请充值后重试。`，不再把 JSON 作为 assistant 正常回答。\n- 本地 mock Provider 行为测试 5/5 PASS，其中余额不足用例断言 canonical code、友好文案、raw JSON 不进入主 presentation、Secret 不泄漏。\n- Activity 的 failed/cancelled 事实仍保留；本轮没有把失败伪装成成功。真实 DeepSeek 余额不足 E2E 仍以用户 Provider 账户为准。\n
+
+# 17 Terminal 用户消息 band 亮度继续下调
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime/ui/theme.ts`、Terminal 视觉回归
+- 关联历史：#12 整行 user band、#13 右对齐/色温微调
+
+## 用户可见症状
+
+#13 后 user band 结构和右对齐方向正确，但 `#bdbdbd` 在深色终端里仍然像一整条白板，用户要求“只要一点白”，即仅比背景明显一点，不抢正文视觉重心。
+
+## 已确认事实与证据
+
+- 当前 `COLOR.userMessage = '#bdbdbd'`、`userMessageText = '#181818'`，高亮对比仍然过强。
+- Pi dark theme 的 user message 背景采用深灰系而非接近白色；XMA 可以吸收“低亮度区分”的原则，不复制其品牌视觉。
+
+## 本次修复 Prompt
+
+> 保持 #12/#13 的 full-width band、右对齐、左右/上下 padding 和单一 Transcript ScrollBox ownership不变，只调整主题颜色。把 user band 改为接近背景但可辨识的深灰白/暗灰，并同步把用户文本改为浅色保证对比度；禁止恢复亮白背景或小气泡。
+
+## 不允许回归的行为
+
+- full-width user band、右对齐、长文本换行、padding 全部保持。
+- Assistant/Activity 仍左对齐。
+
+## 验收条件
+
+- band 只比页面背景亮一档，不再呈现亮白矩形。
+- 用户文字清晰可读。\n## 最终根因\n\n#17 是 #13 色温参数选择仍偏亮：`#bdbdbd` 虽比上一版降低，但在 `#0b0c0c` 深色页面上仍形成高亮“白板”效果。布局结构本身（整行 band、右对齐、padding）没有问题。\n\n## 实际修改与验证证据\n\n- `theme.ts` 将 `userMessage` 调整为克制深灰 `#2d2d30`，只比页面背景明显一档；为保证可读性，`userMessageText` 改为浅色 `#e2e2e2`。\n- `TranscriptViewport` 的 full-width、右对齐、上下/左右 padding 与单 ScrollBox ownership 均未改动。\n- OpenTUI 合同测试明确锁定 `#2d2d30/#e2e2e2`、full-width/right-aligned/padded band，38/38 PASS。最终视觉亮度仍待用户 Windows Terminal 目视确认。\n
+
+# 18 Active OpenTUI `/` 快捷命令未唤起命令面板
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：Active OpenTUI PromptDock、命令面板调用、TUI command contract/tests
+- 关联历史：Active OpenTUI 迁移、#06 Dialog 存活性、#10 快捷提示
+
+## 用户可见症状
+
+Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显示“/ 快捷命令”，但在 Active OpenTUI 输入 `/` 时没有任何命令列表出现。`Ctrl+P` 打开的命令面板则能显示 `/settings`、`/vivid`、`/doctor`、`/workspace`、`/provider`、`/model`、`/permission`、`/agent`、`/clear`、`/exit` 等项目。
+
+## 已确认事实与证据
+
+- 命令不是假命令：Active `runCommand()` 已真实实现 settings/visual/doctor/workspace/provider/model/permission/agent/clear/exit，`/help` 与 `/` submit 也有处理。
+- `apps/cli/src/tui.ts` 仍有 `slashCommandSuggestions()`，旧 `SafePromptInput` 会读取 suggestions；但 Active 工作台已迁移到 `ui/prompt-dock.tsx` 的原生 OpenTUI `<textarea>`，该 Textarea 只有 submit/tab handler，没有 `onContentChange` 的 slash 唤起逻辑。
+- 因此这是**迁移后 UI wiring 缺失**：命令本体真实存在，但 slash discovery 还停留在 legacy TUI 合同里。
+
+## 明确排除 / 禁止重复
+
+- 不新增一套与 `commandPaletteOptions()` 不同的假命令清单。
+- 不重新启用 legacy Pi Renderer / SafePromptInput。
+- 不通过轮询 Prompt 文本或父级定时器实现，避免破坏 caret/IME ownership。
+
+## 本次修复 Prompt
+
+> 让 Active OpenTUI 真正兑现“输入 / 唤起命令”。必须复用现有真实 command palette / runCommand，不复制业务命令。
+>
+> 1. PromptDock 使用 OpenTUI Textarea 的 `onContentChange` 观察当前真实输入；当用户输入单独 `/` 时，清理该触发字符并通过父级 callback 打开同一个 `commandPalette()`。
+> 2. Slash 打开的面板必须与 Ctrl+P/Ctrl+K 共用 `commandPaletteOptions()`、ListDialog 搜索与 `runCommand()`，因此显示的命令天然是真实、完整、可执行的；禁止单独维护第二份列表。
+> 3. 直接粘贴/输入完整 `/provider` 等并回车仍继续走现有 submit command path；`/help` 保持有效。
+> 4. modal 打开/关闭继续走统一 focus lifecycle，关闭后 refocus Prompt；不得破坏 Textarea caret/IME/selection。
+> 5. 增加回归测试，明确 Active PromptDock 存在 slash open wiring，并继续断言 slash suggestions / command palette 只包含已实现命令。
+
+## 不允许回归的行为
+
+- Ctrl+P/Ctrl+K 命令面板继续可用且共享同一真实命令源。
+- Prompt Tab/Shift+Tab 工作模式切换在没有 slash modal 时保持不变。
+- Esc 关闭 modal 后 Prompt 恢复焦点。
+
+## 验收条件
+
+- Active Terminal 输入 `/` 立即出现与 Ctrl+P 同源的真实命令面板。
+- 可搜索并执行现有命令；不存在只展示不执行的“假命令”。
+- 完整 `/command` submit 路径仍通过现有 runCommand。\n## 最终根因\n\n#18 不是“命令都是假的”，而是 Active OpenTUI 迁移时遗漏了 Prompt Textarea → command palette 的 slash discovery wiring。真实 `commandPaletteOptions()` / `runCommand()` 一直存在，Ctrl+P 能证明它们可用；但 `prompt-dock.tsx` 只有 submit/tab handler，输入 `/` 不会触发任何面板。调查还发现 `/vivid` 的可见 shortcut 与内部 palette action `visual` 名称存在别名分叉，直接输入 `/vivid` 在 Active submit 路径可能被判未知命令。\n\n## 实际修改与验证证据\n\n- `PromptDock` 新增 `onOpenCommandPalette`；原生 OpenTUI Textarea 在 `onContentChange` 检测到**单独 `/`**时清掉触发字符，并通过 microtask 打开父级同一个 `commandPalette()`。\n- Active `app.tsx` 把该 callback 直接连到 `commandPalette()`；面板继续只消费 `commandPaletteOptions()` 并交给 `runCommand()`，与 Ctrl+P/Ctrl+K 共用同一真实命令源，没有新增第二份假列表。\n- `runCommand()` 同时接受内部 action `visual` 与用户可见 `/vivid` alias，因此面板选择和直接输入 `/vivid` 都执行同一视觉切换动作。其余 `/settings /doctor /workspace /provider /model /permission /agent /clear /exit` 保持现有真实实现；`/help` 保持 submit 特殊命令。\n- 输入完整 `/provider` 等并回车不受“单独 `/`”触发影响，继续走原有 submit/runCommand；modal 关闭后继续使用既有 refocus lifecycle。\n- OpenTUI 合同 38/38 PASS；legacy TUI 29/29 PASS；测试锁定 slash→同源 commandPalette 以及 `/vivid` alias 可执行。真实键盘输入 `/` 后弹面板、搜索、Esc 返焦仍待 Windows Terminal E2E。
+- 本批正式 Source Manifest 242 files；正式 ZIP 243 entries，独立解压 missing=0 / extra=0 / byte differences=0；解压树复跑 OpenTUI 38/38、session/activity/shortcut 12/12、legacy TUI 29/29、Provider 5/5、Runtime updater 2/2 与 9/9 Gate 全部 PASS。\n
+
