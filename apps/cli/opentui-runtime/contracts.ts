@@ -15,3 +15,5 @@ export type {
 export { filterTuiMenuItems, type TuiMenuItem } from '../src/tui-menu.ts'
 
 export type { SessionCostMetrics, SessionRuntimeMetrics } from 'xma-session'
+
+export { slashCommandSuggestions } from '../src/tui.ts'

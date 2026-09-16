@@ -9,6 +9,7 @@ import { For, Show, createSignal } from 'solid-js'
 import type { TerminalActivitySummary, TerminalTranscriptItem } from '../contracts.ts'
 import { formatTerminalActivityElapsed, terminalActivityPresentation } from './activity-view.ts'
 import { COLOR } from './theme.ts'
+import { terminalAssistantText } from './transcript-text.ts'
 
 function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color: string } {
   if (role === 'user') return { label: '你', color: COLOR.orange }
@@ -151,7 +152,7 @@ export function TranscriptViewport(props: {
               return (
                 <box width="100%" flexDirection="column" flexShrink={0}>
                   <text fg={meta.color}><strong>{meta.label}</strong></text>
-                  <text fg={COLOR.text}>{item.text}</text>
+                  <text fg={COLOR.text}>{terminalAssistantText(item.text)}</text>
                 </box>
               )
             }

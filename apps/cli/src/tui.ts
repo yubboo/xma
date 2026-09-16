@@ -71,30 +71,21 @@ const LOGO_YU = [
   '  █     ███ ',
 ] as const
 
-const COMMANDS = [
-  { value: 'help', label: 'help', description: '查看快捷命令' },
-  { value: 'settings', label: 'settings', description: '打开终端设置' },
-  { value: 'vivid', label: 'vivid', description: '切换丰富 / 简洁视觉' },
-  { value: 'doctor', label: 'doctor', description: '检查当前运行环境' },
-  { value: 'workspace', label: 'workspace', description: '查看当前工作区' },
-  { value: 'provider', label: 'provider', description: '配置模型 / 提供方' },
-  { value: 'model', label: 'model', description: '切换当前真实模型' },
-  { value: 'permission', label: 'permission', description: '切换请求批准 / 替我审批 / 完全权限' },
-  { value: 'agent', label: 'agent', description: '查看当前智能体' },
-  { value: 'clear', label: 'clear', description: '清空当前终端显示' },
-  { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
-] as const
-
-const PALETTE_ACTIONS: readonly TuiMenuItem[] = [
+/**
+ * Terminal slash 命令的唯一产品真值源。
+ * Ctrl+P/Ctrl+K、Prompt inline suggestions 与 /help 必须全部从这里派生，禁止再维护第二份命令表。
+ */
+const TERMINAL_COMMAND_CATALOG: readonly TuiMenuItem[] = [
+  { value: 'help', label: '帮助', description: '查看全部快捷命令与用途说明', shortcut: '/help', keywords: ['help', 'commands', '帮助', '命令'] },
   { value: 'settings', label: '设置', description: '外观 / 特效 / 系统', shortcut: '/settings', keywords: ['terminal', 'settings', 'appearance', 'effects', 'system', '设置', '外观', '特效', '系统'] },
-  { value: 'visual', label: '切换丰富显示', description: '动态视觉 / 简洁模式', shortcut: '/vivid', keywords: ['visual', 'vivid'] },
+  { value: 'vivid', label: '切换丰富显示', description: '动态视觉 / 简洁模式', shortcut: '/vivid', keywords: ['visual', 'vivid'] },
   { value: 'doctor', label: '检查运行环境', description: '运行 Xiaoyu doctor', shortcut: '/doctor', keywords: ['doctor', '检查'] },
   { value: 'workspace', label: '工作区', description: '查看当前目录', shortcut: '/workspace', keywords: ['workspace', '目录'] },
   { value: 'provider', label: '模型 / 提供方', description: '配置模型与 API Key', shortcut: '/provider', keywords: ['provider', 'model', 'api key', 'deepseek', '模型', '提供方'] },
-  { value: 'model', label: '模型切换', description: '切换当前模型', shortcut: '/model', keywords: ['model', 'deepseek', '模型'] },
+  { value: 'model', label: '模型切换', description: '切换当前真实模型', shortcut: '/model', keywords: ['model', 'deepseek', '模型'] },
   { value: 'permission', label: '权限 / 审批', description: '请求批准 / 替我审批 / 完全权限', shortcut: '/permission', keywords: ['permission', 'approval', '权限', '审批', '完全权限'] },
   { value: 'agent', label: '智能体', description: '查看当前智能体', shortcut: '/agent', keywords: ['agent', '智能体'] },
-  { value: 'clear', label: '清空显示', description: '清空会话显示', shortcut: '/clear', keywords: ['clear', '清空'] },
+  { value: 'clear', label: '清空显示', description: '清空当前会话显示', shortcut: '/clear', keywords: ['clear', '清空'] },
   { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端', shortcut: '/exit', keywords: ['exit', 'quit', '退出'] },
 ]
 
@@ -635,7 +626,13 @@ function renderHintLine(width: number, showEsc = false): string {
 }
 
 export function commandPaletteOptions(): readonly TuiMenuItem[] {
-  return PALETTE_ACTIONS.map(item => ({ ...item }))
+  return TERMINAL_COMMAND_CATALOG.map(item => ({ ...item }))
+}
+
+export function terminalCommandHelpText(): string {
+  return TERMINAL_COMMAND_CATALOG
+    .map(item => `${item.shortcut ?? `/${item.value}`}  ${item.label} · ${item.description ?? ''}`.trimEnd())
+    .join('\n')
 }
 
 /**
@@ -826,8 +823,11 @@ export function approvalDecision(answer: string): ToolApprovalDecision {
 }
 
 export function slashCommandSuggestions(prefix: string): readonly TuiMenuItem[] {
-  const normalized = prefix.replace(/^\//, '').toLowerCase()
-  return COMMANDS.filter(command => command.value.startsWith(normalized)).map(command => ({ ...command }))
+  const normalized = prefix.trimStart().toLowerCase()
+  if (!normalized.startsWith('/') || normalized.includes(' ')) return []
+  return TERMINAL_COMMAND_CATALOG
+    .filter(command => (command.shortcut ?? `/${command.value}`).toLowerCase().startsWith(normalized))
+    .map(command => ({ ...command }))
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -1981,7 +1981,7 @@ class XiaoyuSurface {
         this.openSettings()
         return
       }
-      if (value === 'visual') {
+      if (value === 'vivid') {
         this.settings = toggleTerminalVisual(this.settings)
         saveTerminalUiSettings(this.settings)
         this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
@@ -1997,6 +1997,35 @@ class XiaoyuSurface {
 
   private async runTerminalCommand(command: string): Promise<boolean> {
     try {
+      if (command === 'help') {
+        this.notice = terminalCommandHelpText()
+        this.tui.requestRender()
+        return true
+      }
+      if (command === 'settings') {
+        this.openSettings()
+        return true
+      }
+      if (command === 'vivid') {
+        this.settings = toggleTerminalVisual(this.settings)
+        saveTerminalUiSettings(this.settings)
+        this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
+        this.tui.requestRender()
+        return true
+      }
+      if (command === 'permission') {
+        this.showListOverlay('权限 / 审批', [
+          { value: 'ask', label: '请求批准', description: '敏感 Tool 每次询问' },
+          { value: 'smart', label: '替我审批', description: '按策略自动审批' },
+          { value: 'full', label: '完全权限', description: '允许当前工作区内的完整 Tool 能力' },
+        ], value => {
+          if (value !== 'ask' && value !== 'smart' && value !== 'full') return
+          this.backend.setPermissionProfile(value)
+          this.notice = `权限 · ${value === 'ask' ? '请求批准' : value === 'smart' ? '替我审批' : '完全权限'}`
+          this.tui.requestRender()
+        }, { centered: true, width: 68, maxHeight: 12 })
+        return true
+      }
       if (command === 'exit' || command === 'quit') {
         this.requestExit()
         return true
@@ -2046,20 +2075,8 @@ class XiaoyuSurface {
     this.editor.setText('')
     this.notice = ''
 
-    if (line === '/' || line === '/help') {
-      this.notice = '/settings 终端设置 · /vivid 视觉 · /doctor 检查 · /workspace · /provider · /model · /agent · /clear · /exit'
-      this.tui.requestRender()
-      return
-    }
-    if (line === '/settings') {
-      this.openSettings()
-      return
-    }
-    if (line === '/vivid') {
-      this.settings = toggleTerminalVisual(this.settings)
-      saveTerminalUiSettings(this.settings)
-      this.notice = `终端视觉 · ${this.settings.visual === 'vivid' ? '丰富显示' : '简洁显示'}`
-      this.tui.requestRender()
+    if (line === '/') {
+      await this.runTerminalCommand('help')
       return
     }
     if (line.startsWith('/') && await this.runTerminalCommand(line.slice(1))) return

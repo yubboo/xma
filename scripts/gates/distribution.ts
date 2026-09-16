@@ -86,7 +86,7 @@ for (const marker of [
 ]) {
   if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI parent marker missing: ${marker}`)
 }
-for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（输入 / 唤起命令）"']) {
+for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（输入 / 查看命令）"']) {
   if (!openTuiPrompt.includes(marker)) throw new Error(`XMA PromptDock marker missing: ${marker}`)
 }
 for (const marker of ['Tool Approval', "event.name === 'escape'"]) {

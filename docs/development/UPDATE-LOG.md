@@ -1037,3 +1037,11 @@
 - 自动证据：OpenTUI 合同 38/38 PASS；session/activity/shortcut 12/12 PASS；legacy TUI 29/29 PASS；Provider mock 5/5 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。 Source Manifest 242 files；正式 ZIP 243 entries，独立解压 missing=0 / extra=0 / byte differences=0，并从解压树复跑 OpenTUI 38/38、session/activity/shortcut 12/12、legacy TUI 29/29、Provider 5/5、Runtime updater 2/2 与 9/9 Gate 全部 PASS。
 - 待实机：Windows PowerShell 5.1/Git for Windows 网络链路、真实 Provider 余额错误、user band 最终亮度、Active slash 面板键盘/Esc 焦点均必须由用户 Windows Terminal 继续验收，当前不标“已完成”。
 
+##93 · Slash inline discovery / Help / Assistant Markdown 清理
+
+- 日期：2026-09-16
+- 实机结论：#15 GitHub fetch 容错与 #17 user band 亮度由用户确认通过；#16 Provider 余额不足文案暂留验证中；#18 因“输入 `/` 立即打开 Ctrl+P modal”交互错误被用户判定不通过，按规则新建 #19，不改写旧 Repair。
+- Slash UX：命令元数据收口为 `TERMINAL_COMMAND_CATALOG`；Prompt 输入 `/` 原位显示全部真实命令，prefix 输入实时过滤；`↑/↓` 选候选、`Ctrl+Space` 补全、完整 `/command` Enter 执行，Tab/Shift+Tab 继续切工作模式。Ctrl+P/Ctrl+K 保持独立 modal 入口但共享同一 catalog/action。
+- `/help`：升级为真实 command action，在 Transcript 持久列出 `/help /settings /vivid /doctor /workspace /provider /model /permission /agent /clear /exit` 与用途说明，用户无需猜命令。
+- Assistant 文本：新增 Host-only `transcript-text.ts` formatter，把 `- **代码开发**` 等常见 Markdown marker 转成干净终端文本，同时保留 fenced code body。
+- 自动证据：OpenTUI 静态合同 + Transcript formatter 在候选 ZIP 独立解压树合并复跑 41/41 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 逐文件 `transpileModule` 语法检查 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 244 files，ZIP 245 entries，独立解压文件数 245。Windows Terminal inline suggestion / Ctrl+Space / exact Enter 仍待最终实机验收。

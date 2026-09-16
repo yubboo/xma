@@ -125,7 +125,7 @@ test('Bun CLI build keeps real staging in project .cache and uses a temporary AS
 
 test('OpenTUI visual migration preserves the existing Xiaoyu prompt rail instead of redesigning the workbench', () => {
   const promptDock = readFileSync('apps/cli/opentui-runtime/ui/prompt-dock.tsx', 'utf8')
-  assert.match(promptDock, /placeholder="输入消息…（输入 \/ 唤起命令）"/)
+  assert.match(promptDock, /placeholder="输入消息…（输入 \/ 查看命令）"/)
   assert.ok((promptDock.match(/<text fg=\{MODE_META\[props\.mode\]\.color\}>▌<\/text>/g) ?? []).length >= 3)
   assert.doesNotMatch(promptDock, /borderColor=\{COLOR\.faint\}/)
 })
@@ -576,17 +576,34 @@ test('OpenTUI Ctrl+C routes real selection to copy before cancel or exit', () =>
   assert.match(shortcuts, /input\.exitArmed \? 'exit' : 'arm-exit'/)
 })
 
-test('Active OpenTUI slash prompt opens the same real command palette instead of a legacy fake suggestion list', () => {
+test('Active OpenTUI slash prompt shows inline canonical suggestions without stealing Tab mode switching', () => {
   const app = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   const promptDock = readFileSync('apps/cli/opentui-runtime/ui/prompt-dock.tsx', 'utf8')
-  assert.match(promptDock, /onOpenCommandPalette: \(\) => void/)
-  assert.match(promptDock, /onContentChange=\{\(\) => \{/)
-  assert.match(promptDock, /\(prompt\?\.plainText \?\? ''\) !== '\/'/)
-  assert.match(promptDock, /prompt\?\.clear\(\)/)
-  assert.match(promptDock, /queueMicrotask\(\(\) => props\.onOpenCommandPalette\(\)\)/)
-  assert.match(app, /onOpenCommandPalette=\{\(\) => \{ void commandPalette\(\) \}\}/)
+  const tui = readFileSync('apps/cli/src/tui.ts', 'utf8')
+  assert.doesNotMatch(promptDock, /onOpenCommandPalette/)
+  assert.match(promptDock, /slashCommandSuggestions\(slashInput\(\)\)/)
+  assert.match(promptDock, /onContentChange=\{syncSlashInput\}/)
+  assert.match(promptDock, /Ctrl\+Space 补齐/)
+  assert.match(promptDock, /event\.ctrl && event\.name === 'space'/)
+  assert.match(promptDock, /event\.name === 'up'/)
+  assert.match(promptDock, /event\.name === 'down'/)
+  assert.match(promptDock, /event\.name !== 'tab'/)
+  assert.match(promptDock, /props\.onCycleMode\(event\.shift \? -1 : 1\)/)
+  assert.match(promptDock, /无匹配命令 · 输入 \/help 查看全部命令/)
   assert.match(app, /askList\('命令', commandPaletteOptions\(\), \{ searchable: true \}\)/)
-  assert.match(app, /command === 'visual' \|\| command === 'vivid'/)
+  assert.match(app, /command === 'help'/)
+  assert.match(app, /command === 'vivid'/)
+  assert.match(tui, /const TERMINAL_COMMAND_CATALOG: readonly TuiMenuItem\[\]/)
+  assert.match(tui, /terminalCommandHelpText/)
+})
+
+test('Active Transcript cleans common Markdown markers instead of printing - **xxx** literally', () => {
+  const transcript = readFileSync('apps/cli/opentui-runtime/ui/transcript-viewport.tsx', 'utf8')
+  const formatter = readFileSync('apps/cli/opentui-runtime/ui/transcript-text.ts', 'utf8')
+  assert.match(transcript, /terminalAssistantText\(item\.text\)/)
+  assert.match(formatter, /function cleanMarkdownLine/)
+  assert.match(formatter, /• /)
+  assert.match(formatter, /fenced \? line : cleanMarkdownLine\(line\)/)
 })
 
 test('Active Terminal presents Provider failures as normalized system messages instead of raw assistant JSON', () => {

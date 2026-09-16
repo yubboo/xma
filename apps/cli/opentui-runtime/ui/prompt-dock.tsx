@@ -5,8 +5,8 @@
  */
 
 import type { KeyEvent, TextareaRenderable } from '@opentui/core'
-import { For, Show } from 'solid-js'
-import type { SessionRuntimeMetrics, TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts'
+import { For, Show, createSignal } from 'solid-js'
+import { slashCommandSuggestions, type SessionRuntimeMetrics, type TerminalAgentMode, type TerminalReasoningEffort } from '../contracts.ts'
 import { SessionStatusBar, SessionStatusHeadline } from './session-status-bar.tsx'
 import { COLOR, MODE_META, reasoningColor } from './theme.ts'
 
@@ -31,10 +31,42 @@ export function PromptDock(props: {
   onPromptReady: (prompt: TextareaRenderable) => void
   onPromptFocus: () => void
   onSubmit: (text: string) => void
-  onOpenCommandPalette: () => void
   onCycleMode: (direction: 1 | -1) => void
 }) {
   let prompt: TextareaRenderable | undefined
+  const [slashInput, setSlashInput] = createSignal('')
+  const [slashSelection, setSlashSelection] = createSignal(0)
+
+  const syncSlashInput = () => {
+    const value = prompt?.plainText ?? ''
+    const trimmed = value.trimStart()
+    const next = trimmed.startsWith('/') && !trimmed.includes(' ') && !trimmed.includes('\n') ? trimmed : ''
+    setSlashInput(next)
+    setSlashSelection(0)
+  }
+
+  const slashSuggestions = () => slashInput() ? slashCommandSuggestions(slashInput()) : []
+  const selectedSlashSuggestion = () => {
+    const items = slashSuggestions()
+    if (items.length === 0) return undefined
+    return items[Math.min(slashSelection(), items.length - 1)]
+  }
+  const slashShortcut = (item: { value: string; shortcut?: string }) => item.shortcut ?? `/${item.value}`
+  const slashExact = () => {
+    const input = slashInput()
+    return slashSuggestions().some(item => slashShortcut(item) === input)
+  }
+  const completeSlashSuggestion = (): boolean => {
+    const item = selectedSlashSuggestion()
+    if (!item || !prompt) return false
+    const input = slashInput()
+    const shortcut = slashShortcut(item)
+    if (!shortcut.startsWith(input)) return false
+    prompt.insertText(shortcut.slice(input.length))
+    setSlashInput(shortcut)
+    setSlashSelection(0)
+    return true
+  }
 
   return (
     <box
@@ -64,20 +96,46 @@ export function PromptDock(props: {
                 minHeight={1}
                 maxHeight={5}
                 wrapMode="word"
-                placeholder="输入消息…（输入 / 唤起命令）"
+                placeholder="输入消息…（输入 / 查看命令）"
                 placeholderColor={COLOR.faint}
                 textColor={COLOR.text}
                 focusedTextColor={COLOR.text}
                 showCursor={true}
                 cursorColor={COLOR.text}
                 cursorStyle={{ style: 'block', blinking: true }}
-                onContentChange={() => {
-                  if ((prompt?.plainText ?? '') !== '/') return
-                  prompt?.clear()
-                  queueMicrotask(() => props.onOpenCommandPalette())
+                onContentChange={syncSlashInput}
+                onSubmit={() => {
+                  const text = prompt?.plainText ?? ''
+                  setSlashInput('')
+                  setSlashSelection(0)
+                  props.onSubmit(text)
                 }}
-                onSubmit={() => props.onSubmit(prompt?.plainText ?? '')}
                 onKeyDown={(event: KeyEvent) => {
+                  const suggestions = slashSuggestions()
+                  if (suggestions.length > 0 && event.name === 'up') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setSlashSelection(current => (current - 1 + suggestions.length) % suggestions.length)
+                    return
+                  }
+                  if (suggestions.length > 0 && event.name === 'down') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setSlashSelection(current => (current + 1) % suggestions.length)
+                    return
+                  }
+                  if (suggestions.length > 0 && event.ctrl && event.name === 'space') {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    completeSlashSuggestion()
+                    return
+                  }
+                  if (suggestions.length > 0 && event.name === 'return' && !slashExact()) {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    completeSlashSuggestion()
+                    return
+                  }
                   if (event.name !== 'tab') return
                   event.preventDefault()
                   event.stopPropagation()
@@ -91,6 +149,29 @@ export function PromptDock(props: {
               />
             </box>
           </box>
+          <Show when={slashInput()}>
+            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingBottom={1} flexShrink={0}>
+              <box flexDirection="row" gap={2} flexShrink={0}>
+                <text fg={COLOR.orange}>快捷命令</text>
+                <text fg={COLOR.faint}>↑↓ 选择 · Ctrl+Space 补齐 · 完整命令 Enter 执行</text>
+              </box>
+              <Show
+                when={slashSuggestions().length > 0}
+                fallback={<text fg={COLOR.faint}>无匹配命令 · 输入 /help 查看全部命令</text>}
+              >
+                <For each={slashSuggestions()}>{(item, index) => (
+                  <box width="100%" flexDirection="row" gap={2} flexShrink={0}>
+                    <box width={18} flexShrink={0}>
+                      <text fg={index() === slashSelection() ? COLOR.orange : COLOR.soft}>
+                        {`${index() === slashSelection() ? '›' : ' '} ${slashShortcut(item)}`}
+                      </text>
+                    </box>
+                    <text fg={COLOR.faint}>{item.description ?? item.label}</text>
+                  </box>
+                )}</For>
+              </Show>
+            </box>
+          </Show>
           <box flexDirection="row" height={1}>
             <text fg={MODE_META[props.mode].color}>▌</text>
           </box>

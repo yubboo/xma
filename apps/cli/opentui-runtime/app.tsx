@@ -25,6 +25,7 @@ import {
   loadTerminalUiSettings,
   needsInitialBrainSetup,
   saveTerminalUiSettings,
+  terminalCommandHelpText,
   terminalHomeTip,
   toggleTerminalVisual,
   type BrainProviderCatalogItem,
@@ -764,8 +765,15 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
 
   const runCommand = async (command: string): Promise<boolean> => {
+    if (command === 'help') {
+      setTranscript(current => [
+        ...current,
+        { role: 'system', text: `快捷命令\n${terminalCommandHelpText()}` },
+      ])
+      return true
+    }
     if (command === 'settings') { await settingsDialog(); return true }
-    if (command === 'visual' || command === 'vivid') {
+    if (command === 'vivid') {
       const next = toggleTerminalVisual(settings())
       commitSettings(next, `终端视觉 · ${next.visual === 'vivid' ? '丰富显示' : '简洁显示'}`)
       return true
@@ -802,8 +810,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     const line = raw.trim()
     if (!line || busy() || dialog()) return
     prompt?.clear()
-    if (line === '/' || line === '/help') {
-      tell('/settings · /permission · /vivid · /doctor · /workspace · /provider · /model · /agent · /clear · /exit', 9000)
+    if (line === '/') {
+      await runCommand('help')
       return
     }
     if (line.startsWith('/')) {
@@ -1138,7 +1146,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           }}
           onPromptFocus={() => prompt?.focus()}
           onSubmit={text => { void submit(text) }}
-          onOpenCommandPalette={() => { void commandPalette() }}
           onCycleMode={direction => {
             const next = cycleTerminalAgentMode(mode(), direction)
             setMode(next)

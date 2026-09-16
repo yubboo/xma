@@ -1189,7 +1189,7 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 
 # 15 Windows `[10]` GitHub fetch 连接重置与有限重试
 
-- 状态：验证中
+- 状态：已完成
 - 日期：2026-09-16
 - 影响范围：`scripts/windows/xma-console.ps1`、Windows Gate / Terminal 回归合同
 - 关联历史：#09 GitHub 原地最新同步、#11 Unicode checkout 顶层校验
@@ -1283,7 +1283,7 @@ Provider 返回 `{"error":{"message":"Insufficient Balance",...}}` 时，Termina
 
 # 17 Terminal 用户消息 band 亮度继续下调
 
-- 状态：验证中
+- 状态：已完成
 - 日期：2026-09-16
 - 影响范围：`apps/cli/opentui-runtime/ui/theme.ts`、Terminal 视觉回归
 - 关联历史：#12 整行 user band、#13 右对齐/色温微调
@@ -1356,4 +1356,81 @@ Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显�
 - 可搜索并执行现有命令；不存在只展示不执行的“假命令”。
 - 完整 `/command` submit 路径仍通过现有 runCommand。\n## 最终根因\n\n#18 不是“命令都是假的”，而是 Active OpenTUI 迁移时遗漏了 Prompt Textarea → command palette 的 slash discovery wiring。真实 `commandPaletteOptions()` / `runCommand()` 一直存在，Ctrl+P 能证明它们可用；但 `prompt-dock.tsx` 只有 submit/tab handler，输入 `/` 不会触发任何面板。调查还发现 `/vivid` 的可见 shortcut 与内部 palette action `visual` 名称存在别名分叉，直接输入 `/vivid` 在 Active submit 路径可能被判未知命令。\n\n## 实际修改与验证证据\n\n- `PromptDock` 新增 `onOpenCommandPalette`；原生 OpenTUI Textarea 在 `onContentChange` 检测到**单独 `/`**时清掉触发字符，并通过 microtask 打开父级同一个 `commandPalette()`。\n- Active `app.tsx` 把该 callback 直接连到 `commandPalette()`；面板继续只消费 `commandPaletteOptions()` 并交给 `runCommand()`，与 Ctrl+P/Ctrl+K 共用同一真实命令源，没有新增第二份假列表。\n- `runCommand()` 同时接受内部 action `visual` 与用户可见 `/vivid` alias，因此面板选择和直接输入 `/vivid` 都执行同一视觉切换动作。其余 `/settings /doctor /workspace /provider /model /permission /agent /clear /exit` 保持现有真实实现；`/help` 保持 submit 特殊命令。\n- 输入完整 `/provider` 等并回车不受“单独 `/`”触发影响，继续走原有 submit/runCommand；modal 关闭后继续使用既有 refocus lifecycle。\n- OpenTUI 合同 38/38 PASS；legacy TUI 29/29 PASS；测试锁定 slash→同源 commandPalette 以及 `/vivid` alias 可执行。真实键盘输入 `/` 后弹面板、搜索、Esc 返焦仍待 Windows Terminal E2E。
 - 本批正式 Source Manifest 242 files；正式 ZIP 243 entries，独立解压 missing=0 / extra=0 / byte differences=0；解压树复跑 OpenTUI 38/38、session/activity/shortcut 12/12、legacy TUI 29/29、Provider 5/5、Runtime updater 2/2 与 9/9 Gate 全部 PASS。\n
+
+### Windows 实机复验结论（#18）
+
+- 用户实机明确判定 **#18 不通过**：输入 `/` 自动打开 Ctrl+P modal 的交互方向错误。真实需求是 Prompt 原位显示 slash 候选，继续输入前缀即时过滤，并允许补全后再执行。
+- 按 Repair ID 永不复用规则，不改写 #18 历史实现；后续正确方案进入 #19。
+
+# 19 Terminal slash 命令发现/补全、Help 与 Assistant Markdown 符号清理
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/src/tui.ts`、`apps/cli/opentui-runtime/ui/prompt-dock.tsx`、`app.tsx`、Transcript 文本投影与 Terminal 回归测试
+- 关联历史：#18 Active OpenTUI `/` 命令发现尝试；#15/#17 已由用户实机通过；#16 继续等待真实余额不足 E2E
+
+## 用户可见症状
+
+1. #18 把“输入单独 `/`”实现成直接打开 `Ctrl+P` 命令面板，和用户期望不符。用户要的是**在 Prompt 原位显示 slash 命令候选**，而不是跳转到 modal。
+2. 用户输入 `/set` 时当前没有 `/settings` 等补全提示，必须靠猜命令名称；新用户无法发现系统到底有哪些 slash 命令。
+3. `Tab / Shift+Tab` 已固定用于 Build/Plan/Compose 模式切换，因此 slash 补全不能抢占 Tab。
+4. `/help` 虽有特殊 submit 分支，但当前只是短暂列出命令名，没有完整解释每条命令“做什么”。
+5. Assistant 输出 Markdown 时，Active Transcript 仍使用普通 `<text>`，例如 `- **代码开发**` 会原样显示 `- **...**`，视觉粗糙。
+
+## 已确认事实与证据
+
+- 真实命令本体存在于 `runCommand()`；#18 证明命令不是假的，但错误地把 `/` discovery 绑定到了同一个 modal palette。
+- `apps/cli/src/tui.ts` 同时维护了 `COMMANDS` 与 `PALETTE_ACTIONS` 两份命令元数据，已经产生 `/vivid` 可见名与内部 `visual` action 分叉；继续复制列表会扩大 drift 风险。
+- OpenTUI `TextareaRenderable` 暴露 `plainText` 与 `insertText()`；因此可以基于真实 Textarea 内容做事件驱动的 inline suggestion / prefix completion，不需要轮询或父级 timer。
+- `Tab/Shift+Tab` 是已锁定的工作模式快捷键，不能为补全改绑。
+
+## 已被证伪 / 禁止重复的修法
+
+- 禁止恢复 #18 的“输入 `/` 立即打开 Ctrl+P modal”行为。
+- 禁止创建第三份 slash-only 假命令数组；Prompt 候选、Ctrl+P/Ctrl+K、`/help` 必须从同一 canonical command catalog 派生。
+- 禁止抢占 Tab/Shift+Tab；模式切换合同继续保持。
+- 禁止简单全局删除所有 `*`/`` ` ``，避免破坏代码/路径等真实文本；Markdown 清理必须只在 Assistant 可见文本投影层做有限规则转换。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 源码为第一事实源，重做 #18 的 slash command discovery UX，并修复 Assistant Markdown 符号直出。必须保留已验收的 Prompt caret/IME、Build/Plan/Compose Tab 切换、Transcript scroll/sticky 和 command business logic。
+>
+> 1. **单一命令真值源**：把 slash command 元数据收口为一个 canonical catalog；`commandPaletteOptions()`、inline slash suggestions、`/help` 都从它派生。可见命令至少包含 `/help /settings /vivid /doctor /workspace /provider /model /permission /agent /clear /exit`，并确保每一项都能进入 `runCommand()` 的真实动作。
+> 2. **Inline slash discovery**：用户在 Prompt 输入 `/` 时，不打开 modal；在输入框下方原位显示全部 slash 候选及简短说明。继续输入 `/set` 时即时过滤为 `/settings` 等前缀匹配；没有匹配时明确提示“无匹配，/help 查看全部命令”。
+> 3. **选择与补全**：候选可用 `↑/↓` 移动选择；`Ctrl+Space` 作为补全键，把当前选中的完整 slash command 补到原生 Textarea。Tab/Shift+Tab 仍只切换 Build/Plan/Compose，不参与补全。用户输入完整 `/settings` 后按 Enter 直接执行；完整命令 submit 继续走统一 `runCommand()`。
+> 4. **/help**：新增真正的 `/help` command action；执行后在 Transcript 中持久显示“所有 slash 命令 + 作用说明”，不只是瞬时 notice，不要求用户记忆命令名。
+> 5. **命令面板兼容**：Ctrl+P/Ctrl+K 继续使用同一 canonical catalog 的 modal palette；它们是另一种入口，但不再是输入 `/` 的行为。
+> 6. **Assistant 文本投影**：新增 Host-only 轻量 Markdown-to-terminal-clean-text 投影：`- **代码开发**：...` 应显示成 `• 代码开发：...`（或同等干净格式），常见 `**bold**`、标题 marker、inline backticks 不再原样暴露；代码 fenced body 必须保持内容，不做破坏性清洗。
+> 7. 补纯函数/静态回归，更新 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`；Windows Terminal inline suggestion / Ctrl+Space / exact Enter 仍需用户实机验收。
+
+## 不允许回归的行为
+
+- Tab/Shift+Tab 继续循环 Build/Plan/Compose。
+- Ctrl+P/Ctrl+K 命令面板继续可用；Esc/modal refocus/caret ownership 不变。
+- slash command 只能执行已有真实业务动作；不得展示“看得到但执行不了”的假命令。
+- Assistant streaming、Activity、user band、Metrics、Transcript 滚动/sticky 均不得被 slash suggestion 破坏。
+
+## 验收条件
+
+- 输入 `/`：Prompt 下方显示全部真实命令，不弹 modal。
+- 输入 `/set`：候选即时只保留 `/settings`；用户不需要猜后缀。
+- `↑/↓` 可选候选，`Ctrl+Space` 可补全；Tab 仍切模式。
+- `/settings` + Enter 直接进入设置；其它 canonical slash 命令同理。
+- `/help` 持久显示所有命令与说明。
+- Assistant 的 `- **xxx**` 不再原样出现，转换后内容语义完整。
+## 最终根因
+
+#19 证明 #18 的“缺少 slash wiring”判断只覆盖了一半问题：命令本体确实真实存在，但把 `/` discovery 直接绑定到 Ctrl+P modal，违背了 Prompt 内联补全的产品交互。另一个独立根因是命令元数据长期分裂为 `COMMANDS` 与 `PALETTE_ACTIONS` 两份列表，导致可见 slash 名称、palette action 与 legacy suggestions 有漂移风险；`/help` 也没有一个可复用的完整说明源。Assistant 的 `- **xxx**` 则来自 Active Transcript 使用普通 `<text>` 直接显示 Markdown 原文，没有 Host 展示层格式化。
+
+## 实际修改与验证证据
+
+- `apps/cli/src/tui.ts` 将命令元数据收口为单一 `TERMINAL_COMMAND_CATALOG`，包含 `/help /settings /vivid /doctor /workspace /provider /model /permission /agent /clear /exit`；`commandPaletteOptions()`、`slashCommandSuggestions()` 与 `terminalCommandHelpText()` 全部从该 catalog 派生。
+- Active `PromptDock` 不再拥有 `onOpenCommandPalette` slash callback；输入 `/` 时在 Textarea 下方原位显示全部候选与说明，继续输入 `/set` 只保留 `/settings` 等 prefix match。`↑/↓` 选择，`Ctrl+Space` 补全；未输入完整命令时 Enter 先补全，完整 `/command` Enter 才 submit。Tab/Shift+Tab 继续只切换 Build/Plan/Compose。
+- Active `runCommand()` 新增真正的 `help` action；`/help` 把 canonical 命令和用途作为持久 `system` Transcript 项展示，不再只是瞬时命令名串。Ctrl+P/Ctrl+K 仍消费同一 catalog，但输入 `/` 不再自动打开 modal。
+- legacy TUI 同步改为消费同一 catalog，并补齐 `help/settings/vivid/permission` 对应真实动作，避免共享 catalog 后出现“可见但不可执行”的条目。
+- 新增 `ui/transcript-text.ts`：在 Host 展示层把常见 Markdown 项目符号/标题/成对粗体/inline-code marker 转成干净终端文本，例如 `- **代码开发**` → `• 代码开发`；fenced code body 逐字保留。Runtime/Provider 原文未被修改。
+- 新增 `apps/cli/tests/transcript-text.test.ts` 2/2 PASS；`apps/cli/tests/opentui-runtime.test.ts` 39/39 PASS；两组在候选 ZIP 独立解压树合并复跑 41/41 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 使用 TypeScript `transpileModule` 逐文件语法转译全部 PASS。
+- Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate 在源码树与独立解压树均 PASS。
+- Source Manifest 已重新生成：244 个受管源码文件；候选 ZIP 为 244 source + manifest = 245 entries，独立解压文件数 245，并从解压树复跑上述 41/41、Runtime 2/2 与 9/9 Gate。
+- Windows Terminal 的 inline suggestion、Ctrl+Space 键值、完整命令 Enter 执行与视觉高度仍需用户实机最终验收，因此 #19 保持“验证中”，不冒充已完成。
 

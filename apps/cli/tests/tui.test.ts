@@ -23,6 +23,7 @@ import {
   terminalChatLayout,
   terminalHintPlainLine,
   terminalHomeTip,
+  terminalCommandHelpText,
   shouldReturnChatToHome,
   terminalMouseCaptureSequence,
   terminalMouseReleaseSequence,
@@ -162,10 +163,21 @@ test('TUI slash command suggestions expose only implemented terminal commands', 
 test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {
   const options = commandPaletteOptions()
   const values = options.map(item => item.value)
-  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'permission', 'agent', 'clear', 'exit'])
+  assert.deepEqual(values, ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'model', 'permission', 'agent', 'clear', 'exit'])
+  assert.equal(options.find(item => item.value === 'help')?.shortcut, '/help')
+  assert.equal(options.find(item => item.value === 'vivid')?.shortcut, '/vivid')
   assert.equal(options.find(item => item.value === 'workspace')?.label, '工作区')
   assert.equal(options.find(item => item.value === 'provider')?.label, '模型 / 提供方')
   assert.equal(options.find(item => item.value === 'agent')?.label, '智能体')
+})
+
+test('TUI /help text derives from the same canonical command catalog', () => {
+  const help = terminalCommandHelpText()
+  for (const command of ['/help', '/settings', '/vivid', '/doctor', '/workspace', '/provider', '/model', '/permission', '/agent', '/clear', '/exit']) {
+    assert.match(help, new RegExp(command.replace('/', '\\/')))
+  }
+  assert.match(help, /查看全部快捷命令与用途说明/)
+  assert.match(help, /配置模型与 API Key/)
 })
 
 
