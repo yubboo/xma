@@ -1578,3 +1578,103 @@ Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显�
 - 当前沙箱缺少 Workspace OpenTUI/Solid/node_modules，无法冒充完整真实 Renderer E2E；`tui.test.ts` 在 Node strip-only 模式又受既有 TypeScript parameter property 限制，故该完整行为套件仍留待准备好的项目环境执行。Windows Terminal 最终需实机确认 `/h` 弹出的就是图三同款居中命令菜单、继续输入 `/he` 正常收窄、Enter/Esc 焦点稳定。
 
 - 状态：验证中
+
+
+## 后续 Windows 实机结果
+
+- 2026-09-17：#21 的“统一回居中 ListDialog”方向通过，但细节验收不通过：`/he` 对 `/help` 没有 matched-prefix 分色；Enter 执行后用户感知到焦点/键盘像卡住；`/help` transcript 输出为单色大块，且 Assistant 末尾与下一条 user band 间距偏紧。按不可复用 Repair ID 规则由 #22 接续，不改写 #21 已证明的“禁止第二套 inline slash UI”结论。
+
+# 22 Slash 前缀高亮 / Enter 后焦点恢复 / Help 展示与 Turn 间距统一
+
+- 状态：验证中
+- 日期：2026-09-17
+- 影响范围：`apps/cli/opentui-runtime/ui/dialogs.tsx`、`app.tsx`、`transcript-viewport.tsx`、`apps/cli/src/tui-menu.ts`、Terminal 回归测试与开发规则
+- 关联历史：#19 / #20 / #21；#21 已把 slash discovery 收口到 Ctrl+P/Ctrl+K 同一个居中 `ListDialog`，但 Windows 实机继续暴露细节回归。
+
+## 用户可见症状
+
+1. 在 slash 居中命令面板中输入 `/he` 后，候选 `/help` 整体保持同一种颜色，没有把已经输入并匹配的 `/he` 与尚未输入的 `lp` 做视觉区分；其它命令前缀也存在同样问题。
+2. 在 slash 候选上按 Enter 后，Windows 实机出现“像宕机/卡住”的体感；用户随后无法确信焦点是否已经回到主 Prompt。
+3. `/help` 当前把整张命令表作为普通 `system` 文本直接铺进 Transcript，命令、产品名与说明缺乏视觉层级，和统一命令面板相比显得凌乱。
+4. Assistant 最终回答与下一条用户 full-width band 的垂直距离偏近；`用时 N秒` Activity 已有 bottom padding，而 Assistant 最终回答没有同等级下边距，Turn 节奏不统一。
+
+## 已确认事实与证据
+
+- #21 已证明 slash 与 Ctrl+P/Ctrl+K 共用 `commandPaletteOptions()`、`ListDialog`、`runCommand()`，本轮不得重新创建第二套命令 UI。
+- `ListDialog` 当前 shortcut 列只按 active/inactive 使用单色 `<text>`，没有根据 `query()` 拆分 matched prefix 与 remainder，因此 `/he` 无法在 `/help` 中高亮。
+- `ListDialog.finish()` 当前直接调用 `props.onDone()`；search Textarea 没有在 settle 前显式 blur。父级 `closeDialog()` 又立即 refocus 主 Prompt，存在 modal Textarea 尚在卸载与主 Prompt 抢焦点的时间窗口，这与用户“Enter 后像卡住”现象一致，需要按 focus ownership 修复并由回归合同锁定。
+- `/help` 目前通过 `runCommand('help')` push 一个普通 `system` item：`快捷命令\n${terminalCommandHelpText()}`；Transcript 对普通 system 只提供统一单色文本，因此命令/标签/说明没有层级。
+- `RunActivityRow` 已 `paddingBottom={1}`；Assistant row 当前没有 bottom padding。Transcript 父 content 本身还有 `gap={1}`，所以补齐 Assistant bottom padding 可以在不改变 ScrollBox ownership 的情况下增加上一轮回答与下一条用户消息的呼吸感。
+
+## 明确排除项
+
+- 不回退 #20 的 Prompt inline ghost/candidate UI，也不恢复 `Ctrl+Space` 补全。
+- 不新建 slash-only command catalog；仍以 `TERMINAL_COMMAND_CATALOG` 为唯一命令事实源。
+- 不通过父级定时器/假光标修“卡住”；本轮只修 Dialog Textarea → Prompt 的真实 focus settle 顺序。
+- 不改变 Runtime、Provider、Tool、Session 业务语义；`/help` 只改 Host 展示。
+- 不增加第二个 Transcript ScrollBox，不破坏 #03 已实机通过的 bounded slot/sticky-scroll 合同。
+
+## 根因假设
+
+1. Slash 候选缺少 matched-prefix 高亮的根因是 `ListDialog` shortcut 列没有 prefix-aware renderer，而不是过滤数据不正确。
+2. Enter 后“卡住”优先按 modal Textarea settle/focus race 调查：search Textarea 未 blur，`closeDialog()` 又在 modal 卸载前同步 refocus 主 Prompt，可能让 Windows Terminal/OpenTUI 最终 focus owner 不确定。
+3. `/help` 难读是 presentation ownership 问题：canonical catalog 是对的，但被降级成单色普通 system text。
+4. Turn 间距不一致是 Activity 与 Assistant row 的 vertical padding contract 不一致。
+
+## 上游/现有实现参考
+
+- 继续复用 XMA 当前统一 `ListDialog` / `commandPaletteOptions()` / `runCommand()`；本轮不引入新的第三方交互模型。
+- OpenTUI focused Textarea 的 caret/focus ownership 继续遵守 #01/#04 已验证原则：离开 modal 前先释放 modal Textarea，modal state 卸载后再恢复主 Prompt focus。
+
+## 本次修复 Prompt
+
+> 以当前正式 `xma-0.1.0` 源码为第一事实源，接续 #21 修复 Windows Terminal slash 命令交互。不得新写第二套 slash UI；必须继续使用 Ctrl+P/Ctrl+K 的同一个居中 `ListDialog` 和 canonical command catalog。
+>
+> 1. **Prefix-aware shortcut 高亮**：在纯菜单层提供可测试的 shortcut prefix split；当搜索模式是 `shortcut-prefix` 且 query 为 `/he` 时，候选 `/help` 必须渲染为“matched `/he` + remainder `lp`”两个视觉片段；matched 使用强调色，remainder 使用弱化色。所有 slash 命令同样工作；普通 Ctrl+P contains search 不改变。
+> 2. **Enter settle / focus ownership**：`ListDialog` 在 resolve 前显式 blur 自己的 search Textarea 并隐藏其 cursor；父级关闭 modal 后必须在 modal state 已卸载的下一 microtask 才 refocus 主 Prompt，且只有当前确实没有新 Dialog/SetupFlow 时才恢复。不得用 timer、不得伪造 cursor。slash 选择成功后原 Prompt 内容清空，主 Prompt 必须可立即继续输入。
+> 3. **`/help` 结构化显示**：仍从 canonical catalog 生成全部命令，但在 Transcript 使用专门的 command-help presentation，至少把 `/command`、中文名称、用途说明分成稳定三列/三层颜色；不能继续作为一大段单色 `system` 文本。错误/普通 system message 仍走原路径。
+> 4. **Turn vertical rhythm**：Assistant 最终回答增加与 Activity 相同等级的下边距，使“用时/最终输出/下一条用户消息”节奏一致；至少在上一轮 Assistant 最后一行与下一条 user band 之间增加一行额外呼吸空间，不改变 user band 自身 padding。
+> 5. 补行为测试/纯函数测试：锁定 `/he -> matched '/he' + remainder 'lp'`、普通 contains search 不受影响、Dialog settle 前 blur、deferred refocus contract、`/help` structured presentation、Assistant bottom spacing。
+> 6. 完成后更新 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`，回填 #21 实机失败与 #22 证据；重新生成 Source Manifest 与正式 `xma-0.1.0.zip`。
+
+## 不允许回归的行为
+
+- 单独 `/` 不弹全量列表；`/h` 及更长 prefix 才打开居中 command modal。
+- Slash / Ctrl+P / Ctrl+K 继续同 catalog、同 ListDialog、同 runCommand。
+- Tab / Shift+Tab 在主 Prompt 继续只切 Build / Plan / Compose。
+- `/help` 覆盖全部 canonical 命令及用途。
+- 用户消息 full-width 深灰 band + 右对齐保持不变；#15 Git 同步、#16 Provider error、#17 user band 色值不在本轮修改。
+- Transcript 单 ScrollBox、sticky follow、caret ownership 与 Ctrl+C 选择复制不得回归。
+
+## 验收条件
+
+- Windows Terminal 输入 `/he`：搜索框显示 `/he`；候选 `/help` 中 `/he` 明显为强调色，`lp` 为弱化色。输入 `/set` 等其它命令同理。
+- 在候选上 Enter 后 modal 关闭，主 Prompt 立即可继续输入，不出现键盘失活/卡住。
+- `/help` 在 Transcript 中有清晰的“命令 / 名称 / 用途”视觉层级，不是一大段同色文本。
+- Assistant 最后一行到下一条用户 band 的距离比 #21 多一行左右，且 Activity 与 Assistant 的 bottom spacing 一致。
+- 自动测试/Gate 通过；Windows Terminal 最终交互仍由用户实机验收后才能标 #22 已完成。
+
+## 最终根因
+
+1. **前缀不变色**：`shortcut-prefix` 只参与过滤，没有进入 row renderer；shortcut 列一直是单色 Text，所以 query 与 candidate 的匹配位置不可见。
+2. **Enter 后卡住体感**：searchable `ListDialog` resolve 时没有先释放自己的 Textarea focus，父级又同步把焦点抢回 Prompt；Windows Terminal/OpenTUI 的 modal unmount 与 refocus 发生在同一时序窗口，存在两个 Textarea focus ownership 交叠。
+3. **`/help` 难读**：canonical catalog 没问题，但 Host 把它扁平化成普通 system string，命令/中文名称/用途没有独立颜色和列。
+4. **Turn 末尾拥挤**：Activity row 已有 `paddingBottom=1`，Assistant row 没有，因此上一轮最终回答到下一条 user band 的 bottom rhythm 不一致。
+
+## 实际修改与验证证据
+
+- `apps/cli/src/tui-menu.ts`：新增纯函数 `splitTuiMenuShortcutPrefix()`，保持 canonical shortcut 原文并拆成 `matched/remainder`；`/he -> /he + lp`、`/set -> /set + tings` 可独立测试。
+- `ui/dialogs.tsx`：slash search mode 继续复用统一 ListDialog，但 shortcut 列现在把 matched prefix 用橙色强调、remainder 用弱化色；`finish()` 在 resolve 前显式 `searchInput.blur()` 并隐藏 modal cursor。
+- `app.tsx`：`closeDialog()` 不再同步 refocus；改为 modal state 清除后的下一 microtask 检查 `dialog()/setupFlow()`，确认没有新 modal 后才恢复 Prompt focus + requestRender。`/help` 不再 push 单色长字符串，而是附带 canonical `commandPaletteOptions()` 的 `command-help` presentation。
+- `transcript-viewport.tsx`：新增 `CommandHelpBlock`，将 `/command`、中文名称、用途说明分成稳定三列并使用 orange/text/soft 三层颜色；Assistant row 增加 `paddingBottom=1`，与 Activity bottom spacing 对齐。
+- 回归：新增可独立执行的 `tui-menu-prefix.test.ts`，2/2 PASS；纯 helper 手工编译/断言 PASS；OpenTUI 静态合同 + Transcript formatter 经 `transpileModule` 后 42/42 PASS；activity/session/shortcut/transcript 14/14 PASS；Runtime updater 2/2 PASS；修改 TS/TSX `transpileModule` 语法检查 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。
+- `opentui-dialog.test.ts` 新增真实 Renderer 行为用例，锁定 `/he` 初始 query + Enter resolve `help`；当前沙箱没有 Workspace `node_modules/@opentui/*`，因此该真实 Renderable 用例与完整 `pnpm check` 不能冒充执行，仍待准备依赖环境/Windows Terminal E2E。
+- Source Manifest 重新生成后为 **245 个受管源码文件**；正式 ZIP 为 **246 entries**（245 files + manifest）。候选包独立解压校验 `missing=0 / extra=0 / byte diff=0`；从解压树复跑 dependency-free 16/16、Runtime updater 2/2、OpenTUI 静态合同 40/40 与 9/9 Gate 全部 PASS。
+
+## 残留风险与待实机验收
+
+- Windows Terminal 确认 `/he` 时 `/help` 的 `/he` 为强调色、`lp` 为弱化色；其它 prefix 同理。
+- Enter 后 modal 关闭后立即输入普通文本，确认键盘/focus 不再失活。
+- `/help` 结构化三列在常见窗口宽度下不挤乱；窄窗口说明可换行但命令列仍清晰。
+- Assistant 最后一行与下一条 user band 的垂直距离达到预期；若用户仍希望更松，只继续调 Turn spacing，不改 user band 或 ScrollBox ownership。
+

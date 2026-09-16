@@ -32,7 +32,7 @@ import {
   type TerminalTranscriptItem,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs, USER_CANCEL_EXIT_CODE } from '../src/main.ts'
-import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, moveTuiMenuSelection, projectTuiMenu, tuiMenuCellWidth } from '../src/tui-menu.ts'
+import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, moveTuiMenuSelection, projectTuiMenu, splitTuiMenuShortcutPrefix, tuiMenuCellWidth } from '../src/tui-menu.ts'
 
 
 
@@ -163,6 +163,32 @@ test('TUI slash command discovery starts after the first letter and uses canonic
   assert.equal(filterTuiMenuShortcutPrefix(options, '/').length, 0)
   assert.deepEqual(filterTuiMenuShortcutPrefix(options, '/h').map(item => item.value), ['help'])
   assert.deepEqual(filterTuiMenuShortcutPrefix(options, '/set').map(item => item.value), ['settings'])
+})
+
+test('TUI slash shortcut prefix split preserves typed match and dimmable remainder', () => {
+  const options = commandPaletteOptions()
+  const help = options.find(item => item.value === 'help')!
+  const settings = options.find(item => item.value === 'settings')!
+  assert.deepEqual(splitTuiMenuShortcutPrefix(help, '/he'), {
+    shortcut: '/help',
+    matched: '/he',
+    remainder: 'lp',
+  })
+  assert.deepEqual(splitTuiMenuShortcutPrefix(help, '/hel'), {
+    shortcut: '/help',
+    matched: '/hel',
+    remainder: 'p',
+  })
+  assert.deepEqual(splitTuiMenuShortcutPrefix(settings, '/set'), {
+    shortcut: '/settings',
+    matched: '/set',
+    remainder: 'tings',
+  })
+  assert.deepEqual(splitTuiMenuShortcutPrefix(help, 'help'), {
+    shortcut: '/help',
+    matched: '',
+    remainder: '/help',
+  })
 })
 
 test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {

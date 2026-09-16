@@ -103,6 +103,35 @@ export function filterTuiMenuShortcutPrefix(items: readonly TuiMenuItem[], query
   return items.filter(item => (item.shortcut ?? `/${item.value}`).toLocaleLowerCase().startsWith(normalized))
 }
 
+export interface TuiMenuShortcutPrefixParts {
+  shortcut: string
+  matched: string
+  remainder: string
+}
+
+/**
+ * 中文说明：slash command 列表把用户已经输入的 canonical prefix 与剩余字符拆开渲染。
+ * 这里只做纯字符串切分；颜色由 Host 的统一 ListDialog 决定，普通 contains 搜索不使用本函数。
+ */
+export function splitTuiMenuShortcutPrefix(item: TuiMenuItem, query: string): TuiMenuShortcutPrefixParts {
+  const shortcut = item.shortcut ?? `/${item.value}`
+  const normalized = query.trimStart()
+  if (
+    normalized.length <= 1 ||
+    !normalized.startsWith('/') ||
+    normalized.includes(' ') ||
+    normalized.includes('\n') ||
+    !shortcut.toLocaleLowerCase().startsWith(normalized.toLocaleLowerCase())
+  ) {
+    return { shortcut, matched: '', remainder: shortcut }
+  }
+  return {
+    shortcut,
+    matched: shortcut.slice(0, normalized.length),
+    remainder: shortcut.slice(normalized.length),
+  }
+}
+
 function clampSelectedIndex(index: number, count: number): number {
   if (count <= 0) return -1
   return Math.min(Math.max(index, 0), count - 1)

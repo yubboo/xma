@@ -1064,3 +1064,15 @@
 - 单一真值源：Ctrl+P、Ctrl+K、slash、`/help` 继续共享 `TERMINAL_COMMAND_CATALOG` / `commandPaletteOptions()` 与 `runCommand()`。新增 `filterTuiMenuShortcutPrefix()` 作为唯一 slash prefix 纯函数。
 - 自动证据：OpenTUI 静态合同 39/39 PASS；shortcut-prefix 纯函数 `/`/`/h`/`/he`/`/s` 定向断言 PASS；activity/session/shortcut/transcript 14/14 PASS；Runtime updater 2/2 PASS；9/9 Gate PASS。Source Manifest 244 files；正式 ZIP 245 entries，独立解压 0 missing / 0 extra / 0 byte diff，并从解压树复跑同组验证通过。完整 Renderer 与 Windows Terminal 焦点行为仍待实机，因此 #21 保持验证中。
 
+
+##96 · Slash matched-prefix 高亮、Dialog 焦点 settle、结构化 Help 与 Turn spacing
+
+- 日期：2026-09-17
+- 实机结论：#21 的统一居中 ListDialog 方向正确，但 `/he` 候选整串同色、Enter 后主 Prompt 有键盘失活/卡住体感、`/help` 单色长块难读、上一轮 Assistant 末尾与下一条 user band 距离偏近；按规则新建 #22，不回退到 #20 inline UI。
+- Slash 行：新增纯 `splitTuiMenuShortcutPrefix()`；slash mode 的 shortcut 列把 query 已匹配段用强调色显示、剩余 suffix 用弱化色显示。Ctrl+P/Ctrl+K contains 搜索不变。
+- Focus：ListDialog settle 前先 blur 自己的 search Textarea；父级关闭 modal 后延迟到下一 microtask，并确认没有新 Dialog/SetupFlow 才 refocus Prompt + requestRender，避免两个 Textarea 在 Windows Terminal 抢 focus。
+- Help：`/help` 继续从 `TERMINAL_COMMAND_CATALOG` 派生，但 Transcript 改为 command / 中文名称 / 用途说明三列分层颜色的 `CommandHelpBlock`，普通 system error 不受影响。
+- Spacing：Assistant 最终回答新增 `paddingBottom=1`，与 Activity 的 bottom spacing 对齐，让下一条 full-width user band 与上一轮末尾多一行呼吸空间。
+- 自动证据：`tui-menu-prefix.test.ts` 2/2 PASS；OpenTUI 静态/Transcript 42/42 PASS；activity/session/shortcut/transcript 14/14 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 语法转译 PASS；9 项工程 Gate PASS。真实 `opentui-dialog.test.ts` 已加入 `/he` + Enter resolve 行为用例，但当前沙箱缺少 `node_modules/@opentui/*`，完整 Renderer E2E 留待准备环境/Windows 实机。
+- 发行：Source Manifest 245 files，正式源码 ZIP 246 entries；独立解压 missing=0 / extra=0 / byte diff=0，并从解压树复跑 dependency-free 16/16、Runtime 2/2、OpenTUI 静态 40/40 与 9/9 Gate。
+

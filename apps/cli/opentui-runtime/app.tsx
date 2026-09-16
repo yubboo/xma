@@ -25,7 +25,6 @@ import {
   loadTerminalUiSettings,
   needsInitialBrainSetup,
   saveTerminalUiSettings,
-  terminalCommandHelpText,
   terminalHomeTip,
   toggleTerminalVisual,
   type BrainProviderCatalogItem,
@@ -336,7 +335,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   const closeDialog = () => {
     setDialog(undefined)
-    refocusPrompt()
+    queueMicrotask(() => {
+      if (dialog() !== undefined || setupFlow().active) return
+      refocusPrompt()
+      prompt?.requestRender()
+    })
   }
   const askList = (title: string, items: readonly TuiMenuItem[], options: {
     searchable?: boolean
@@ -777,7 +780,12 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     if (command === 'help') {
       setTranscript(current => [
         ...current,
-        { role: 'system', text: `快捷命令\n${terminalCommandHelpText()}` },
+        {
+          role: 'system',
+          text: '快捷命令',
+          presentation: 'command-help',
+          menuItems: commandPaletteOptions(),
+        },
       ])
       return true
     }

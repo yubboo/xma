@@ -8,7 +8,7 @@ import { decodePasteBytes, type KeyEvent, type PasteEvent, type TextareaRenderab
 import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
-import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, type TuiMenuItem } from '../contracts.ts'
+import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, splitTuiMenuShortcutPrefix, type TuiMenuItem } from '../contracts.ts'
 import { COLOR } from './theme.ts'
 
 export function ListDialog(props: {
@@ -39,6 +39,8 @@ export function ListDialog(props: {
   }
   const finish = (value: string | undefined) => {
     if (value === undefined && !props.allowCancel) return
+    searchInput?.blur()
+    renderer.setCursorPosition(0, 0, false)
     props.onDone(value)
   }
   const key = (event: KeyEvent) => {
@@ -156,6 +158,9 @@ export function ListDialog(props: {
           <Show when={filtered().length > 0} fallback={<text fg={COLOR.faint}>{props.searchMode === 'shortcut-prefix' ? '继续输入命令字母' : '没有匹配项'}</text>}>
             <For each={filtered().slice(Math.max(0, selected() - 7), Math.max(0, selected() - 7) + 10)}>{(item) => {
               const active = createMemo(() => item === selectedItem())
+              const shortcutParts = createMemo(() => props.searchMode === 'shortcut-prefix'
+                ? splitTuiMenuShortcutPrefix(item, query())
+                : undefined)
               return (
                 <box
                   flexDirection="row"
@@ -166,7 +171,15 @@ export function ListDialog(props: {
                 >
                   <text fg={active() ? COLOR.orange : COLOR.faint}>{active() ? '→' : ' '}</text>
                   <Show when={hasShortcut()}>
-                    <box width={16} paddingLeft={1}><text fg={COLOR.faint}>{item.shortcut ?? ''}</text></box>
+                    <box width={16} paddingLeft={1} flexDirection="row">
+                      <Show
+                        when={shortcutParts() && shortcutParts()!.matched.length > 0}
+                        fallback={<text fg={COLOR.faint}>{item.shortcut ?? ''}</text>}
+                      >
+                        <text fg={COLOR.orange}><strong>{shortcutParts()!.matched}</strong></text>
+                        <text fg={active() ? COLOR.soft : COLOR.faint}>{shortcutParts()!.remainder}</text>
+                      </Show>
+                    </box>
                   </Show>
                   <box width={20} paddingLeft={1}><text fg={active() ? COLOR.orange : COLOR.text}>{item.label}</text></box>
                   <box flexGrow={1} paddingLeft={1}><text fg={COLOR.soft}>{item.description ?? ''}</text></box>

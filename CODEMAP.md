@@ -52,8 +52,8 @@
 | 迁移期旧入口 | `core/`（Compatibility Facade only） |
 | Terminal OpenTUI 父级协调 | `apps/cli/opentui-runtime/app.tsx` |
 | Terminal Prompt Dock | `apps/cli/opentui-runtime/ui/prompt-dock.tsx`（单一 `flexShrink=0` Dock；Textarea/状态/快捷键/提示 owner，只检测 slash prefix，不拥有命令候选 UI） |
-| Terminal Command Palette | `apps/cli/opentui-runtime/ui/dialogs.tsx` + `app.tsx` + `apps/cli/src/tui-menu.ts` | Ctrl+P/Ctrl+K/slash prefix 统一复用居中 `ListDialog`；slash 使用 shortcut-prefix search，业务动作统一进入 `runCommand()` |
-| Terminal Transcript viewport | `apps/cli/opentui-runtime/ui/transcript-viewport.tsx`（会话唯一 ScrollBox owner，只消费 Prompt 之外的剩余高度；用户消息为 contentWidth 内 full-width padded band） |
+| Terminal Command Palette | `apps/cli/opentui-runtime/ui/dialogs.tsx` + `app.tsx` + `apps/cli/src/tui-menu.ts` | Ctrl+P/Ctrl+K/slash prefix 统一复用居中 `ListDialog`；slash 使用 shortcut-prefix search + matched/remainder 分色，Dialog settle 先 blur 再 deferred refocus，业务动作统一进入 `runCommand()` |
+| Terminal Transcript viewport | `apps/cli/opentui-runtime/ui/transcript-viewport.tsx`（会话唯一 ScrollBox owner，只消费 Prompt 之外的剩余高度；用户消息为 contentWidth 内 full-width padded band；结构化 `/help` 与 Activity/Assistant Turn spacing 也在此投影） |
 | Terminal UI 子模块 | `apps/cli/opentui-runtime/ui/`（Transcript / Prompt / Decoration / Logo / Dialog） |
 | Terminal 子模块稳定合同 | `apps/cli/opentui-runtime/contracts.ts` |
 

@@ -7,7 +7,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { testRender } from '@opentui/solid'
-import { InputDialog } from '../opentui-runtime/ui/dialogs.tsx'
+import { InputDialog, ListDialog } from '../opentui-runtime/ui/dialogs.tsx'
+import { commandPaletteOptions } from '../src/tui.ts'
 
 test('secret provider input accepts bracketed paste and submits without exposing the secret in rendered text', async () => {
   let submitted: string | undefined
@@ -31,6 +32,30 @@ test('secret provider input accepts bracketed paste and submits without exposing
     setup.mockInput.pressEnter()
     await setup.renderOnce()
     assert.equal(submitted, 'sk-test-secret')
+  } finally {
+    setup.renderer.destroy()
+  }
+})
+
+
+test('slash prefix ListDialog selects the filtered command on Enter without leaving the modal unsettled', async () => {
+  let selected: string | undefined
+  const setup = await testRender(() => ListDialog({
+    title: '命令',
+    items: commandPaletteOptions(),
+    searchable: true,
+    allowCancel: true,
+    initialQuery: '/he',
+    searchMode: 'shortcut-prefix',
+    onDone: value => { selected = value },
+  }), { width: 100, height: 30 })
+
+  try {
+    await setup.renderOnce()
+    assert.match(setup.captureCharFrame(), /\/help/)
+    setup.mockInput.pressEnter()
+    await setup.renderOnce()
+    assert.equal(selected, 'help')
   } finally {
     setup.renderer.destroy()
   }

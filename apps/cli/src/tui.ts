@@ -73,7 +73,7 @@ const LOGO_YU = [
 
 /**
  * Terminal slash 命令的唯一产品真值源。
- * Ctrl+P/Ctrl+K、Prompt inline suggestions 与 /help 必须全部从这里派生，禁止再维护第二份命令表。
+ * Ctrl+P/Ctrl+K、slash prefix 居中命令面板与 /help 必须全部从这里派生，禁止再维护第二份命令表。
  */
 const TERMINAL_COMMAND_CATALOG: readonly TuiMenuItem[] = [
   { value: 'help', label: '帮助', description: '查看全部快捷命令与用途说明', shortcut: '/help', keywords: ['help', 'commands', '帮助', '命令'] },
@@ -195,6 +195,8 @@ export interface TerminalTranscriptItem {
   stepId?: string
   placeholder?: boolean
   activity?: TerminalActivitySummary
+  presentation?: 'command-help'
+  menuItems?: readonly TuiMenuItem[]
 }
 
 function toolAction(name: string): string {

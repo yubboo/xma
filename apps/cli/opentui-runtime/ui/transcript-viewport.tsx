@@ -20,6 +20,26 @@ function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color:
   return { label: '系统', color: COLOR.soft }
 }
 
+function CommandHelpBlock(props: { items: NonNullable<TerminalTranscriptItem['menuItems']> }) {
+  return (
+    <box width="100%" flexDirection="column" paddingTop={1} paddingBottom={1} flexShrink={0}>
+      <text fg={COLOR.orange}><strong>Xiaoyu · 快捷命令</strong></text>
+      <box width="100%" flexDirection="column" paddingTop={1} flexShrink={0}>
+        <For each={props.items}>{item => (
+          <box width="100%" flexDirection="row" flexShrink={0}>
+            <box width={16} flexShrink={0}><text fg={COLOR.orange}>{item.shortcut ?? `/${item.value}`}</text></box>
+            <box width={20} flexShrink={0}><text fg={COLOR.text}>{item.label}</text></box>
+            <box flexGrow={1} minWidth={0}><text fg={COLOR.soft}>{item.description ?? ''}</text></box>
+          </box>
+        )}</For>
+      </box>
+      <box paddingTop={1} flexShrink={0}>
+        <text fg={COLOR.faint}>输入 / + 首字母筛选 · Ctrl+P / Ctrl+K 打开完整命令面板</text>
+      </box>
+    </box>
+  )
+}
+
 function RunActivityRow(props: { summary: TerminalActivitySummary; nowMs: number; onToggle: () => void }) {
   const presentation = () => terminalActivityPresentation(props.summary, props.nowMs)
   const toggle = (event: { stopPropagation(): void }) => {
@@ -150,13 +170,16 @@ export function TranscriptViewport(props: {
             if (item.placeholder) return <></>
             if (item.role === 'assistant') {
               return (
-                <box width="100%" flexDirection="column" flexShrink={0}>
+                <box width="100%" flexDirection="column" paddingBottom={1} flexShrink={0}>
                   <text fg={meta.color}><strong>{meta.label}</strong></text>
                   <text fg={COLOR.text}>{terminalAssistantText(item.text)}</text>
                 </box>
               )
             }
             if (item.role === 'reasoning') return <></>
+            if (item.role === 'system' && item.presentation === 'command-help' && item.menuItems) {
+              return <CommandHelpBlock items={item.menuItems} />
+            }
             return (
               <box width="100%" flexDirection="row" gap={2} flexShrink={0}>
                 <box width={14} flexShrink={0}><text fg={meta.color}><strong>{meta.label}</strong></text></box>

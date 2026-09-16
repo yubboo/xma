@@ -597,6 +597,10 @@ test('Active OpenTUI slash prompt reuses the centered ListDialog command palette
   assert.match(app, /clearPromptOnSelect: true/)
   assert.match(app, /<ListDialog[^>]*initialQuery=\{state\.initialQuery\}[^>]*searchMode=\{state\.searchMode\}/)
   assert.match(dialogs, /filterTuiMenuShortcutPrefix\(props\.items, query\(\)\)/)
+  assert.match(dialogs, /splitTuiMenuShortcutPrefix\(item, query\(\)\)/)
+  assert.match(dialogs, /<text fg=\{COLOR\.orange\}><strong>\{shortcutParts\(\)!\.matched\}<\/strong><\/text>/)
+  assert.match(dialogs, /searchInput\?\.blur\(\)/)
+  assert.match(app, /queueMicrotask\(\(\) => \{[\s\S]*dialog\(\) !== undefined[\s\S]*refocusPrompt\(\)/)
   assert.match(dialogs, /props\.initialQuery\) searchInput\?\.insertText\(props\.initialQuery\)/)
   assert.match(menu, /normalized\.length <= 1\) return \[\]/)
   assert.match(tui, /const TERMINAL_COMMAND_CATALOG: readonly TuiMenuItem\[\]/)
@@ -611,6 +615,20 @@ test('Active Transcript cleans common Markdown markers instead of printing - **x
   assert.match(formatter, /function cleanMarkdownLine/)
   assert.match(formatter, /• /)
   assert.match(formatter, /fenced \? line : cleanMarkdownLine\(line\)/)
+})
+
+test('Active Transcript renders /help as a structured command block and gives assistant turns bottom breathing room', () => {
+  const app = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const transcript = readFileSync('apps/cli/opentui-runtime/ui/transcript-viewport.tsx', 'utf8')
+  const tui = readFileSync('apps/cli/src/tui.ts', 'utf8')
+  assert.match(app, /presentation: 'command-help'/)
+  assert.match(app, /menuItems: commandPaletteOptions\(\)/)
+  assert.match(tui, /presentation\?: 'command-help'/)
+  assert.match(tui, /menuItems\?: readonly TuiMenuItem\[\]/)
+  assert.match(transcript, /function CommandHelpBlock/)
+  assert.match(transcript, /Xiaoyu · 快捷命令/)
+  assert.match(transcript, /item\.presentation === 'command-help'/)
+  assert.match(transcript, /if \(item\.role === 'assistant'\) \{[\s\S]*paddingBottom=\{1\}/)
 })
 
 test('Active Terminal presents Provider failures as normalized system messages instead of raw assistant JSON', () => {
