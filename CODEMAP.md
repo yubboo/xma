@@ -47,6 +47,8 @@
 | Rust Security / Native Runtime | `native/runtime/` |
 | 迁移期旧入口 | `core/`（Compatibility Facade only） |
 | Terminal OpenTUI 父级协调 | `apps/cli/opentui-runtime/app.tsx` |
+| Terminal Prompt Dock | `apps/cli/opentui-runtime/ui/prompt-dock.tsx`（单一 `flexShrink=0` Dock；Textarea/状态/快捷键/提示的唯一布局 owner） |
+| Terminal Transcript viewport | `apps/cli/opentui-runtime/ui/transcript-viewport.tsx`（会话唯一 ScrollBox owner，只消费 Prompt 之外的剩余高度） |
 | Terminal UI 子模块 | `apps/cli/opentui-runtime/ui/`（Transcript / Prompt / Decoration / Logo / Dialog） |
 | Terminal 子模块稳定合同 | `apps/cli/opentui-runtime/contracts.ts` |
 

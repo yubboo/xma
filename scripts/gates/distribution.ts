@@ -92,8 +92,14 @@ for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', 'showCur
 for (const marker of ['Tool Approval', "event.name === 'escape'"]) {
   if (!openTuiDialogs.includes(marker)) throw new Error(`XMA OpenTUI dialog marker missing: ${marker}`)
 }
-for (const marker of ['stickyScroll={true}', 'stickyStart="bottom"', 'flexShrink={1}', 'minHeight={0}']) {
+for (const marker of ['stickyScroll={true}', 'stickyStart="bottom"', 'height="100%"', 'minHeight={0}']) {
   if (!openTuiTranscript.includes(marker)) throw new Error(`XMA Transcript viewport marker missing: ${marker}`)
+}
+for (const marker of ['id="xiaoyu-transcript-slot"', 'height={0}', 'flexBasis={0}', 'flexGrow={1}', 'flexShrink={1}', 'overflow="hidden"']) {
+  if (!openTui.includes(marker)) throw new Error(`XMA bounded Transcript slot marker missing: ${marker}`)
+}
+if (!text('apps/cli/tests/opentui-layout.test.ts').includes('scrollHeight > scroll.viewport.height')) {
+  throw new Error('XMA must keep a behavior-level OpenTUI layout test that proves long Transcript content creates a real scroll range.')
 }
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)

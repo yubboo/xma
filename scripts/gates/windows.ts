@@ -327,6 +327,8 @@ for (const marker of [
   'Xiaoyu OpenTUI Runtime 已就绪',
   "[ValidateSet('menu','prepare','web','desktop','cli','check','release','release-windows','js','bun','rust','update')]",
   "'cli' { Start-Cli -WorkspacePath $Workspace }",
+  '$workspaceCandidate = if ([string]::IsNullOrWhiteSpace($WorkspacePath)) { $Root } else { $WorkspacePath }',
+  '$resolvedWorkspace = (Resolve-Path -LiteralPath $workspaceCandidate).Path',
   "$cliArguments += @($resolvedWorkspace)",
   '未检测到 rustfmt/cargo-fmt。请运行主菜单 [9]',
   'Rust rustfmt 已就绪；[7] 将保持 offline',

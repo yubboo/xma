@@ -88,7 +88,7 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 6. 同步 `UPDATE-LOG.md`；当前状态改变时同步 `PROJECT-STATUS.md`；长期路线改变时才同步 `DEVELOPMENT-PLAN.md`；
 7. 当前环境不能运行的 Windows Terminal / 真实 Provider / Desktop E2E 必须标记“验证中”，禁止声称已经实机修好。
 
-Terminal OpenTUI 额外遵循模块化 ownership：父 `app.tsx` 只负责协调；Transcript、Prompt、Decoration、Logo、Dialog 分别拥有自己的布局/输入/动画生命周期。focused Textarea 原生拥有 cursor；父级不得用定时 `showCursor` 模拟闪烁，Decoration 不得触发 Prompt render。Transcript 是唯一历史滚动 owner，父级不得再叠第二套 wheel fallback。
+Terminal OpenTUI 额外遵循模块化 ownership：父 `app.tsx` 只负责协调；Transcript、Prompt、Decoration、Logo、Dialog 分别拥有自己的布局/输入/动画生命周期。focused Textarea 原生拥有 cursor；父级不得用定时 `showCursor` 模拟闪烁，Decoration 不得触发 Prompt render。Transcript 是唯一历史滚动 owner，父级不得再叠第二套 wheel fallback。 Prompt 必须以单一不可压缩 Dock 节点参与父级 Flex 布局；输入区、快捷键与提示只能作为 Dock 内部子节点，禁止返回 Fragment 把它们拆成父级兄弟。Transcript 必须只占剩余高度，而且必须先由父级 bounded slot 明确约束：`height=0 + flexBasis=0 + flexGrow=1 + flexShrink=1 + minHeight=0 + overflow=hidden`，内部 ScrollBox 只允许 `height=100%` 填满 slot，禁止依赖 ScrollBox intrinsic content height 与固定 Dock 竞争父级高度。
 
 ## 4. Agent Runtime 硬规则
 
@@ -295,7 +295,7 @@ CI 绿也不等于产品完成；没有真实 Provider/Tool/Native/Workspace/E2E
 ## 14. 源码开发项目依赖准备规则
 
 - Windows 源码开发使用 `xma-dev.bat -> [1]`；Linux/macOS 使用 `./xma-dev prepare`。源码入口必须带 `-dev`，不得与正式 `xma` 产品命令混淆。
-- Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但只能通过本地 `.git/xma-state/dev-bin` shim 写入 **User PATH**；禁止把整个 Git 仓库加入 PATH、禁止修改 Machine PATH。开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI。
+- Windows `[1]` 完成后允许把当前 checkout 注册为开发态 `xiaoyu / xma`，但 User PATH 只允许写入稳定 `%LOCALAPPDATA%\Xiaoyu\dev-bin`；该目录通过 UTF-8 `source-root.txt` 指向当前 checkout。禁止把整个 Git 仓库、checkout-local `.git/xma-state/dev-bin` 或 Machine PATH 作为现役入口。全局开发 shim 必须把调用时当前目录作为 Workspace 传给 CLI；主菜单 `[4]` 未显式提供 Workspace 时必须显式使用项目根 `$Root`，不得因为直接 Bun 启动把 `apps/cli/opentui-runtime` 误当 Workspace。
 - `[1]` 是当前源码依赖同步入口：Workspace JavaScript 只执行一次完全原生的 `pnpm install`，不主动追 latest、不包自定义 registry/reporter/timeout。Bun/OpenTUI/Solid/@types-bun 统一声明在根 `package.json` 并从根 `node_modules` 解析；`apps/cli/opentui-runtime/` 只保留源码，不得成为嵌套 Workspace。package/workspace 以后新增或调整依赖，用户重新运行 `[1]` 即同步。`[8]` 才是 Bun/OpenTUI/Solid 的显式 latest 刷新入口。`pnpm-workspace.yaml -> allowBuilds` 只能批准经过审核的 `bun` 与 `esbuild` lifecycle；Electron 不得进入 allowBuilds，Chromium Runtime 仍由 Desktop 明确流程按需准备。
 - `[1]` 写入开发态 `.git/xma-state/dev-bin` User PATH 必须幂等：shim 与 PATH 已匹配时只报告缓存命中，不重复写环境变量；旧 `.xma/dev-bin` 只允许作为迁移清理对象。
 - Windows `[1]` 必须自动确保 Git、Node.js、兼容 pnpm、Workspace JavaScript、Rust/Cargo、rustfmt、MSVC 与 Cargo crates 完整可用。工具缺失或低于项目硬要求时自动安装/修正；已满足要求的版本直接复用，不为追新强制升级。主菜单 `[8]` 仅负责显式刷新 JavaScript Runtime latest；`[9]` 用于单独修复/重装 Rust/Cargo。

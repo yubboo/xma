@@ -863,3 +863,23 @@
 - Windows 启动：`[4]`/全局开发态 `xiaoyu/xma` 直接调用项目 `node_modules\bun\bin\bun.exe run --no-install ../src/main.ts`，不再经过 `pnpm -> tsx -> scripts/cli/bun.ts -> bun`；Native cache 先比较 fingerprint，命中即复用，只有 miss 才做 Cargo offline 校验/build。
 - PATH：开发态全局入口固定 `%LOCALAPPDATA%\Xiaoyu\dev-bin` 并写 Windows User PATH；`.cmd` 为 ASCII 跳板，PowerShell UTF-8 读取 `source-root.txt`。Source Sync 切 checkout 只更新稳定入口的指针并清理旧 checkout-local dev-bin PATH。
 - 回归：OpenTUI 测试调整为按子模块 ownership 验证并新增 direct-Bun / stable User PATH 防回归，当前 29/29 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS；TS/TSX 语法转译 PASS。Source Manifest 现为 225 个受管源码文件；成品候选 ZIP 独立解压后 225 + manifest 内容完整、哈希差异 0、额外文件 0，并从解压树再次执行 29 个回归与 9 项 Gate 全部 PASS。Windows Terminal wheel/caret/启动耗时属于用户实机 E2E，当前 Repair #01 状态保持“验证中”，不提前宣称完成。
+
+
+##81 · Terminal Prompt Dock 父子布局与 `[4]` Workspace 回归修复
+
+- 日期：2026-09-16
+- 实机反馈：#01 后 User PATH 与 Textarea caret 已通过用户 Windows 实机验证，但发送第一条消息后 Transcript 占满主工作区，输入框/Build/Provider/快捷键/提示整块消失，Xiaoyu 回答底部被裁切，用户无法继续正常聊天。
+- 根因一（布局）：`PromptDock` 模块虽然已拆出，但组件返回 Fragment，输入区、快捷键栏和提示栏仍作为多个父级 Flex 兄弟参与分配；加入 `flexGrow=1` Transcript 后没有形成“可缩 Transcript + 固定 Prompt Dock”两个原子区域，实机中 ScrollBox 可把 Prompt 挤出 viewport。
+- 修复一：`PromptDock` 改为单一 `id=xiaoyu-prompt-dock` 根 box，根节点固定 `flexShrink=0`，输入/状态/快捷键/提示全部收进内部；父工作区显式 `width=100% / flexGrow=1 / flexShrink=1 / minHeight=0 / overflow=hidden`，Transcript 继续是唯一 ScrollBox 并只消费剩余高度。
+- 根因二（Workspace）：#01 为提速绕过 `scripts/cli/bun.ts dev` 后，主菜单 `[4]` 没有补回旧 runner 的默认项目根参数；由于进程在 `apps/cli/opentui-runtime` 下直接启动，CLI 把 runtime 目录误当 Workspace。
+- 修复二：`Start-Cli` 统一计算 `$workspaceCandidate`；显式 `-Workspace` 使用调用者目录，无显式参数的 `[4]` 使用项目 `$Root`，然后始终把 resolved workspace 传给 Bun CLI。直接 Bun 快启动不回退。
+- 流程：先新增 `REPAIR-PROMPTS #02` 再实施；OpenTUI 29/29 回归已更新并通过，Windows Gate 增加 `[4]` 默认 Root workspace 合同。Windows Terminal 仍需用户实机确认 Prompt Dock 可持续聊天、长回复只在 Transcript 内滚动以及 `[4]` 底部 Workspace 正确。
+
+##82 · Terminal bounded Transcript Slot 与真实滚动范围修复
+
+- 日期：2026-09-16
+- 实机反馈：#81 把 PromptDock 收口为单一 `flexShrink=0` 节点后，Windows Terminal 仍在第一轮对话后把输入框/Build/Provider/快捷键整体挤出 viewport，且 Transcript mouse wheel 完全没有位移；说明 Fragment 只是次级问题。
+- 最终根因方向：OpenTUI ScrollBox 仍直接作为 Workbench 的可增长 flex child，内部 `content` 使用 `flexShrink=0 + minHeight=100%` 并以真实消息内容形成 intrinsic height。仅给 ScrollBox root `flexGrow/flexShrink/minHeight` 未能在实机建立稳定 bounded viewport；长内容同时撑大 ScrollBox/父级，Prompt 被推出屏幕，而 `viewport.height` 又跟内容一起增长，`scrollHeight - viewport.height` 不能形成稳定正值。
+- 修复：Workbench 在 Transcript 外新增 `xiaoyu-transcript-slot`，用 `height=0 + flexBasis=0 + flexGrow=1 + flexShrink=1 + minHeight=0 + overflow=hidden` 先锁定剩余高度；Transcript ScrollBox 改为 `height=100%` 只填满该 slot，不再直接以 intrinsic content height 和 PromptDock 竞争父级主轴。PromptDock 继续固定 `flexShrink=0`。
+- 测试：新增 `apps/cli/tests/opentui-layout.test.ts`，使用 `@opentui/core/testing` 构造与生产同构的 bounded slot + ScrollBox + fixed dock 布局，真实添加 60 行历史并断言 Prompt 在屏内、`scrollHeight > viewport.height`、滚到底后 mock mouse wheel up 能让 `scrollTop` 下降。现有静态合同同步锁定 slot 与 `height=100%`。
+- 状态：代码和文档已进入 #03 验证阶段；PATH/caret/direct-Bun/Workspace 参数保持不变。Windows Terminal 最终 wheel/多轮输入仍以用户实机为权威，不提前标完成。

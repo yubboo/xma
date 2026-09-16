@@ -317,11 +317,12 @@ function Start-Cli([string]$WorkspacePath = '') {
   try {
     $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
     $cliArguments = @('run','--no-install','../src/main.ts')
-    if (-not [string]::IsNullOrWhiteSpace($WorkspacePath)) {
-      $resolvedWorkspace = (Resolve-Path -LiteralPath $WorkspacePath).Path
-      $cliArguments += @($resolvedWorkspace)
-      Write-Host "[Workspace] $resolvedWorkspace" -ForegroundColor DarkGray
-    }
+    # 中文说明：主菜单 [4] 没有显式 Workspace 时仍必须保持旧 dev:cli 语义——默认操作项目根；
+    # 全局 xiaoyu/xma shim 会显式传调用者当前目录，因此仍按用户所在 Workspace 启动。
+    $workspaceCandidate = if ([string]::IsNullOrWhiteSpace($WorkspacePath)) { $Root } else { $WorkspacePath }
+    $resolvedWorkspace = (Resolve-Path -LiteralPath $workspaceCandidate).Path
+    $cliArguments += @($resolvedWorkspace)
+    Write-Host "[Workspace] $resolvedWorkspace" -ForegroundColor DarkGray
     Write-Host '[启动] 正在直接启动 Xiaoyu Terminal / TUI（跳过 pnpm/tsx 启动壳）...' -ForegroundColor Cyan
     Push-Location $runtimeRoot
     try {

@@ -34,8 +34,13 @@ export function PromptDock(props: {
   let prompt: TextareaRenderable | undefined
 
   return (
-    <>
-      <box width={props.width} flexShrink={0} flexDirection="column" paddingBottom={1} onMouseDown={props.onPromptFocus}>
+    <box
+      id="xiaoyu-prompt-dock"
+      width={props.width}
+      flexShrink={0}
+      flexDirection="column"
+    >
+      <box width="100%" flexShrink={0} flexDirection="column" paddingBottom={1} onMouseDown={props.onPromptFocus}>
         <box
           flexDirection="column"
           backgroundColor={props.panel ? COLOR.panel : COLOR.background}
@@ -98,15 +103,15 @@ export function PromptDock(props: {
         </box>
       </box>
 
-      <box width={props.width} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
+      <box width="100%" flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1} flexShrink={0}>
         <For each={props.hintItems}>{item => <text fg={COLOR.soft}>{item}</text>}</For>
       </box>
       <Show when={props.tipsEnabled}>
-        <box width={props.width} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1}>
+        <box width="100%" flexDirection="row" gap={2} justifyContent="center" paddingBottom={1} flexShrink={0}>
           <text fg={COLOR.orange}>●  提示</text>
           <text fg={COLOR.soft}>{props.tip}</text>
         </box>
       </Show>
-    </>
+    </box>
   )
 }

@@ -918,7 +918,20 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         meteors={settings().meteors}
         motion={transcript().length === 0 && dialog() === undefined && !setupFlow().active}
       />
-      <box position="relative" zIndex={10} flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-start'} paddingTop={1}>
+      <box
+        id="xiaoyu-workbench"
+        position="relative"
+        zIndex={10}
+        width="100%"
+        flexGrow={1}
+        flexShrink={1}
+        minHeight={0}
+        overflow="hidden"
+        flexDirection="column"
+        alignItems="center"
+        justifyContent={centerMode() ? 'center' : 'flex-start'}
+        paddingTop={1}
+      >
         <Show when={showLogo()}>
           <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
             <HomeLogo
@@ -929,14 +942,25 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         </Show>
 
         <Show when={transcript().length > 0}>
-          <TranscriptViewport
-            width={dimensions().width}
-            contentWidth={contentWidth()}
-            items={transcript()}
-            nowMs={clock()}
-            onToggleActivity={toggleRunActivity}
-            onScrollReady={value => { transcriptScroll = value }}
-          />
+          <box
+            id="xiaoyu-transcript-slot"
+            width="100%"
+            height={0}
+            flexBasis={0}
+            flexGrow={1}
+            flexShrink={1}
+            minHeight={0}
+            overflow="hidden"
+          >
+            <TranscriptViewport
+              width={dimensions().width}
+              contentWidth={contentWidth()}
+              items={transcript()}
+              nowMs={clock()}
+              onToggleActivity={toggleRunActivity}
+              onScrollReady={value => { transcriptScroll = value }}
+            />
+          </box>
         </Show>
 
         <PromptDock

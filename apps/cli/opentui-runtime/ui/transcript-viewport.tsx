@@ -100,8 +100,7 @@ export function TranscriptViewport(props: {
         syncTopSpacer()
       }}
       width={props.width}
-      flexGrow={1}
-      flexShrink={1}
+      height="100%"
       minHeight={0}
       scrollX={false}
       scrollY={true}

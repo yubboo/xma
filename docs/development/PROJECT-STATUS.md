@@ -135,11 +135,15 @@ XMA 当前固定五条参考线：
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
 
-- `REPAIR-PROMPTS #01` 已进入**验证中**：OpenTUI Host 已拆为父级协调器 + Transcript / Prompt / Background / Home Logo / Dialog 子模块；父级应用层 cursor blink timer 与 root wheel fallback 已移除。
+- `REPAIR-PROMPTS #01` 仍处于**验证中**：用户 Windows 实机已确认稳定 User PATH 生效（任意目录 `xiaoyu/xma` 可启动）且 Textarea caret 已恢复稳定；历史滚动尚未完成实机闭环，因为后续暴露出 #02 会话父布局回归。
 - Transcript 使用单一受限高度 ScrollBox + 正向 spacer 处理短对话贴底；长内容不再使用 `justifyContent:flex-end`/负向 overflow。用户手动离底后的 sticky 行为继续交给 OpenTUI 原生 ScrollBox。
 - Prompt Textarea 恢复原生 cursor blink ownership；背景/Logo 动画不再通过父级状态或回调触发 Prompt 重绘。
 - Windows `[4]` 开发启动改为项目 Bun 直接执行 CLI 源码，Native Runtime 先 fingerprint 快路径，cache miss 才验证 Cargo/build；`[1]` 使用固定 `%LOCALAPPDATA%\Xiaoyu\dev-bin` User PATH 入口。
 - 自动证据：OpenTUI 29/29 回归通过，9 项 Gate 通过，TS/TSX 语法转译通过；Source Manifest 已扩展为 225 个受管源码文件，成品候选 ZIP 独立解压后缺失/哈希差异/额外文件均为 0，并从解压树再次跑过 29 个回归与 9 项 Gate。**Windows Terminal 鼠标滚轮、caret 与实际启动耗时仍待用户实机 E2E，因此当前不标“已完成”。**
+- `REPAIR-PROMPTS #02` 当前处于**验证中**：#01 模块拆分后 `PromptDock` 以 Fragment 把输入区/快捷键/提示散成父级兄弟，实机中 Transcript ScrollBox 抢占主工作区并把 Prompt 挤出 viewport；现已把 Prompt 收口为单一 `flexShrink=0` Dock 原子，父工作区显式 `overflow=hidden`，Transcript 只消费剩余高度。
+
+- `REPAIR-PROMPTS #03` 当前处于**验证中**：#02 后 PromptDock 虽已成为单根 `flexShrink=0`，Windows 实机仍出现会话态 Prompt 整块被 Transcript 挤出、wheel 无法移动历史。当前根因收敛为 ScrollBox 仍直接参与父级 intrinsic sizing；#03 改为“bounded Transcript slot（height=0/flexBasis=0）+ ScrollBox height=100%”，并新增 OpenTUI Core 行为测试锁定 Prompt 屏内、真实 scroll range 与 mouse wheel 位移。
+- #02 同时修复 direct-Bun `[4]` 的 Workspace 参数回归：主菜单未显式传 `WorkspacePath` 时现在显式使用项目 `$Root`；全局 `xiaoyu/xma` 仍使用调用者当前目录。
 - 实机通过后再结束 #01，并恢复 Stage P1 Agent Engine 主线；若任一症状仍存在，必须新增/继续 Repair Prompt 证据，不再直接往 `app.tsx` 叠补丁。
 
 ## 7. 下一开发批次

@@ -126,10 +126,190 @@
 
 ### 当前验收状态
 
-本条仍为 **验证中**。自动证据证明模块边界和防回归合同已落地，但以下项目只能在用户 Windows Terminal 真机确认后才能标记“已完成”：完整历史鼠标滚轮、离底后不被流式输出拉回、caret 稳定、`[4]` 二次启动耗时、任意目录 `xiaoyu/xma`。
+本条仍为 **验证中**。用户 Windows Terminal 已确认 **任意目录 `xiaoyu/xma` 可启动** 与 **Textarea caret 稳定** 两项通过；完整历史鼠标滚轮/离底后 follow、`[4]` 二次启动耗时仍待继续验证。后续实机又暴露 `#02` Prompt Dock 父布局回归，因此 #01 暂不结束。
 
 ## 待优化进度
 
 - **本轮必须继续**：从最终正式 ZIP 重新解压后再次跑 29 个 OpenTUI 回归、9 项 Gate、Source Manifest hash/extra-file 校验；用户完成 Windows E2E 后回填结果。
 - **后续可优化**：继续把 `app.tsx` 中剩余命令面板/Provider Setup/跨 Dialog 协调拆成明确 controller/context，但只有在能缩小 ownership 且不改变 Runtime 语义时进行，不为“文件更小”机械拆分。
 - **不在本轮扩大范围**：不顺手重构 Agent Runtime、Provider、Tool、Permission；#01 完成后恢复 Stage P1 Agent Engine 主线。
+
+# 02 Terminal 会话布局、输入 Dock 消失与 Workspace 路径回归
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime`、Windows `[4]` 开发启动入口
+- 关联修复：`# 01 Terminal 历史滚动、光标稳定、启动速度与全局命令回归`
+
+## 用户可见症状
+
+1. `#01` 后 `xiaoyu` / `xma` 已可从任意目录启动，Textarea caret 也恢复稳定；这两项实机验收通过。
+2. 一旦发送第一条消息，Transcript 占满主工作区高度，右侧用户消息、Activity 和 Xiaoyu 回答被压到终端最底部；回答底部发生裁切。
+3. 原本固定在聊天区下方的输入框、Build/Provider 状态、快捷键和提示整块 `PromptDock` 消失到 viewport 外，导致用户无法继续正常聊天。
+4. `[4]` 直接 Bun 启动后，底部 Workspace 显示为 `H:\一键部署\xma\apps\cli\opentui-runtime`，而不是项目根 `H:\一键部署\xma`；说明启动提速时丢失了旧 `bun.ts dev` 默认把项目根作为 workspace 参数的行为。
+
+## 已确认事实与证据
+
+- 用户实机截图证明 PATH 与 caret 已修好，因此不得回退 `#01` 的稳定 User PATH 与 Textarea 原生 cursor ownership。
+- `PromptDock` 当前组件返回 Fragment（`<>...</>`），其中输入区、快捷键栏、提示栏作为多个兄弟 Renderable 直接插入父级；父级同时存在一个 `flexGrow=1` 的 Transcript ScrollBox。这个边界没有把 Prompt 作为一个不可压缩的整体 Dock 参与 Yoga 分配，是本轮布局回归的首要根因。
+- `TranscriptViewport` 本身设置 `flexGrow=1 / flexShrink=1 / minHeight=0`，但父级没有一个明确的“Transcript 可缩区域 + Prompt 固定区域”单元合同；实机结果表明当前组合仍允许 ScrollBox 占满主区域并把 Prompt 挤出屏幕。
+- `Start-Cli` 优化后直接 `Push-Location apps\cli\opentui-runtime` 再运行 `bun run ../src/main.ts`。当 `[4]` 未显式传 `-Workspace` 时，没有再像原 `scripts/cli/bun.ts dev` 那样补默认项目根参数，因此 `main.ts` 以 runtime 目录作为 `process.cwd()`/workspace。
+- Source Sync 不是当前根因；用户已经验证最新包可以正常启动，且此前 Manifest SHA-256 一致。
+
+## 已被证伪/禁止重复的修法
+
+- 不得重新把 Prompt、Transcript、背景和 Activity 合并回巨型 `app.tsx`。
+- 不得通过给 Transcript 写死一个“看起来差不多”的终端高度修复；窗口大小、Textarea 多行高度、tips 开关都会变化。
+- 不得恢复父级 cursor timer、root wheel fallback 或 `justifyContent:flex-end`。
+- 不得为了让 `[4]` workspace 正常而重新恢复 `pnpm -> tsx -> bun.ts -> bun` 慢启动链；只补回参数语义。
+
+## 本次修复 Prompt
+
+> 以 `#01` 验证后的最新 `xma-0.1.0` 为基线。保留已经实机通过的稳定 User PATH 与 Textarea caret 修复，只修会话父子布局和 `[4]` workspace 参数回归。先证明 ownership，再改代码。
+>
+> 1. **PromptDock 必须是单一不可压缩布局节点**：`PromptDock` 不得返回 Fragment 让输入区/快捷键/提示成为父级散落兄弟；改为一个 `flexShrink=0` 的根 `box`，内部再纵向包含输入区、快捷键、提示。父级 Yoga 只能看到“Transcript 可伸缩 + PromptDock 固定”两个会话主区域。
+> 2. **Transcript 只能消费剩余高度**：主工作区使用明确 `flexGrow=1 / flexShrink=1 / minHeight=0`；Transcript ScrollBox 保持同样可缩合同，PromptDock 保持 `flexShrink=0`。禁止给 Transcript 写死终端高度。必要时主工作区设置 `overflow=hidden`，但不得用裁切掩盖错误分配。
+> 3. **保持单滚动 owner**：Transcript 仍是唯一历史滚动 owner；top spacer、sticky bottom、PageUp/PageDown/Ctrl+Home/Ctrl+End 和原生 wheel 语义不变。本轮不得顺手重写滚动算法。
+> 4. **恢复 `[4]` 默认 Workspace 语义**：当 `Start-Cli` 没收到 `WorkspacePath`（主菜单 `[4]`）时，显式把 `$Root` 作为 CLI workspace 参数；当全局 `xiaoyu/xma` 传入当前目录时，继续使用那个真实目录。直接 Bun 快启动保留。
+> 5. **补防回归合同**：测试锁定 `PromptDock` 单根、根 `flexShrink=0`、父级/Transcript 可缩合同；Windows Gate/测试锁定 `[4]` 无显式 workspace 时默认传 `$Root`，防止再次落到 `apps/cli/opentui-runtime`。
+> 6. 回填本条最终根因、自动验证和 Windows 实机验收；更新 `PROJECT-STATUS.md` / `UPDATE-LOG.md`，若形成长期规则则同步 `AGENTS.md` / `DEVELOPMENT-RULES.md`。重新生成 Source Manifest 和正式 `xma-0.1.0.zip`。
+
+## 不允许回归的既有行为
+
+- `#01` 已实机通过：任意目录 `xiaoyu/xma` 可启动；Textarea caret 稳定。
+- 用户消息右对齐；Xiaoyu/Activity 左对齐；`Xiaoyu · 正在思考` 与真实 Activity 计时继续工作。
+- Transcript 历史滚动仍由同一个 ScrollBox 负责；不恢复 root wheel fallback。
+- `[4]` 继续使用项目 Bun 直接启动，不恢复多层包装启动链。
+- Agent Runtime / Provider / Tool / Approval 语义不在本轮改动。
+
+## 验收条件
+
+### 自动验证
+
+- `PromptDock` 只有一个根布局 box，根节点 `flexShrink=0`；快捷键/提示都在该根节点内部。
+- 会话父级和 Transcript 保持 `flexGrow=1 / flexShrink=1 / minHeight=0`，Prompt 不参与可缩高度竞争。
+- `[4]` 在 `WorkspacePath` 为空时把项目 `$Root` 传给 CLI；全局 shim 仍传调用者当前目录。
+- OpenTUI 回归、Windows Gate 与项目 Gate 通过；最终 ZIP 与 Source Manifest 一致。
+
+### Windows 实机 E2E
+
+- 发送第一条消息后，输入框、Build/Provider、快捷键、提示仍固定在底部可见；可继续输入第二条、第三条消息。
+- Xiaoyu 长回复只能在 Transcript viewport 内滚动，不得覆盖或挤走 PromptDock。
+- 非全屏与全屏切换后上述结构都稳定。
+- 主菜单 `[4]` 底部 Workspace 为 XMA 项目根；在其他目录直接运行 `xiaoyu/xma` 时 Workspace 为用户启动命令时所在目录。
+- PATH 与 caret 继续保持 `#01` 的已通过状态。
+
+## 当前判断
+
+本轮是 `#01` 模块化过程中暴露出的**父子布局边界回归 + 快启动参数语义回归**。它不否定模块化方向，反而说明需要把“父级只分配区域、子级内部自管”继续落实：Prompt 作为一个 Dock 原子参与父级布局，Transcript 只拿剩余空间；启动优化也必须保持原入口的 workspace 语义。
+
+## 最终根因
+
+1. **Prompt Dock 不是父级布局原子**：#01 虽然把 Prompt 拆出 `prompt-dock.tsx`，但组件返回 Fragment，导致输入区、快捷键栏和提示栏仍作为多个 Yoga sibling 参与父级布局。Transcript ScrollBox 同时 `flexGrow=1` 后，Windows Terminal 实机出现 Transcript 占满可用高度、Prompt 整块被挤出 viewport。
+2. **direct-Bun 优化丢失默认 Workspace 参数**：旧 `scripts/cli/bun.ts dev` 在没有 forwarded args 时默认传项目根；#01 的 `Start-Cli` 直接 Bun 路径只在显式 `WorkspacePath` 时才传参数，主菜单 `[4]` 又先 `Push-Location apps/cli/opentui-runtime`，因此 CLI 把 runtime 目录当成 Workspace。
+
+## 实际修改与自动验证
+
+- `ui/prompt-dock.tsx`：改为单一 `id="xiaoyu-prompt-dock"` 根 box，根 `flexShrink=0`；输入、Build/Provider 状态、快捷键、提示全部成为内部子节点，不再以 Fragment 散落到父级。
+- `app.tsx`：父工作区增加稳定 `id="xiaoyu-workbench"`，显式 `width=100% / flexGrow=1 / flexShrink=1 / minHeight=0 / overflow=hidden`；Transcript 仍是唯一 scroll owner，Prompt 不参与可缩高度竞争。
+- `scripts/windows/xma-console.ps1`：`Start-Cli` 统一计算 `$workspaceCandidate`；空 `WorkspacePath` 使用 `$Root`，显式参数使用调用者目录，并始终把 resolved workspace 传给 Bun。保留 direct-Bun 快启动。
+- 防回归：OpenTUI 测试新增 Prompt 单根/不可压缩 Workbench 合同，以及 `[4]` 默认 `$Root` Workspace 合同；Windows Gate同步锁定该行为。
+- 自动验证：OpenTUI **29/29 PASS**；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository Gate 全部 PASS；Runtime updater **2/2 PASS**。Windows Gate 还在实施过程中成功拦截了一次 `xma-console.ps1` 被编辑器写成 LF 的发行格式回归，现已恢复 CRLF 后通过。
+
+## 当前实机验收状态
+
+- #01 已由用户确认：`xiaoyu/xma` 任意目录启动正常；Textarea caret 稳定。
+- #02 仍待用户 Windows Terminal 验证：发送第一条消息后 Prompt Dock 必须持续可见、可继续多轮聊天；长回复只在 Transcript 内滚动；主菜单 `[4]` Workspace 必须显示项目根。
+- 在这些实机项确认前，本条保持“验证中”，不得写“已完成”。
+
+## 待优化进度
+
+- 若 #02 实机通过，再继续 #01 的长历史 mouse-wheel E2E，并结束 Terminal 阻断性修复批次。
+- 若仍失败，下一条必须新增 `#03`，记录新的实机证据与根因，不允许回滚模块化或把所有 UI 重新塞回 `app.tsx`。
+
+# 03 Terminal Transcript 不可滚动与 PromptDock 再次被挤出 viewport
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime` 会话父布局、Transcript ScrollBox、PromptDock 可见性与滚轮历史回看
+- 关联修复：`# 01`、`# 02`
+
+## 用户可见症状
+
+1. `#02` 成品包在 Windows Terminal 实机发送第一条消息后，输入框、Build/Provider 状态、快捷键与提示仍全部消失；用户只能看到用户消息、Activity 与第一段 Xiaoyu 回复，无法继续正常多轮聊天。
+2. 同一实机中 Transcript 仍无法用鼠标滚轮自由向上查看历史，表现像滚动被其他代码禁用。
+3. `xiaoyu/xma` 任意目录 PATH 与 Textarea caret 已由用户确认正常，本轮不得回退这两项。
+
+## 已确认事实与证据
+
+- Source Sync 已多次通过 Source Manifest SHA-256 校验；PATH 也已由用户实机验证，因此本轮不是“同步了旧包”或“启动了旧 checkout”。
+- `PromptDock` 在 #02 后确实已经是单一 `flexShrink=0` 根 box；因此“Fragment 让 Dock 散成多个 sibling”只是 #02 的一层问题，不是当前最终根因。
+- 当前 `TranscriptViewport` 自己仍作为父 Workbench 的直接 flex child，内部 OpenTUI `ScrollBoxRenderable` 的 `content.height` 又参与 Yoga intrinsic sizing。Windows 实机结果表明：仅给 ScrollBox root `flexGrow=1 / flexShrink=1 / minHeight=0` 并不足以把它约束为剩余高度 viewport。
+- OpenTUI `ScrollBoxRenderable` 的真实滚动范围是 `scrollHeight = content.height`、`viewportSize = viewport.height`；只有 `content.height > viewport.height` 才存在可滚范围。当前症状“Prompt 被推走 + wheel 无位移”高度一致地说明 ScrollBox viewport 跟着内容一起长，导致父级被内容撑开且 `maxScrollTop` 接近 0。
+- MiMo-Code 在同一 OpenTUI 技术栈中使用“会话父容器 → `scrollbox flexGrow=1` → `box flexShrink=0` Prompt”的两段布局，并让 ScrollBox 自己处理 wheel/sticky；Pi 也把 Transcript ScrollView 与 Editor/Footer 放入明确受限的 VStack region。共同点不是额外 wheel handler，而是**先存在受限 viewport，再谈滚动**。
+- OpenTUI 官方测试证明 ScrollBox 原生 mouse wheel 可以改变 `scrollTop`；因此在 `useMouse: true` 下继续堆 root wheel fallback 不是首选。当前必须先证明 XMA 的 ScrollBox 确实拥有非零 `maxScrollTop`。
+
+## 已被证伪/禁止重复的修法
+
+- 仅把 PromptDock 从 Fragment 改成根 box：实机已证明不够。
+- 只给 ScrollBox root 写 `flexGrow/flexShrink/minHeight`：实机已证明当前组合仍会被内容 intrinsic height 撑开。
+- 再加一套 root wheel fallback：如果 `scrollHeight <= viewport.height`，事件再多也滚不动；禁止用事件补丁掩盖几何错误。
+- 恢复 `justifyContent:flex-end`、auto negative overflow、父级 cursor timer、把所有 UI 合回 `app.tsx`：全部禁止。
+
+## 本次修复 Prompt
+
+> 以 #02 成品包为第一事实源，修复 Xiaoyu Terminal 会话态的垂直区域分配，使 PromptDock 永远可见、Transcript 真正拥有受限高度和真实 scroll range，并用可执行的 OpenTUI layout/mouse 回归测试证明，而不是只做源码字符串断言。
+>
+> 1. **建立显式 Transcript Slot**：在 `xiaoyu-workbench` 中，Transcript 不再直接作为可增长 flex child。新增父级 `xiaoyu-transcript-slot`，使用 `height=0 + flexBasis=0 + flexGrow=1 + flexShrink=1 + minHeight=0 + overflow=hidden`，把“剩余高度”先在父级固定下来。PromptDock 继续作为 sibling `flexShrink=0`。
+> 2. **ScrollBox 填满 Slot，不参与父级 intrinsic height 竞争**：`TranscriptViewport` 内部 ScrollBox 改为 `height="100%" / width=100%`，由 Slot 决定 viewport 高度；不要再靠 ScrollBox 自己的 flexGrow 与内容高度和 Prompt 竞争。
+> 3. **保持一个滚动 owner**：继续使用 OpenTUI `stickyScroll + stickyStart=bottom`、原生 wheel、PageUp/PageDown/Ctrl+Home/Ctrl+End；不新增 root wheel fallback。top spacer 只负责短内容底部视觉，不得改变长内容真实高度。
+> 4. **新增行为级布局测试**：使用 `@opentui/core/testing` 构造与生产同构的父布局（固定终端高度、`height=0/flexBasis=0` Transcript Slot、ScrollBox、固定 Prompt Dock），添加超过 viewport 的多行内容；断言 Prompt 仍在屏内、`scrollHeight > viewport.height`、滚到底后 mock mouse wheel up 会让 `scrollTop` 下降。该测试必须进入 root `pnpm test` glob，不能只匹配源码字符串。
+> 5. **保留已通过能力**：稳定 `%LOCALAPPDATA%\\Xiaoyu\\dev-bin` PATH、Textarea caret ownership、direct-Bun 启动、Workspace 参数、Activity、左右对齐、隐藏 reasoning、Provider/Approval 均不得回退。
+> 6. 更新 `AGENTS.md` / `DEVELOPMENT-RULES.md` 的长期布局规则：关键滚动区域必须先由父 Slot 建立 bounded viewport，ScrollBox 不得直接用 intrinsic content height 与固定 Dock 竞争；更新 `PROJECT-STATUS.md` / `UPDATE-LOG.md`，重新生成 Source Manifest 与 `xma-0.1.0.zip`。
+
+## 不允许回归的既有行为
+
+- 用户实机已确认：任意目录 `xiaoyu/xma` 可启动；Textarea caret 稳定。
+- PromptDock 的 Build/Plan/Compose、Provider/Model/Reasoning、快捷键、提示完整保留。
+- 用户消息右对齐，Activity/Xiaoyu 左对齐；`Xiaoyu · 正在思考`、实时 Turn 计时和展开活动日志保留。
+- 用户离开底部后新 token 不抢回；滚到底后才恢复 sticky follow。
+- Agent Runtime / Tool / Permission 语义不在本轮修改。
+
+## 验收条件
+
+### 自动验证
+
+- 生产 JSX 明确存在 `xiaoyu-transcript-slot`：`height={0}`、`flexBasis={0}`、`flexGrow={1}`、`flexShrink={1}`、`minHeight={0}`、`overflow="hidden"`。
+- Transcript ScrollBox 使用 `height="100%"` 填满 Slot，不再直接用 `flexGrow=1` 参与 Workbench 主轴分配。
+- 新增 OpenTUI 行为测试真实断言 Prompt 保持屏内、ScrollBox 形成 `scrollHeight > viewport.height`，并通过 mock wheel 改变 `scrollTop`。
+- 原 OpenTUI 回归、Windows Gate、9 项 Gate 与 Source Manifest/ZIP 校验通过。
+
+### Windows 实机 E2E
+
+- 第一轮回答后输入框、Build/Provider、快捷键、提示仍持续可见；可以连续发送第二、第三条消息。
+- 3 屏以上历史在非全屏窗口可用鼠标滚轮连续向上/向下查看全部内容。
+- 向上滚后模型继续输出不强制回到底；滚到底后恢复自动 follow。
+- PATH、caret、Workspace 显示继续保持已通过状态。
+
+## 当前根因判断
+
+当前最可信根因是 **Transcript ScrollBox 缺少独立 bounded flex slot**。#02 只把 PromptDock 变成不可压缩 sibling，但 ScrollBox 仍直接参与父 Workbench 的 intrinsic sizing；OpenTUI ScrollBox 内部 `content` 自带 `minHeight:100%` 且 `flexShrink:0`，长 Transcript 会把 ScrollBox/root 的期望高度一起撑大。结果父级把 Prompt 推出 viewport，同时 ScrollBox 自己的 viewport 也随内容变高，失去真实 `maxScrollTop`，因此 wheel 看起来像被禁用。#03 将先固定父级 slot 高度，再让 ScrollBox 仅填满该 slot。
+## 实际修改与自动验证
+
+- `app.tsx`：在 Transcript 与 Workbench 之间新增唯一 `id="xiaoyu-transcript-slot"`，采用 `height={0} / flexBasis={0} / flexGrow={1} / flexShrink={1} / minHeight={0} / overflow="hidden"`。PromptDock 仍是紧随其后的固定 sibling。
+- `ui/transcript-viewport.tsx`：ScrollBox 从直接 `flexGrow/flexShrink` 改为 `height="100%" / minHeight=0`，只填满 bounded slot；其 internal content 的 intrinsic height 不再决定 Workbench 主轴高度。
+- `apps/cli/tests/opentui-layout.test.ts`：新增 OpenTUI Core 行为测试，使用固定 80x24 viewport、6 行 Prompt Dock、60 行 Transcript，真实断言 Dock 留在屏内、slot 获得剩余高度、`scrollHeight > viewport.height`，并用 `mockMouse.scroll(..., "up")` 验证 `scrollTop` 从 sticky bottom 向上移动。该 API 已按项目固定 `@opentui/core@0.5.11` 对应上游 testing contract 核验。
+- `apps/cli/tests/opentui-runtime.test.ts` 与 Distribution Gate：锁定 bounded slot 和 ScrollBox `height=100%`，不再把“ScrollBox root 自己 flexGrow”当成正确合同。
+- 长期规则：`AGENTS.md` / `DEVELOPMENT-RULES.md` 已补“bounded slot 先于 ScrollBox”的硬规则；`PROJECT-STATUS.md` / `UPDATE-LOG ##82` 已记录本轮。
+- 当前容器可以执行的静态 OpenTUI 回归 **29/29 PASS**；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository **9/9 PASS**；Runtime updater **2/2 PASS**。
+- 新增的 `opentui-layout.test.ts` 需要项目已准备的 `@opentui/core@0.5.11` 才能执行；当前干净源码包环境故意不带 `node_modules`，因此这里不冒充已经运行该依赖型行为测试。Windows `[1]/[7]` 准备依赖后的完整 `pnpm test/check` 与用户 Windows Terminal E2E 仍是最终权威。
+
+## 当前验收状态
+
+本条保持 **验证中**。代码层已把共同根因从“事件/Prompt Fragment”收敛到并修正为“bounded Transcript slot”；是否真正消除 Windows Terminal 的 Prompt 消失与 wheel 无位移，需要用户用本轮正式包继续验证。PATH 与 caret 已通过的结果必须保持。
+
+## 待优化进度
+
+- 若实机通过：把 #03 标为已完成，同时回填 #01 的 wheel E2E，并结束这一轮 Terminal 阻断性回归。
+- 若实机仍失败：下一编号不得再猜 Flex；必须临时增加只在 debug 模式输出的 `scroll.height / viewport.height / content.height / scrollTop / promptDock.y` 几何诊断，拿到 Windows 实机真实数值后再修。
+
