@@ -530,7 +530,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         }
         if (event.type !== 'session/event' || event.event.sessionId !== session.id) return
         if (event.event.type === 'assistant/message') {
-          for (const call of event.event.toolCalls) onEvent({ type: 'tool-call', stepId: event.event.stepId, name: call.name })
+          for (const call of event.event.toolCalls) onEvent({ type: 'tool-call', stepId: event.event.stepId, name: call.name, arguments: structuredClone(call.arguments) })
           return
         }
         if (event.event.type === 'tool/result') {

@@ -276,7 +276,7 @@ test('TUI live event projection streams reasoning, text and tool activity increm
 
   applyTerminalRunEvent(transcript, { type: 'reasoning-delta', stepId: 'step-1', text: '先检查项目' })
   applyTerminalRunEvent(transcript, { type: 'reasoning-delta', stepId: 'step-1', text: '规则。' })
-  applyTerminalRunEvent(transcript, { type: 'tool-call', stepId: 'step-1', name: 'native.fs.read_text' })
+  applyTerminalRunEvent(transcript, { type: 'tool-call', stepId: 'step-1', name: 'native.fs.read_text', arguments: { path: 'package.json' } })
   applyTerminalRunEvent(transcript, { type: 'tool-result', stepId: 'step-1', name: 'native.fs.read_text', ok: true, content: '{"name":"xma"}' })
   applyTerminalRunEvent(transcript, { type: 'text-delta', stepId: 'step-2', text: '项目名是 ' })
   applyTerminalRunEvent(transcript, { type: 'text-delta', stepId: 'step-2', text: 'xma。' })

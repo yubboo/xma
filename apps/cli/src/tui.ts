@@ -10,6 +10,7 @@ import path from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
+import type { JsonObject } from 'xma-ai'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
 import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
@@ -171,14 +172,31 @@ export type TerminalReasoningEffort = 'default' | 'low' | 'high' | 'max'
 export type TerminalRunEvent =
   | { type: 'text-delta'; stepId: string; text: string }
   | { type: 'reasoning-delta'; stepId: string; text: string }
-  | { type: 'tool-call'; stepId: string; name: string }
+  | { type: 'tool-call'; stepId: string; name: string; arguments: JsonObject }
   | { type: 'tool-result'; stepId: string; name: string; ok: boolean; content: string }
 
+export interface TerminalActivityEntry {
+  kind: 'status' | 'tool-call' | 'tool-result'
+  text: string
+  elapsedMs: number
+  ok?: boolean
+}
+
+export interface TerminalActivitySummary {
+  id: string
+  startedAtMs: number
+  elapsedMs: number
+  outcome: 'running' | 'completed' | 'cancelled' | 'failed'
+  expanded: boolean
+  entries: readonly TerminalActivityEntry[]
+}
+
 export interface TerminalTranscriptItem {
-  role: 'user' | 'assistant' | 'reasoning' | 'tool' | 'system'
+  role: 'user' | 'assistant' | 'reasoning' | 'tool' | 'activity' | 'system'
   text: string
   stepId?: string
   placeholder?: boolean
+  activity?: TerminalActivitySummary
 }
 
 function toolAction(name: string): string {

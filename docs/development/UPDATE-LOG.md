@@ -787,3 +787,41 @@
 - 职责边界：Sync 仍不运行 `pnpm install`、Cargo fetch/build、winget 或其他环境准备；已有运行中的旧 TUI 进程不会热替换，完成提示明确要求退出后重新启动。
 - Gate：Windows Gate 锁定 Source Sync 全量哈希复核、共享 shim helper、自动 checkout 重绑与不新增未注册 PATH 的合同。
 
+##73 · Terminal 思考状态与最终回答分层
+
+- 日期：2026-09-16
+- 实机现象：底部锚定与左右消息布局已经生效，但 DeepSeek 等 Provider 返回的原始 `reasoning-delta` 被直接作为 `Xiaoyu · 思考` 正文铺进 Transcript，形成大块英文内部推理文本；这与目标交互“先显示正在思考，再直接进入最终回答”不一致。
+- UI 规则：原始 `reasoning-delta` 继续完整进入 Runtime live event，用于真实活动状态与协议语义，但 Active OpenTUI 默认不展示其正文；发送后立即显示淡化的“正在思考”，reasoning 持续到达时只保持该状态。
+- 回答切换：首个正式 `text-delta` 到达时由现有 `applyTerminalRunEvent` 移除 thinking placeholder，并在同一 Provider 回调帧立即投影前几个正式回答字符；后续 text delta 继续由 30ms 缓冲泵平滑吐字。Tool Call/Result 仍按真实执行链可见。
+- 防泄漏：Transcript Renderer 对非 placeholder 的 `reasoning` 项额外做显示层过滤，避免未来其它投影路径把原始思维正文重新带回默认 Terminal。只有 Provider Contract 未来提供可明确区分、面向用户的 reasoning summary 时才允许单独展示摘要。
+- 回归：OpenTUI Gate 锁定 reasoning 只驱动 thinking 状态、首个 text delta 即时上屏、默认 Transcript 不出现 `Xiaoyu · 思考` 原始正文；版本保持 `0.1.0`。
+
+##74 · Terminal Assistant 槽位与 Codex 式左右对齐修复
+
+- 日期：2026-09-16
+- 实机反馈：#73 已隐藏原始 reasoning 正文，但 thinking placeholder 被绘制成空白标签列后的独立“正在思考”，视觉上仍像额外的中间状态块；用户明确要求用户消息右对齐、Xiaoyu 工作区左对齐，并让 thinking 与最终回答复用同一 Assistant 槽位。
+- 布局：用户消息继续在内容区右对齐；thinking 改为左侧单行 `Xiaoyu · 正在思考`，不再预留空白 label 列、不居中。Xiaoyu 最终回答改成左侧纵向块：品牌标签在上、正文从同一左边界开始，避免回答正文被固定 14 列标签栏整体右推。
+- 状态替换：thinking placeholder 仍是 Transcript 最后一项；首个正式 `text-delta` 进入 `applyTerminalRunEvent` 时直接 pop placeholder 并 push/append assistant item，因此状态在同一会话位置原位消失并立刻换成最终回答，没有“正在思考 + 最终回答”同时占两块的过渡帧。
+- 上游参考：对齐 Codex TUI 的 active/in-flight cell 思路——工作中的可变状态属于当前活动单元，正式消息流开始后由同一活动位置进入最终内容，而不是额外提交一条 reasoning 正文。
+- 回归：OpenTUI Gate 锁定 `Xiaoyu · 正在思考` 左对齐、用户消息右对齐、Assistant 正文左对齐及 placeholder 不再使用空 14 列缩进。版本保持 `0.1.0`。
+
+##75 · Terminal 用时与可展开活动摘要
+
+- 日期：2026-09-16
+- 实机目标：对齐 Codex 工作台的 Turn 完成态，在用户右对齐消息与 Xiaoyu 左对齐最终回答之间增加默认折叠的 `用时 N秒 ▸`；点击后展开这一轮真实发生过的公开工作过程，收起后只保留一行，不把 Tool 日志永久铺满 Transcript。
+- Runtime 数据：`TerminalRunEvent.tool-call` 继续由同一 Agent Runtime live event 驱动，但额外携带该 Tool Call 已冻结的 arguments 快照；OpenTUI 只记录公开 activity entry。`reasoning-delta` 仍只驱动“模型思考与规划”阶段标记，原始正文不会进入 activity 或 Transcript。
+- 活动内容：记录模型思考阶段、Tool Call、Tool Result 成败、开始生成最终回复及各阶段相对耗时；FS 工具显示路径，写文件只显示路径/字符数，Process 显示程序与经过 Secret 脱敏的 argv，通用工具过滤 `content/apiKey/token/password/secret/authorization` 等敏感字段。Tool Result 成功默认只显示完成状态，失败仅保留截断且脱敏的错误摘要。
+- 布局与生命周期：运行中仍使用同一个左侧 `Xiaoyu · 正在思考` placeholder；Turn 完成/中止/失败后才把 activity summary 插入最后一条用户消息与 Assistant 结果之间，避免工作中布局跳动。Activity 行可点击 `▸/▾` 展开收起，底部锚定和历史滚动继续生效。
+- 回归：OpenTUI Gate 新增 activity contract、tool arguments 透传、默认折叠/点击展开、完成/取消/失败结算和 raw reasoning 不进入 activity 的静态合同；版本保持 `0.1.0`。
+
+
+
+##76 · Terminal 实时 Turn 计时与活动日志修复
+
+- 日期：2026-09-16
+- 实机反馈：#75 只在 Turn 结束时插入一次静态 `用时 N秒`，虽然最终数字来自真实开始/结束时间，但运行中的长任务完全看不到计时增长，也不能在模型工作期间展开查看刚刚发生的工具动作；这不符合 Codex 式“当前 Turn 正在工作多久、已经做了什么”的交互。
+- 实时计时：用户提交后立即创建当前 Turn 的 activity item，并记录 `startedAtMs`；Renderer 复用已有 1 秒 `clock` 刷新，根据 `now - startedAtMs` 实时显示 `思考了 12s / 12m 1s / 1h 2m 5s`。Provider/Agent Runtime 真正完成、中止或失败的那一刻立即冻结当前真实 elapsed（不把后续 UI 打字机缓冲时间算成模型工作时间），禁止使用示例常量或预估耗时。
+- 实时活动：`reasoning-delta` 只追加一次公开的“模型思考与规划”阶段，不保存原始隐藏思维正文；Tool Call / Tool Result 到达时立刻写入同一个 activity item，展开状态下边执行边追加。首个正式 text delta 记录“开始生成最终回复”，最终回答仍沿用首帧即时 + 30ms 缓冲流式显示。
+- 布局：顺序固定为用户消息（右）→ 实时 activity（左）→ Xiaoyu thinking/answer（左）。Activity 默认折叠但运行中即可点击展开；展开/收起状态在结算时保持，不因完成而重建一条静态摘要。
+- 上游参考：Codex TUI 的 completion metadata 使用真实 Turn duration 生成 `Worked for ...`，XMA 对齐“真实持续时间”语义，同时保留自己的运行中实时刷新和公开 Tool 活动日志。
+- 回归：OpenTUI 静态合同新增 `startedAtMs + running outcome`、实时 `nowMs - startedAtMs`、提交即插入 activity、事件到达即同步 entries、完成后冻结耗时；版本保持 `0.1.0`。

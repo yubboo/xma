@@ -141,7 +141,7 @@ XMA 事件必须明确分两类。
 
 Live event 可以丢失而不破坏 Session 的逻辑可恢复性。最终结算结果仍必须形成 durable fact。
 
-Terminal/Host 对 `model/text-delta` 与 Provider 允许公开的 `model/reasoning-delta` 必须即时订阅并持续重绘；Tool Call/Result 使用 durable `assistant/message` / `tool/result` 事件投影。UI 不得把 live chunk 缓冲成最终整段后才显示。
+Terminal/Host 对 `model/text-delta` 与 Provider 的 `model/reasoning-delta` 必须即时订阅；`model/text-delta` 持续重绘为最终回答，默认 Terminal 将原始 `model/reasoning-delta` 只投影成“正在思考”状态，不直接展示原始思维正文。只有 Provider Contract 明确提供可面向用户展示的 reasoning summary 时才允许显示该摘要。Tool Call/Result 使用 durable `assistant/message` / `tool/result` 事件投影。UI 不得把 live chunk 缓冲成最终整段后才显示。
 
 ## 5. Context Assembly
 

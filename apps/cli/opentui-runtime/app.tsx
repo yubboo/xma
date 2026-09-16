@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 Xiaoyu Terminal 的 OpenTUI 主工作台，统一真实输入焦点、响应式布局、命令面板与模型配置交互。
  * 关联模块：main.ts、tui.ts 纯合同/Workspace Trust、brain.ts、xma-agent-loop Runtime 与 Provider/Tool 后端。
- * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供平滑星空/流星、首帧即时 + 缓冲打字机流式对话、底部锚定会话区、Build/Plan/Compose、命令搜索、Provider/Model/Reasoning 与 Tool Approval。
+ * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供平滑星空/流星、首帧即时 + 缓冲打字机流式对话、底部锚定会话区、Turn 实时计时/可展开公开活动日志、Build/Plan/Compose、命令搜索、Provider/Model/Reasoning 与 Tool Approval。
  * 职责边界：本文件只负责 Terminal Host 视觉与交互；不得复制 Agent Loop、Provider 协议、Session durable truth 或 Native 安全策略。
  */
 
@@ -27,6 +27,8 @@ import {
   terminalHomeTip,
   toggleTerminalVisual,
   type BrainProviderCatalogItem,
+  type TerminalActivityEntry,
+  type TerminalActivitySummary,
   type TerminalAgentMode,
   type TerminalBackend,
   type TerminalReasoningEffort,
@@ -340,9 +342,122 @@ function reasoningColor(effort: TerminalReasoningEffort): string {
 function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color: string } {
   if (role === 'user') return { label: '你', color: COLOR.orange }
   if (role === 'assistant') return { label: 'Xiaoyu', color: COLOR.orange }
-  if (role === 'reasoning') return { label: 'Xiaoyu · 思考', color: COLOR.yellow }
+  if (role === 'reasoning') return { label: '思考', color: COLOR.faint }
   if (role === 'tool') return { label: 'Xiaoyu · 工具', color: COLOR.blue }
+  if (role === 'activity') return { label: '活动', color: COLOR.soft }
   return { label: '系统', color: COLOR.soft }
+}
+
+function formatRunElapsed(elapsedMs: number): string {
+  const seconds = Math.max(0, Math.floor(elapsedMs / 1000))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remaining = seconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m ${remaining}s`
+  if (minutes > 0) return `${minutes}m ${remaining}s`
+  return `${remaining}s`
+}
+
+function redactActivityText(value: string): string {
+  return value
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer ***')
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
+    .replace(/(api[_-]?key|token|password|secret)(\s*[=:]\s*)[^\s,;]+/gi, '$1$2***')
+}
+
+function compactActivityText(value: string, max = 160): string {
+  const compact = redactActivityText(value.replace(/\s+/g, ' ').trim())
+  return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact
+}
+
+function toolCallActivityText(event: Extract<TerminalRunEvent, { type: 'tool-call' }>): string {
+  const args = event.arguments
+  if (event.name === 'native.fs.read_text') {
+    const path = typeof args.path === 'string' ? compactActivityText(args.path, 120) : ''
+    return path ? `读取文件 · ${path}` : '读取文件'
+  }
+  if (event.name === 'native.fs.write_text') {
+    const path = typeof args.path === 'string' ? compactActivityText(args.path, 120) : ''
+    const length = typeof args.content === 'string' ? Array.from(args.content).length : undefined
+    return `写入文件${path ? ` · ${path}` : ''}${length !== undefined ? ` · ${length} 字符` : ''}`
+  }
+  if (event.name === 'native.process.run') {
+    const program = typeof args.program === 'string' ? compactActivityText(args.program, 100) : '程序'
+    const rawArgv = Array.isArray(args.args) ? args.args.filter((value): value is string => typeof value === 'string') : []
+    const safeArgv: string[] = []
+    let redactNext = false
+    for (const raw of rawArgv.slice(0, 10)) {
+      const arg = compactActivityText(raw, 60)
+      if (redactNext) {
+        safeArgv.push('***')
+        redactNext = false
+        continue
+      }
+      if (/^--?(?:api[_-]?key|token|password|secret|authorization)$/i.test(arg)) {
+        safeArgv.push(arg)
+        redactNext = true
+        continue
+      }
+      safeArgv.push(arg)
+    }
+    const suffix = rawArgv.length > safeArgv.length ? ' …' : ''
+    return `运行程序 · ${program}${safeArgv.length > 0 ? ` ${safeArgv.join(' ')}${suffix}` : ''}`
+  }
+  const visibleArgs = Object.entries(args)
+    .filter(([key]) => !/(content|api[_-]?key|token|password|secret|authorization)/i.test(key))
+    .slice(0, 4)
+    .map(([key, value]) => `${key}=${compactActivityText(typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value)), 56)}`)
+  return `调用工具 · ${event.name}${visibleArgs.length > 0 ? ` · ${visibleArgs.join(' ')}` : ''}`
+}
+
+function toolResultActivityText(event: Extract<TerminalRunEvent, { type: 'tool-result' }>): string {
+  if (event.ok) return `完成 · ${event.name}`
+  const detail = compactActivityText(event.content, 120)
+  return `失败 · ${event.name}${detail ? ` · ${detail}` : ''}`
+}
+
+function RunActivityRow(props: { summary: TerminalActivitySummary; nowMs: number; onToggle: () => void }) {
+  const elapsedMs = () => props.summary.outcome === 'running'
+    ? Math.max(props.summary.elapsedMs, props.nowMs - props.summary.startedAtMs)
+    : props.summary.elapsedMs
+  const outcomeSuffix = props.summary.outcome === 'running' || props.summary.outcome === 'completed'
+    ? ''
+    : props.summary.outcome === 'cancelled'
+      ? ' · 已中止'
+      : ' · 失败'
+  return (
+    <box width="100%" flexDirection="column" paddingTop={1} paddingBottom={1}>
+      <box
+        width="100%"
+        flexDirection="row"
+        onMouseDown={event => event.stopPropagation()}
+        onMouseUp={event => { event.stopPropagation(); props.onToggle() }}
+      >
+        <text fg={props.summary.outcome === 'failed' ? COLOR.red : COLOR.soft}>
+          {`思考了 ${formatRunElapsed(elapsedMs())}${outcomeSuffix} ${props.summary.expanded ? '▾' : '▸'}`}
+        </text>
+      </box>
+      <Show when={props.summary.expanded}>
+        <box width="100%" flexDirection="column" paddingTop={1} paddingLeft={2} gap={1}>
+          <For each={props.summary.entries}>{entry => (
+            <box width="100%" flexDirection="row" gap={1}>
+              <box width={3}>
+                <text fg={entry.kind === 'tool-result' ? (entry.ok === false ? COLOR.red : COLOR.green) : COLOR.faint}>
+                  {entry.kind === 'tool-call' ? '›' : entry.kind === 'tool-result' ? (entry.ok === false ? '✗' : '✓') : '·'}
+                </text>
+              </box>
+              <box flexGrow={1}>
+                <text fg={entry.kind === 'status' ? COLOR.faint : COLOR.soft}>{entry.text}</text>
+              </box>
+              <box width={9} justifyContent="flex-end">
+                <text fg={COLOR.faint}>{`+${formatRunElapsed(entry.elapsedMs)}`}</text>
+              </box>
+            </box>
+          )}</For>
+        </box>
+      </Show>
+    </box>
+  )
 }
 
 function Logo(props: { compact: boolean; frame: number; gradient: boolean }) {
@@ -716,6 +831,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   let bufferedEvents: TerminalRunEvent[] = []
   let bufferedCharacters = 0
   let hasProjectedRunEvent = false
+  let activeRunStartedAt = 0
+  let activeRunActivityId = 0
+  let activeRunEntries: TerminalActivityEntry[] = []
+  let activeRunReasoningLogged = false
+  let activeRunAnswerLogged = false
   let drainResolvers: Array<() => void> = []
 
   const contentWidth = createMemo(() => openTuiContentWidth(dimensions().width))
@@ -790,32 +910,110 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     })
     renderer.requestRender()
   }
-  const enqueueBufferedRunEvent = (event: TerminalRunEvent) => {
-    bufferedEvents.push({ ...event })
-    if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
-      bufferedCharacters += Array.from(event.text).length
+  const activeElapsedMs = () => activeRunStartedAt > 0 ? Math.max(0, Date.now() - activeRunStartedAt) : 0
+  const activeRunId = () => `run-${activeRunActivityId}`
+  const syncActiveRunActivity = () => {
+    if (activeRunStartedAt <= 0) return
+    const id = activeRunId()
+    const elapsedMs = activeElapsedMs()
+    const entries = activeRunEntries.map(entry => ({ ...entry }))
+    setTranscript(current => current.map(item => item.role === 'activity' && item.activity?.id === id
+      ? { ...item, activity: { ...item.activity, startedAtMs: activeRunStartedAt, elapsedMs, entries } }
+      : item))
+    renderer.requestRender()
+  }
+  const recordRunActivity = (entry: Omit<TerminalActivityEntry, 'elapsedMs'>) => {
+    activeRunEntries.push({ ...entry, elapsedMs: activeElapsedMs() })
+    syncActiveRunActivity()
+  }
+  const resetRunActivity = (): TerminalActivitySummary => {
+    activeRunStartedAt = Date.now()
+    activeRunActivityId += 1
+    activeRunEntries = []
+    activeRunReasoningLogged = false
+    activeRunAnswerLogged = false
+    return {
+      id: activeRunId(),
+      startedAtMs: activeRunStartedAt,
+      elapsedMs: 0,
+      outcome: 'running',
+      expanded: false,
+      entries: [],
     }
   }
+  const finalizeRunActivity = (outcome: Exclude<TerminalActivitySummary['outcome'], 'running'>, endedAtMs = Date.now()) => {
+    const id = activeRunId()
+    const elapsedMs = activeRunStartedAt > 0 ? Math.max(0, endedAtMs - activeRunStartedAt) : 0
+    const entries = activeRunEntries.length > 0
+      ? activeRunEntries.map(entry => ({ ...entry }))
+      : [{ kind: 'status' as const, text: outcome === 'completed' ? '生成回复' : outcome === 'cancelled' ? '响应已中止' : '响应失败', elapsedMs }]
+    setTranscript(current => current.map(item => item.role === 'activity' && item.activity?.id === id
+      ? {
+          ...item,
+          activity: {
+            ...item.activity,
+            startedAtMs: activeRunStartedAt,
+            elapsedMs,
+            outcome,
+            entries,
+          },
+        }
+      : item))
+    activeRunStartedAt = 0
+    activeRunEntries = []
+    renderer.requestRender()
+  }
+  const toggleRunActivity = (id: string) => {
+    setTranscript(current => current.map(item => item.role === 'activity' && item.activity?.id === id
+      ? { ...item, activity: { ...item.activity, expanded: !item.activity.expanded, entries: item.activity.entries.map(entry => ({ ...entry })) } }
+      : item))
+    renderer.requestRender()
+  }
+  const enqueueBufferedRunEvent = (event: TerminalRunEvent) => {
+    bufferedEvents.push({ ...event })
+    if (event.type === 'text-delta') bufferedCharacters += Array.from(event.text).length
+  }
   const enqueueRunEvent = (event: TerminalRunEvent) => {
-    if ((event.type === 'text-delta' || event.type === 'reasoning-delta') && event.text.length === 0) return
-    if (event.type === 'reasoning-delta') setActivity('thinking')
-    else if (event.type === 'text-delta') setActivity('streaming')
-    else setActivity('tool')
+    // 中文说明：Provider 的原始 reasoning 正文绝不进入默认 Transcript；这里只保留一个公开的活动阶段。
+    // 展开的“用时”面板只能展示 Runtime 允许公开的状态、Tool Call 与 Tool Result 摘要，不能借机暴露隐藏思维链。
+    if (event.type === 'reasoning-delta') {
+      if (event.text.length === 0) return
+      if (!activeRunReasoningLogged) {
+        activeRunReasoningLogged = true
+        recordRunActivity({ kind: 'status', text: '模型思考与规划' })
+      }
+      setActivity('thinking')
+      renderer.requestRender()
+      return
+    }
+    if (event.type === 'tool-call') {
+      recordRunActivity({ kind: 'tool-call', text: toolCallActivityText(event) })
+      setActivity('tool')
+      renderer.requestRender()
+      return
+    }
+    if (event.type === 'tool-result') {
+      recordRunActivity({ kind: 'tool-result', text: toolResultActivityText(event), ok: event.ok })
+      setActivity('tool')
+      renderer.requestRender()
+      return
+    }
+    if (event.text.length === 0) return
+    if (!activeRunAnswerLogged) {
+      activeRunAnswerLogged = true
+      recordRunActivity({ kind: 'status', text: '开始生成最终回复' })
+    }
+    setActivity('streaming')
 
-    // 中文说明：首个真实 Runtime 事件必须在 Provider 回调这一帧立即投影，不能等 30ms 打字机定时器。
-    // 只把首个 delta 的前几个字符立即上屏，余量仍交给缓冲泵，兼顾“马上有字”和后续平滑吐字。
+    // 中文说明：首个用户可见 text delta 必须在 Provider 回调这一帧立即投影，不能等 30ms 打字机定时器。
     if (!hasProjectedRunEvent) {
       hasProjectedRunEvent = true
-      if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
-        const characters = Array.from(event.text)
-        const immediateCount = Math.min(3, characters.length)
-        const immediate = characters.slice(0, immediateCount).join('')
-        const remaining = characters.slice(immediateCount).join('')
-        if (immediate) projectRunEvent({ ...event, text: immediate })
-        if (remaining) enqueueBufferedRunEvent({ ...event, text: remaining })
-      } else {
-        projectRunEvent(event)
-      }
+      const characters = Array.from(event.text)
+      const immediateCount = Math.min(3, characters.length)
+      const immediate = characters.slice(0, immediateCount).join('')
+      const remaining = characters.slice(immediateCount).join('')
+      if (immediate) projectRunEvent({ ...event, text: immediate })
+      if (remaining) enqueueBufferedRunEvent({ ...event, text: remaining })
       return
     }
 
@@ -828,7 +1026,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       return
     }
     let projected: TerminalRunEvent = event
-    if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
+    if (event.type === 'text-delta') {
       const characters = Array.from(event.text)
       const batchSize = bufferedCharacters > 360 ? 18 : bufferedCharacters > 180 ? 10 : bufferedCharacters > 80 ? 6 : 3
       const count = Math.min(batchSize, characters.length)
@@ -1296,8 +1494,15 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
     const placeholder: TerminalTranscriptItem = { role: 'reasoning', text: '', placeholder: true }
     clearEventBuffer()
+    const runActivity = resetRunActivity()
     setActivity('thinking')
-    setTranscript(current => [...current, { role: 'user', text: line }, placeholder])
+    setTranscript(current => [
+      ...current,
+      { role: 'user', text: line },
+      { role: 'activity', text: '', activity: runActivity },
+      placeholder,
+    ])
+    recordRunActivity({ kind: 'status', text: '开始处理请求' })
     setBusy(true)
     controller = new AbortController()
     refresh()
@@ -1309,6 +1514,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         controller.signal,
         (request, signal) => askApproval(request, signal),
       )
+      const completedAtMs = Date.now()
+      finalizeRunActivity('completed', completedAtMs)
       await waitForEventDrain()
       setTranscript(current => current.map(item => item.placeholder
         ? { role: 'assistant' as const, text: '(没有文本输出)', placeholder: false }
@@ -1316,7 +1523,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       tell('完成', 2600)
     } catch (error) {
       const aborted = controller.signal.aborted
+      const endedAtMs = Date.now()
       clearEventBuffer()
+      finalizeRunActivity(aborted ? 'cancelled' : 'failed', endedAtMs)
       const message = `${aborted ? '已中止当前响应' : '请求失败'} · ${error instanceof Error ? error.message : String(error)}`
       setTranscript(current => {
         const next = current.filter(item => !item.placeholder)
@@ -1478,19 +1687,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
               <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
                 <For each={transcript()}>{item => {
                   const meta = roleMeta(item.role)
-                  const itemText = item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text
-                  return (
-                    <Show
-                      when={item.role === 'user'}
-                      fallback={
-                        <box width="100%" flexDirection="row" gap={2}>
-                          <box width={14}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
-                          <box flexGrow={1}>
-                            <text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{itemText}</text>
-                          </box>
-                        </box>
-                      }
-                    >
+                  if (item.role === 'activity' && item.activity) {
+                    return <RunActivityRow summary={item.activity} nowMs={clock()} onToggle={() => toggleRunActivity(item.activity!.id)} />
+                  }
+                  if (item.role === 'user') {
+                    return (
                       <box width="100%" flexDirection="row" justifyContent="flex-end">
                         <box
                           maxWidth={Math.max(20, Math.floor(contentWidth() * 0.72))}
@@ -1498,10 +1699,36 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
                           paddingLeft={2}
                           paddingRight={1}
                         >
-                          <text fg={COLOR.text}>{itemText}</text>
+                          <text fg={COLOR.text}>{item.text}</text>
                         </box>
                       </box>
-                    </Show>
+                    )
+                  }
+                  if (item.placeholder) {
+                    return (
+                      <box width="100%" flexDirection="row">
+                        <text fg={COLOR.orange}><strong>Xiaoyu</strong></text>
+                        <text fg={COLOR.faint}> · 正在思考</text>
+                      </box>
+                    )
+                  }
+                  if (item.role === 'assistant') {
+                    return (
+                      <box width="100%" flexDirection="column">
+                        <text fg={meta.color}><strong>{meta.label}</strong></text>
+                        <text fg={COLOR.text}>{item.text}</text>
+                      </box>
+                    )
+                  }
+                  // 原始 reasoning 默认不渲染；公开的工作过程只进入可展开“用时”面板。
+                  if (item.role === 'reasoning') return <></>
+                  return (
+                    <box width="100%" flexDirection="row" gap={2}>
+                      <box width={14}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
+                      <box flexGrow={1}>
+                        <text fg={item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.text}</text>
+                      </box>
+                    </box>
                   )
                 }}</For>
               </box>
