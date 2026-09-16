@@ -5,8 +5,8 @@
  */
 
 import type { KeyEvent, TextareaRenderable } from '@opentui/core'
-import { For, Show, createSignal } from 'solid-js'
-import { slashCommandCompletionSuffix, slashCommandSuggestions, type SessionRuntimeMetrics, type TerminalAgentMode, type TerminalReasoningEffort } from '../contracts.ts'
+import { For, Show } from 'solid-js'
+import type { SessionRuntimeMetrics, TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts'
 import { SessionStatusBar, SessionStatusHeadline } from './session-status-bar.tsx'
 import { COLOR, MODE_META, reasoningColor } from './theme.ts'
 
@@ -32,50 +32,24 @@ export function PromptDock(props: {
   onPromptFocus: () => void
   onSubmit: (text: string) => void
   onCycleMode: (direction: 1 | -1) => void
+  onSlashCommandPrefix: (prefix: string) => void
 }) {
   let prompt: TextareaRenderable | undefined
-  const [slashInput, setSlashInput] = createSignal('')
-  const [slashSelection, setSlashSelection] = createSignal(0)
+  let lastSlashPrefix = ''
 
-  const syncSlashInput = () => {
+  const syncSlashPrefix = () => {
     const value = prompt?.plainText ?? ''
     const trimmed = value.trimStart()
-    const next = trimmed.startsWith('/') && !trimmed.includes(' ') && !trimmed.includes('\n') ? trimmed : ''
-    setSlashInput(next)
-    setSlashSelection(0)
-  }
-
-  const slashDiscoveryActive = () => slashInput().length > 1
-  const slashSuggestions = () => slashDiscoveryActive() ? slashCommandSuggestions(slashInput()) : []
-  const selectedSlashSuggestion = () => {
-    const items = slashSuggestions()
-    if (items.length === 0) return undefined
-    return items[Math.min(slashSelection(), items.length - 1)]
-  }
-  const slashShortcut = (item: { value: string; shortcut?: string }) => item.shortcut ?? `/${item.value}`
-  const slashGhostSuffix = () => slashCommandCompletionSuffix(slashInput(), selectedSlashSuggestion())
-  const slashCandidatePrefix = (item: { value: string; shortcut?: string }) => {
-    const shortcut = slashShortcut(item)
-    return shortcut.slice(0, Math.min(slashInput().length, shortcut.length))
-  }
-  const slashCandidateSuffix = (item: { value: string; shortcut?: string }) => {
-    const shortcut = slashShortcut(item)
-    return shortcut.slice(Math.min(slashInput().length, shortcut.length))
-  }
-  const slashExact = () => {
-    const input = slashInput()
-    return slashSuggestions().some(item => slashShortcut(item).toLowerCase() === input.toLowerCase())
-  }
-  const completeSlashSuggestion = (): boolean => {
-    const item = selectedSlashSuggestion()
-    if (!item || !prompt) return false
-    const input = slashInput()
-    const shortcut = slashShortcut(item)
-    if (!shortcut.toLowerCase().startsWith(input.toLowerCase())) return false
-    prompt.insertText(shortcut.slice(input.length))
-    setSlashInput(shortcut)
-    setSlashSelection(0)
-    return true
+    const prefix = trimmed.startsWith('/') && !trimmed.includes(' ') && !trimmed.includes('\n') && trimmed.length > 1
+      ? trimmed
+      : ''
+    if (!prefix) {
+      lastSlashPrefix = ''
+      return
+    }
+    if (prefix === lastSlashPrefix) return
+    lastSlashPrefix = prefix
+    props.onSlashCommandPrefix(prefix)
   }
 
   return (
@@ -96,7 +70,7 @@ export function PromptDock(props: {
         >
           <box flexDirection="row" alignItems="flex-start">
             <text fg={MODE_META[props.mode].color}>▌</text>
-            <box flexGrow={1} paddingLeft={1} position="relative">
+            <box flexGrow={1} paddingLeft={1}>
               <textarea
                 ref={(value: TextareaRenderable) => {
                   prompt = value
@@ -108,44 +82,18 @@ export function PromptDock(props: {
                 wrapMode="word"
                 placeholder="输入消息…（/ + 字母 查找命令）"
                 placeholderColor={COLOR.faint}
-                textColor={slashDiscoveryActive() ? COLOR.orange : COLOR.text}
-                focusedTextColor={slashDiscoveryActive() ? COLOR.orange : COLOR.text}
+                textColor={COLOR.text}
+                focusedTextColor={COLOR.text}
                 showCursor={true}
                 cursorColor={COLOR.soft}
                 cursorStyle={{ style: 'line', blinking: false }}
-                onContentChange={syncSlashInput}
+                onContentChange={syncSlashPrefix}
                 onSubmit={() => {
                   const text = prompt?.plainText ?? ''
-                  setSlashInput('')
-                  setSlashSelection(0)
+                  lastSlashPrefix = ''
                   props.onSubmit(text)
                 }}
                 onKeyDown={(event: KeyEvent) => {
-                  const suggestions = slashSuggestions()
-                  if (suggestions.length > 0 && event.name === 'up') {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    setSlashSelection(current => (current - 1 + suggestions.length) % suggestions.length)
-                    return
-                  }
-                  if (suggestions.length > 0 && event.name === 'down') {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    setSlashSelection(current => (current + 1) % suggestions.length)
-                    return
-                  }
-                  if (suggestions.length > 0 && event.ctrl && event.name === 'space') {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    completeSlashSuggestion()
-                    return
-                  }
-                  if (suggestions.length > 0 && event.name === 'return' && !slashExact()) {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    completeSlashSuggestion()
-                    return
-                  }
                   if (event.name !== 'tab') return
                   event.preventDefault()
                   event.stopPropagation()
@@ -157,44 +105,8 @@ export function PromptDock(props: {
                   { name: 'return', ctrl: true, action: 'newline' },
                 ]}
               />
-              <Show when={slashGhostSuffix()}>
-                <text
-                  position="absolute"
-                  zIndex={20}
-                  left={slashInput().length}
-                  top={0}
-                  fg={COLOR.faint}
-                >
-                  {slashGhostSuffix()}
-                </text>
-              </Show>
             </box>
           </box>
-          <Show when={slashDiscoveryActive()}>
-            <box flexDirection="column" paddingLeft={2} paddingTop={1} paddingBottom={1} flexShrink={0}>
-              <box flexDirection="row" gap={2} flexShrink={0}>
-                <text fg={COLOR.orange}>快捷命令</text>
-                <text fg={COLOR.faint}>↑↓ 选择 · Ctrl+Space 补齐 · 完整命令 Enter 执行</text>
-              </box>
-              <Show
-                when={slashSuggestions().length > 0}
-                fallback={<text fg={COLOR.faint}>无匹配命令 · Ctrl+P 查看全部命令</text>}
-              >
-                <For each={slashSuggestions()}>{(item, index) => (
-                  <box width="100%" flexDirection="row" gap={2} flexShrink={0}>
-                    <box width={18} flexShrink={0} flexDirection="row">
-                      <text fg={index() === slashSelection() ? COLOR.orange : COLOR.soft}>
-                        {index() === slashSelection() ? '› ' : '  '}
-                      </text>
-                      <text fg={COLOR.orange}>{slashCandidatePrefix(item)}</text>
-                      <text fg={index() === slashSelection() ? COLOR.soft : COLOR.faint}>{slashCandidateSuffix(item)}</text>
-                    </box>
-                    <text fg={COLOR.faint}>{item.description ?? item.label}</text>
-                  </box>
-                )}</For>
-              </Show>
-            </box>
-          </Show>
           <box flexDirection="row" height={1}>
             <text fg={MODE_META[props.mode].color}>▌</text>
           </box>

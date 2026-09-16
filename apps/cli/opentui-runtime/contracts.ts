@@ -12,8 +12,8 @@ export type {
   TerminalTranscriptItem,
 } from '../src/tui.ts'
 
-export { filterTuiMenuItems, type TuiMenuItem } from '../src/tui-menu.ts'
+export { filterTuiMenuItems, filterTuiMenuShortcutPrefix, type TuiMenuItem } from '../src/tui-menu.ts'
 
 export type { SessionCostMetrics, SessionRuntimeMetrics } from 'xma-session'
 
-export { slashCommandCompletionSuffix, slashCommandSuggestions } from '../src/tui.ts'
+export { slashCommandSuggestions } from '../src/tui.ts'

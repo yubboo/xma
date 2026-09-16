@@ -1508,3 +1508,73 @@ Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显�
 - 当前环境通过：修改 TS/TSX `transpileModule` 语法检查；OpenTUI 可执行静态合同 39/39；Runtime updater 2/2；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate。当前沙箱没有 Workspace `node_modules/tsx`，所以包含完整 `tui.ts` 依赖图的 `tui.test.ts` 未在这里冒充执行；行为测试已经写入源码，需在 `[1]` 已准备开发环境中执行完整 `pnpm test`。
 - Windows Terminal 仍需用户实机确认：ghost suffix 与 caret 在实际字体/缩放下是否正好贴合、steady line cursor 视觉是否达到“不要高速白块闪烁”的体验目标。#20 因此保持**验证中**。
 
+
+# 21 Terminal slash 命令必须复用统一居中命令面板
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime/ui/prompt-dock.tsx`、`ui/dialogs.tsx`、`app.tsx`、`apps/cli/src/tui-menu.ts`、Terminal 命令回归测试
+- 关联历史：#18、#19、#20；#20 经 Windows Terminal 实机验证不通过，本条目不得改写 #20 旧结论。
+
+## 用户可见症状
+
+1. #20 在 PromptDock 内新增了一套 inline slash 候选/ghost UI。Windows Terminal 实机中它把 PromptDock 撑成一个大块区域，与 Ctrl+P 已有的居中命令菜单视觉不一致。
+2. `Ctrl+Space` 补全在实机没有任何反应，因此 #20 声明的主要补全动作并不可靠。
+3. 用户已经明确要求命令发现统一复用 Ctrl+P 的居中弹窗方案，而不是在 PromptDock 再维护第二套候选列表。
+4. 用户仍要求：单独 `/` 不展开全部命令；输入第一个命令字母后才展示同 shortcut prefix 的候选。例如 `/h` 只看 `/h...`，继续输入 `/he` 继续收窄；用户不能靠猜完整命令。
+
+## 已确认事实与证据
+
+- 当前 `prompt-dock.tsx` 确实直接渲染了 `快捷命令`、候选列表、ghost suffix，并自己处理 `↑/↓`、`Ctrl+Space` 与补全。这不是第二份 command catalog，但**是第二套 presentation/keyboard interaction**。
+- Ctrl+P/Ctrl+K 已经通过 `ListDialog + askList('命令', commandPaletteOptions(), { searchable: true })` 提供稳定的居中 modal、focus ownership、搜索、上下选择、Enter 执行与 Esc 返回。
+- `commandPaletteOptions()` 与 `runCommand()` 已是 canonical command data/action；slash discovery 没有理由再拥有另一套列表 UI。
+- 现有 `filterTuiMenuItems()` 是通用 contains 搜索；slash 需要的是 canonical `shortcut` 的 prefix 筛选，并且 `/` 自身必须返回空结果。
+
+## 已被证伪/禁止重复的修法
+
+- 禁止继续在 `PromptDock` 内绘制 inline 候选大列表或 ghost overlay；#20 已由实机证明该 presentation 不符合目标。
+- 禁止再依赖 `Ctrl+Space` 作为 slash 命令的必要补全路径；实机已证明该组合键不可靠，而且统一 modal 后并不需要它。
+- 禁止复制第二份 slash-only command catalog/action。slash、Ctrl+P、Ctrl+K、`/help` 必须继续共享 `commandPaletteOptions()` / canonical catalog 与 `runCommand()`。
+- 禁止单独输入 `/` 就打开全量命令；必须等首个命令字母出现。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 为第一事实源，修复 #20 slash 命令 UI/键盘回归。核心原则是**复用 Ctrl+P 同一个 ListDialog 居中命令面板，而不是修补第二套 inline UI**。
+>
+> 1. 删除 PromptDock 中 slash inline 候选列表、ghost suffix、`Ctrl+Space` 补全及对应 selection 状态。PromptDock 只负责检测一个无空格的 slash prefix；单独 `/` 保持安静。
+> 2. 当 Prompt 首次形成 `/<letter...>` 时，调用父级 slash command palette。该 palette 必须复用现有 `ListDialog` / `askList`，视觉、焦点、↑↓、Enter、Esc 与 Ctrl+P 同源。
+> 3. `ListDialog` 增加可选 `initialQuery` 与 search mode；Ctrl+P 保持现有通用 contains 搜索，slash palette 使用 `shortcut-prefix` 搜索。`/h` 只显示 shortcut 以 `/h` 开头的命令，`/he` 继续收窄；`/` 返回空候选，绝不展示全表。
+> 4. slash modal 打开时搜索框预填当前 prefix，用户直接继续输入；选择候选 + Enter 后清空主 Prompt 并进入同一个 `runCommand()`。Esc 返回时不得执行任何命令，主 Prompt 不得崩溃或丢失焦点。
+> 5. Ctrl+P/Ctrl+K 的完整命令总览行为不变；`/help` 仍持久展示全部命令用途；Tab/Shift+Tab 在主 Prompt 继续只切换 Build/Plan/Compose。
+> 6. 更新静态/行为回归，明确锁定“PromptDock 不再拥有 slash candidate list/ghost/Ctrl+Space；slash 与 Ctrl+P 共同复用 ListDialog/canonical catalog”。
+> 7. 回填最终根因、实际修改、自动证据和 Windows Terminal 待验收项，并同步 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`CODEMAP.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`。
+
+## 不允许回归的行为
+
+- Ctrl+P / Ctrl+K 命令面板继续正常工作，并继续显示全部 canonical commands。
+- `/help`、`/settings`、`/vivid`、`/doctor`、`/workspace`、`/provider`、`/model`、`/permission`、`/agent`、`/clear`、`/exit` 都必须仍是真实可执行命令。
+- Prompt 原生 caret、IME、Tab/Shift+Tab 模式切换、PromptDock 固定布局、Transcript 滚动、Session Metrics 均不得被 slash modal 修改破坏。
+
+## 验收条件
+
+- 单独 `/`：不弹窗、不显示全量列表。
+- 输入 `/h`：出现与 Ctrl+P 同款的居中 ListDialog，并且只显示 `/h...` 命令。
+- 在居中搜索框继续输入 `e`：查询变成 `/he` 并继续 prefix 过滤；无需 Ctrl+Space。
+- ↑/↓ 可切换，Enter 直接执行选中真实命令，Esc 安全返回。
+- PromptDock 不再渲染图二那种 inline 大块候选区，也不再包含 slash ghost overlay 或 Ctrl+Space 补全代码。
+
+
+## 最终根因
+
+#20 的问题不在 command catalog，而在 **UI ownership 再次分叉**：为了实现 ghost completion，把 slash discovery 的候选渲染、selection、键盘补全都塞进了 `PromptDock`。这虽然仍引用 canonical catalog，却绕过了已经稳定的 `ListDialog` modal/focus/keyboard 生命周期，结果形成第二套 presentation/interaction；Windows Terminal 又证明 `Ctrl+Space` 键位并不可靠，因此 #20 的交互合同不能成立。
+
+## 实际修改与验证证据
+
+- `prompt-dock.tsx`：删除 slash candidate list、ghost suffix、selection 状态、`Ctrl+Space`/↑↓补全逻辑；只保留 slash prefix 检测。单独 `/` 不触发，出现首个命令字母后把 prefix 交给父级。
+- `app.tsx`：`commandPalette()` 增加可选 `initialQuery/searchMode/clearPromptOnSelect`；新增 `slashCommandPalette(prefix)`，仍使用同一个 `askList('命令', commandPaletteOptions(), ...)`，选中后清空主 Prompt 并进入原有 `runCommand()`。
+- `dialogs.tsx`：同一个 `ListDialog` 新增 `initialQuery` 与 `shortcut-prefix` search mode。slash modal 打开时把 `/h` 等 prefix 预填到原搜索框；后续继续输入、↑↓、Enter、Esc 都走既有 modal focus/keyboard ownership。
+- `tui-menu.ts`：新增纯函数 `filterTuiMenuShortcutPrefix()`；单独 `/` 返回空，`/h`、`/he` 等只匹配 canonical `shortcut` 前缀。legacy `slashCommandSuggestions()` 也复用这个 helper，避免前缀语义再分叉。
+- 回归：`apps/cli/tests/opentui-runtime.test.ts` 更新为锁定“PromptDock 不拥有 inline slash UI，slash/ Ctrl+P 共同复用 ListDialog”；静态合同 39/39 PASS。独立运行 `filterTuiMenuShortcutPrefix` 纯函数断言通过：`/` 无候选、`/h`→help、`/he`→help、`/s`→settings；activity/session/shortcut/transcript 定向测试 14/14 PASS，Runtime updater 2/2 PASS，Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 重新生成后为 244 files；正式 ZIP 245 entries，独立解压 missing=0 / extra=0 / byte differences=0，并从解压树复跑 39/39 + 14/14 + 2/2 + 9/9 同组验证通过。
+- 当前沙箱缺少 Workspace OpenTUI/Solid/node_modules，无法冒充完整真实 Renderer E2E；`tui.test.ts` 在 Node strip-only 模式又受既有 TypeScript parameter property 限制，故该完整行为套件仍留待准备好的项目环境执行。Windows Terminal 最终需实机确认 `/h` 弹出的就是图三同款居中命令菜单、继续输入 `/he` 正常收窄、Enter/Esc 焦点稳定。
+
+- 状态：验证中

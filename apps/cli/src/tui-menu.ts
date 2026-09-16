@@ -93,6 +93,16 @@ export function filterTuiMenuItems(items: readonly TuiMenuItem[], query: string)
   })
 }
 
+/**
+ * Slash command discovery uses canonical shortcut prefix matching instead of fuzzy contains search.
+ * A bare `/` intentionally returns no rows so users are not flooded with the whole command catalog.
+ */
+export function filterTuiMenuShortcutPrefix(items: readonly TuiMenuItem[], query: string): readonly TuiMenuItem[] {
+  const normalized = query.trimStart().toLocaleLowerCase()
+  if (!normalized.startsWith('/') || normalized.includes(' ') || normalized.includes('\n') || normalized.length <= 1) return []
+  return items.filter(item => (item.shortcut ?? `/${item.value}`).toLocaleLowerCase().startsWith(normalized))
+}
+
 function clampSelectedIndex(index: number, count: number): number {
   if (count <= 0) return -1
   return Math.min(Math.max(index, 0), count - 1)

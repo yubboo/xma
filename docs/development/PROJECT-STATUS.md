@@ -145,7 +145,8 @@ XMA 当前固定五条参考线：
 - #10 建立 Terminal 对 #05 canonical metrics 的 headline/detail 分层；#11 在不改变 Contract 的前提下继续收口主状态；#12 根据 Windows 实机视觉反馈把 detail 改为**完整 canonical items + 按终端列宽多行打包**：窄宽度只换行、不再隐藏 cache/token/compaction/turn/cost/permission。Desktop/Web 后续仍直接消费同一 `session/metrics` Contract。
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
-- `REPAIR-PROMPTS #20` 当前**验证中**：#19 的“单独 `/` 展开全部命令”被用户 Windows 实机否决；Active Prompt 现在改为 slash **prefix discovery + ghost completion**：单独 `/` 不展开命令，输入首字母后才显示同前缀候选，`/he` 会把已输入 prefix 以强调色显示并在 caret 后用 dim ghost text 预览 `lp`，`/hel` 只预览 `p`。`↑/↓` 与 `Ctrl+Space` 继续补全，Tab/Shift+Tab 只切模式。OpenTUI 0.5.11 不提供 per-app blink interval，为避免恢复软件 cursor timer，Prompt 改用原生 steady line cursor + soft color 降噪；等待 Windows Terminal 目视确认 ghost overlay 与 caret 视觉。
+- `REPAIR-PROMPTS #21` 当前**验证中**：#20 已被用户 Windows Terminal 实机判定不通过，根因是 PromptDock 又拥有了一套 inline slash 候选/ghost/补全交互，`Ctrl+Space` 也在实机无响应。#21 删除该第二套 presentation，slash 只在首个命令字母出现后调用与 Ctrl+P/Ctrl+K **同一个居中 ListDialog**；当前 prefix 预填到原搜索框并按 canonical shortcut prefix 过滤，单独 `/` 保持安静。静态 OpenTUI 合同 39/39 PASS，prefix filter 纯函数断言 PASS；待 Windows Terminal 实机确认 `/h`→同款居中菜单、继续 `/he` 收窄、Enter/Esc 焦点稳定。
+- `REPAIR-PROMPTS #20` **实机不通过，由 #21 接续**：用户确认 inline slash 区域视觉错误且 `Ctrl+Space` 无响应；其 steady line native caret 方案保留，但 inline candidate/ghost/补全合同已被 #21 废止。
 - `REPAIR-PROMPTS #19` **实机未通过，已由 #20 接续修复 slash discovery 视觉与触发条件**：#19 已完成 canonical catalog、`/help` 与 Assistant Markdown 清理，但“输入 `/` 立即展开全部候选”的产品交互不符合最新验收；保留 #19 历史记录，不改写旧结论。
 - `REPAIR-PROMPTS #18` **实机未通过，已由 #19 接续修复**：命令本体真实，但“输入 `/` 立即打开 Ctrl+P modal”不符合产品交互；保留 #18 历史记录，不复用编号。
 - `REPAIR-PROMPTS #17` 已由用户 Windows 实机确认**已完成**：full-width/right-aligned user band 使用 `#2d2d30` 深灰背景与 `#e2e2e2` 文字，亮度符合“只有一点白”的要求。

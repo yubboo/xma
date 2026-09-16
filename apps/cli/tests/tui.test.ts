@@ -16,7 +16,6 @@ import {
   needsInitialBrainSetup,
   renderWorkspaceTrustPrompt,
   SafePromptInput,
-  slashCommandCompletionSuffix,
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
@@ -33,7 +32,7 @@ import {
   type TerminalTranscriptItem,
 } from '../src/tui.ts'
 import { assertCliNativeRuntimeStatus, parseArgs, USER_CANCEL_EXIT_CODE } from '../src/main.ts'
-import { filterTuiMenuItems, moveTuiMenuSelection, projectTuiMenu, tuiMenuCellWidth } from '../src/tui-menu.ts'
+import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, moveTuiMenuSelection, projectTuiMenu, tuiMenuCellWidth } from '../src/tui-menu.ts'
 
 
 
@@ -153,19 +152,17 @@ test('TUI Tool Approval maps only explicit Yes to one-shot allow', () => {
 })
 
 
-test('TUI slash command discovery starts after the first letter and exposes canonical ghost suffixes', () => {
+test('TUI slash command discovery starts after the first letter and uses canonical shortcut-prefix filtering', () => {
+  const options = commandPaletteOptions()
   assert.equal(slashCommandSuggestions('/').length, 0)
   assert.deepEqual(slashCommandSuggestions('/h').map(item => item.value), ['help'])
   assert.deepEqual(slashCommandSuggestions('/he').map(item => item.value), ['help'])
   assert.deepEqual(slashCommandSuggestions('/pro').map(item => item.value), ['provider'])
   assert.deepEqual(slashCommandSuggestions('/mod').map(item => item.value), ['model'])
   assert.equal(slashCommandSuggestions('/missing').length, 0)
-
-  const help = slashCommandSuggestions('/he')[0]
-  assert.equal(slashCommandCompletionSuffix('/he', help), 'lp')
-  assert.equal(slashCommandCompletionSuffix('/hel', help), 'p')
-  assert.equal(slashCommandCompletionSuffix('/help', help), '')
-  assert.equal(slashCommandCompletionSuffix('/', help), '')
+  assert.equal(filterTuiMenuShortcutPrefix(options, '/').length, 0)
+  assert.deepEqual(filterTuiMenuShortcutPrefix(options, '/h').map(item => item.value), ['help'])
+  assert.deepEqual(filterTuiMenuShortcutPrefix(options, '/set').map(item => item.value), ['settings'])
 })
 
 test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {

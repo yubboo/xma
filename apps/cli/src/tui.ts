@@ -15,7 +15,7 @@ import { providerErrorPresentation, type JsonObject } from 'xma-ai'
 import type { SessionRuntimeMetrics } from 'xma-session'
 import type { PermissionProfileId, ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
-import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
+import { filterTuiMenuShortcutPrefix, moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
 
 const ESC = '\u001b['
 const reset = `${ESC}0m`
@@ -823,24 +823,7 @@ export function approvalDecision(answer: string): ToolApprovalDecision {
 }
 
 export function slashCommandSuggestions(prefix: string): readonly TuiMenuItem[] {
-  const normalized = prefix.trimStart().toLowerCase()
-  if (!normalized.startsWith('/') || normalized.includes(' ') || normalized.length <= 1) return []
-  return TERMINAL_COMMAND_CATALOG
-    .filter(command => (command.shortcut ?? `/${command.value}`).toLowerCase().startsWith(normalized))
-    .map(command => ({ ...command }))
-}
-
-/**
- * 中文说明：返回 inline slash completion 尚未输入的后缀。
- * 这里只做 canonical shortcut 的纯字符串投影；候选选择、Caret 与键盘 ownership 仍属于 PromptDock。
- */
-export function slashCommandCompletionSuffix(prefix: string, item: Pick<TuiMenuItem, 'value' | 'shortcut'> | undefined): string {
-  if (!item) return ''
-  const normalized = prefix.trimStart().toLowerCase()
-  if (!normalized.startsWith('/') || normalized.length <= 1 || normalized.includes(' ')) return ''
-  const shortcut = (item.shortcut ?? `/${item.value}`).toLowerCase()
-  if (!shortcut.startsWith(normalized)) return ''
-  return (item.shortcut ?? `/${item.value}`).slice(normalized.length)
+  return filterTuiMenuShortcutPrefix(TERMINAL_COMMAND_CATALOG, prefix).map(command => ({ ...command }))
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })

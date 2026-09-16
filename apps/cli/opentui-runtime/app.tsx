@@ -63,6 +63,8 @@ type DialogState =
       items: readonly TuiMenuItem[]
       searchable: boolean
       allowCancel: boolean
+      initialQuery?: string
+      searchMode?: 'contains' | 'shortcut-prefix'
       resolve: (value: string | undefined) => void
     }
   | {
@@ -336,7 +338,12 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     setDialog(undefined)
     refocusPrompt()
   }
-  const askList = (title: string, items: readonly TuiMenuItem[], options: { searchable?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>((resolve, reject) => {
+  const askList = (title: string, items: readonly TuiMenuItem[], options: {
+    searchable?: boolean
+    allowCancel?: boolean
+    initialQuery?: string
+    searchMode?: 'contains' | 'shortcut-prefix'
+  } = {}) => new Promise<string | undefined>((resolve, reject) => {
     prompt?.blur()
     renderer.setCursorPosition(0, 0, false)
     try {
@@ -346,6 +353,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         items,
         searchable: options.searchable === true,
         allowCancel: options.allowCancel !== false,
+        initialQuery: options.initialQuery,
+        searchMode: options.searchMode,
         resolve: value => { closeDialog(); resolve(value) },
       })
     } catch (error) {
@@ -793,10 +802,21 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     return false
   }
 
-  const commandPalette = async () => {
+  const commandPalette = async (options: {
+    initialQuery?: string
+    searchMode?: 'contains' | 'shortcut-prefix'
+    clearPromptOnSelect?: boolean
+  } = {}) => {
+    let initialQuery = options.initialQuery
     while (true) {
-      const value = await askList('命令', commandPaletteOptions(), { searchable: true })
+      const value = await askList('命令', commandPaletteOptions(), {
+        searchable: true,
+        initialQuery,
+        searchMode: options.searchMode,
+      })
       if (!value) return
+      if (options.clearPromptOnSelect) prompt?.clear()
+      initialQuery = undefined
       if (value === 'settings') {
         await settingsDialog()
         continue
@@ -804,6 +824,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       await runCommand(value)
       return
     }
+  }
+
+  const slashCommandPalette = async (prefix: string) => {
+    await commandPalette({
+      initialQuery: prefix,
+      searchMode: 'shortcut-prefix',
+      clearPromptOnSelect: true,
+    })
   }
 
   const submit = async (raw: string) => {
@@ -1146,6 +1174,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           }}
           onPromptFocus={() => prompt?.focus()}
           onSubmit={text => { void submit(text) }}
+          onSlashCommandPrefix={prefix => { void slashCommandPalette(prefix) }}
           onCycleMode={direction => {
             const next = cycleTerminalAgentMode(mode(), direction)
             setMode(next)
@@ -1184,7 +1213,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       <Show when={currentDialog()} keyed>{state => (
         <ErrorBoundary fallback={error => recoverBrokenDialog(state, error)}>
           {state.kind === 'list'
-            ? <ListDialog title={state.title} items={state.items} searchable={state.searchable} allowCancel={state.allowCancel} onDone={state.resolve} />
+            ? <ListDialog title={state.title} items={state.items} searchable={state.searchable} allowCancel={state.allowCancel} initialQuery={state.initialQuery} searchMode={state.searchMode} onDone={state.resolve} />
             : state.kind === 'input'
               ? <InputDialog title={state.title} description={state.description} initial={state.initial} secret={state.secret} allowCancel={state.allowCancel} onDone={state.resolve} />
               : <ApprovalDialog request={state.request} onDone={state.resolve} />}

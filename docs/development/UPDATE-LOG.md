@@ -1055,4 +1055,12 @@
 - 规则：AGENTS/DEVELOPMENT-RULES 已从“`/` 显示全部命令”更新为“单独 `/` 安静、首字母后 prefix discovery + ghost completion”；Ctrl+P/Ctrl+K 仍承担完整命令总览。
 - 自动证据：修改 TS/TSX 逐文件 `transpileModule` 语法检查 PASS；OpenTUI 静态合同 39/39 PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。`tui.test.ts` 已增加 `/` 无候选、`/h`/`/he` prefix 与 `lp/p` ghost suffix 的行为回归；当前沙箱无 Workspace node_modules/tsx，完整行为测试留待已准备开发环境执行。
 - 状态：#20 进入**验证中**。Windows Terminal 仍需实机确认 ghost text 与真实 caret 在不同字体/缩放下没有错位；若 overlay 位置有 1-cell 偏差只继续修 PromptDock 布局，不得回退 modal 或软件假 cursor。
+##95 · Slash 命令统一回归居中 ListDialog
+
+- 日期：2026-09-16
+- 实机结论：#20 不通过。用户确认 PromptDock 内 inline 候选区与 Ctrl+P 命令菜单视觉/交互割裂，且 `Ctrl+Space` 在 Windows Terminal 无响应。
+- 根因：command data 没有复制，但 presentation/keyboard ownership 被复制了——#20 在 PromptDock 自己维护候选、ghost、selection、补全，绕开已经稳定的 `ListDialog` modal/focus 生命周期。
+- 修复：#21 删除 PromptDock inline slash UI，只保留 prefix detector。单独 `/` 不动作；`/h` 起调用与 Ctrl+P/Ctrl+K 同一个 `ListDialog`，把当前 prefix 预填到搜索框。`ListDialog` 新增 `shortcut-prefix` 搜索模式，按 canonical shortcut 前缀收窄；选择仍用 ↑↓/Enter，Esc 返回，不再依赖 Ctrl+Space。
+- 单一真值源：Ctrl+P、Ctrl+K、slash、`/help` 继续共享 `TERMINAL_COMMAND_CATALOG` / `commandPaletteOptions()` 与 `runCommand()`。新增 `filterTuiMenuShortcutPrefix()` 作为唯一 slash prefix 纯函数。
+- 自动证据：OpenTUI 静态合同 39/39 PASS；shortcut-prefix 纯函数 `/`/`/h`/`/he`/`/s` 定向断言 PASS；activity/session/shortcut/transcript 14/14 PASS；Runtime updater 2/2 PASS；9/9 Gate PASS。Source Manifest 244 files；正式 ZIP 245 entries，独立解压 0 missing / 0 extra / 0 byte diff，并从解压树复跑同组验证通过。完整 Renderer 与 Windows Terminal 焦点行为仍待实机，因此 #21 保持验证中。
 

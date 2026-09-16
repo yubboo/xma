@@ -8,7 +8,7 @@ import { decodePasteBytes, type KeyEvent, type PasteEvent, type TextareaRenderab
 import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
-import { filterTuiMenuItems, type TuiMenuItem } from '../contracts.ts'
+import { filterTuiMenuItems, filterTuiMenuShortcutPrefix, type TuiMenuItem } from '../contracts.ts'
 import { COLOR } from './theme.ts'
 
 export function ListDialog(props: {
@@ -16,15 +16,19 @@ export function ListDialog(props: {
   items: readonly TuiMenuItem[]
   searchable: boolean
   allowCancel: boolean
+  initialQuery?: string
+  searchMode?: 'contains' | 'shortcut-prefix'
   onDone: (value: string | undefined) => void
 }) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
-  const [query, setQuery] = createSignal('')
+  const [query, setQuery] = createSignal(props.initialQuery ?? '')
   const [selected, setSelected] = createSignal(0)
   let searchInput: TextareaRenderable | undefined
 
-  const filtered = createMemo(() => filterTuiMenuItems(props.items, query()))
+  const filtered = createMemo(() => props.searchMode === 'shortcut-prefix'
+    ? filterTuiMenuShortcutPrefix(props.items, query())
+    : filterTuiMenuItems(props.items, query()))
   const selectedItem = createMemo(() => filtered()[Math.min(selected(), Math.max(0, filtered().length - 1))])
   const hasShortcut = createMemo(() => props.items.some(item => Boolean(item.shortcut)))
 
@@ -84,7 +88,10 @@ export function ListDialog(props: {
 
   onMount(() => {
     if (props.searchable) {
-      queueMicrotask(() => searchInput?.focus())
+      queueMicrotask(() => {
+        if (props.initialQuery) searchInput?.insertText(props.initialQuery)
+        searchInput?.focus()
+      })
       return
     }
     renderer.setCursorPosition(0, 0, false)
@@ -130,7 +137,7 @@ export function ListDialog(props: {
               minHeight={1}
               maxHeight={1}
               wrapMode="none"
-              placeholder="输入关键词…"
+              placeholder={props.searchMode === 'shortcut-prefix' ? '输入 / + 命令字母…' : '输入关键词…'}
               placeholderColor={COLOR.faint}
               textColor={COLOR.text}
               focusedTextColor={COLOR.text}
@@ -146,7 +153,7 @@ export function ListDialog(props: {
           </box>
         </Show>
         <box flexDirection="column">
-          <Show when={filtered().length > 0} fallback={<text fg={COLOR.faint}>没有匹配项</text>}>
+          <Show when={filtered().length > 0} fallback={<text fg={COLOR.faint}>{props.searchMode === 'shortcut-prefix' ? '继续输入命令字母' : '没有匹配项'}</text>}>
             <For each={filtered().slice(Math.max(0, selected() - 7), Math.max(0, selected() - 7) + 10)}>{(item) => {
               const active = createMemo(() => item === selectedItem())
               return (
@@ -168,7 +175,7 @@ export function ListDialog(props: {
             }}</For>
           </Show>
         </box>
-        <text fg={COLOR.faint}>{props.searchable ? '输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回' : '↑↓ 选择 · Enter 确认 · Esc 返回'}</text>
+        <text fg={COLOR.faint}>{props.searchable ? (props.searchMode === 'shortcut-prefix' ? '继续输入 · ↑↓ 选择 · Enter 执行 · Esc 返回' : '输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回') : '↑↓ 选择 · Enter 确认 · Esc 返回'}</text>
       </box>
     </box>
   )
