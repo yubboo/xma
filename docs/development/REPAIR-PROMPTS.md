@@ -1678,3 +1678,60 @@ Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显�
 - `/help` 结构化三列在常见窗口宽度下不挤乱；窄窗口说明可换行但命令列仍清晰。
 - Assistant 最后一行与下一条 user band 的垂直距离达到预期；若用户仍希望更松，只继续调 Turn spacing，不改 user band 或 ScrollBox ownership。
 
+# 23 Terminal 主 Prompt caret 视觉基线误改回归
+
+- 状态：验证中
+- 日期：2026-09-17
+- 影响范围：`apps/cli/opentui-runtime/ui/prompt-dock.tsx`、`apps/cli/tests/opentui-runtime.test.ts`
+- 关联历史：#01 caret ownership、#20 caret 视觉降噪、#21/#22 slash/Dialog 修复
+
+## 用户可见症状
+
+1. 用户已经认可此前主输入框中“浅色 block 小方块 + 原生闪烁”的 caret 视觉。
+2. #20 为解决“闪烁过快”的反馈，把 caret 擅自改成 `line + blinking=false`；后续 #21/#22 沿用了这个改动。
+3. 用户明确指出：这不是 slash/Dialog 修复目标，属于无关改动；希望恢复之前的小白 block 原生闪烁，不要再随其它修复改变。
+
+## 已确认事实与证据
+
+- #19 实机前的 `PromptDock` 使用 `cursorColor={COLOR.text}` + `cursorStyle={{ style: 'block', blinking: true }}`。
+- 当前 #22 源码使用 `cursorColor={COLOR.soft}` + `cursorStyle={{ style: 'line', blinking: false }}`，与用户认可基线不一致。
+- OpenTUI 当前只提供 cursor shape 与 blink on/off，没有 per-app blink interval；因此“慢闪烁”只能继续交给终端原生 blink cadence，不能为了调周期重新引入应用层 cursor timer。
+
+## 已被证伪/禁止重复的修法
+
+- 禁止为了 slash、Dialog、Metrics、提示文案等无关问题顺手修改主 Prompt caret 形态。
+- 禁止恢复父级 `setInterval/showCursor` 软件闪烁；这会破坏已经验收的 Textarea 原生 cursor ownership。
+- 禁止再次把主 Prompt 改成 line/steady cursor，除非用户明确提出新的 caret 视觉需求。
+
+## 本次修复 Prompt
+
+> 只修复 #20 引入的主 Prompt caret 视觉回归，不碰 #22 的 slash prefix 高亮、统一 ListDialog、焦点恢复、Help 展示、Turn spacing，也不碰 Session Metrics、Transcript、Provider 或 Agent Runtime。
+>
+> 1. 把 `PromptDock` 的主 Textarea caret **精确恢复**为 `cursorColor={COLOR.text}` + `cursorStyle={{ style: 'block', blinking: true }}`。
+> 2. 闪烁继续由 OpenTUI/Windows Terminal 原生 cursor 生命周期拥有；不得增加 timer、`showCursor` toggle 或软件假 caret。
+> 3. 更新静态回归测试，锁定 block + native blinking，同时继续断言父级不存在 cursor timer。
+> 4. 更新长期规则：修其它 UI 模块时不得擅自改变已经实机认可的 caret 视觉基线。
+> 5. 更新 `PROJECT-STATUS.md` 与 `UPDATE-LOG.md`，并重新生成正式 `xma-0.1.0.zip`。
+
+## 不允许回归的行为
+
+- #22 的 slash `/he` 前缀高亮、居中 ListDialog、Enter 后焦点恢复保持原样。
+- Tab/Shift+Tab 工作模式切换、IME、Windows Text Cursor Indicator、Transcript scroll/sticky 均不得受影响。
+- caret 必须仍是真实 OpenTUI Textarea 原生 caret，而不是自绘或父级模拟。
+
+## 验收条件
+
+- Windows Terminal 主 Prompt 恢复用户认可的浅色 block 小方块，并由系统/终端原生节奏闪烁。
+- 源码无 `promptCursorVisible` / `setPromptCursorVisible` / Prompt cursor timer。
+- #22 其它功能的源码与行为不因本轮修改发生变化。
+
+## 最终根因
+
+#20 把用户关于“闪烁速度”的反馈错误扩大成了 caret 形态重设计：由于 OpenTUI 没有 per-app blink interval，修复时选择了 `line + blinking=false`，但这改变了用户已经习惯并认可的主 Prompt 视觉。该改动与 slash command 修复无关，应回滚到原生 block blinking 基线，同时继续坚持不使用应用层 cursor timer。
+
+## 实际修改与验证证据
+
+- `prompt-dock.tsx` 仅恢复 `COLOR.text + block + blinking=true`，未修改 slash/Dialog/metrics/turn spacing 代码。
+- `opentui-runtime.test.ts` 将两处 caret 合同恢复为 block + native blinking，并继续锁定不存在 `promptCursorVisible` 与 Prompt timer。
+- 本轮仅为定点回归修复；Windows Terminal 最终视觉仍以用户实机截图为验收。
+

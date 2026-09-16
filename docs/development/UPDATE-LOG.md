@@ -1076,3 +1076,12 @@
 - 自动证据：`tui-menu-prefix.test.ts` 2/2 PASS；OpenTUI 静态/Transcript 42/42 PASS；activity/session/shortcut/transcript 14/14 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 语法转译 PASS；9 项工程 Gate PASS。真实 `opentui-dialog.test.ts` 已加入 `/he` + Enter resolve 行为用例，但当前沙箱缺少 `node_modules/@opentui/*`，完整 Renderer E2E 留待准备环境/Windows 实机。
 - 发行：Source Manifest 245 files，正式源码 ZIP 246 entries；独立解压 missing=0 / extra=0 / byte diff=0，并从解压树复跑 dependency-free 16/16、Runtime 2/2、OpenTUI 静态 40/40 与 9/9 Gate。
 
+##97 · 主 Prompt 原生 block caret 视觉回滚
+
+- 日期：2026-09-17
+- 实机反馈：用户明确指出 #20 把原本认可的浅色 block 闪烁 caret 擅自改成 line/steady，属于无关范围修改；#22 其它 slash/Dialog/Help/spacing 修复不应牵连 caret 视觉。
+- 修复：新建 `REPAIR-PROMPTS #23`，只把主 Prompt Textarea 从 `COLOR.soft + line + blinking=false` 精确恢复到此前基线 `COLOR.text + block + blinking=true`。
+- Ownership：仍由 OpenTUI/Windows Terminal 原生 cursor 生命周期负责闪烁；没有恢复 `setInterval/showCursor` 软件慢闪，避免重新破坏 #01/#04 已验收的 caret/IME ownership。
+- 防回归：静态测试锁定 block + native blinking，同时继续禁止 `promptCursorVisible`/Prompt cursor timer；长期规则补充“修 slash/Dialog/Metrics 等无关模块不得顺手改 caret 形态”。
+- 状态：#23 验证中，等待 Windows Terminal 目视确认；#22 的 slash prefix 高亮、统一 ListDialog、焦点恢复、Help 展示和 Turn spacing 本轮未修改。
+

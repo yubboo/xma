@@ -85,8 +85,8 @@ export function PromptDock(props: {
                 textColor={COLOR.text}
                 focusedTextColor={COLOR.text}
                 showCursor={true}
-                cursorColor={COLOR.soft}
-                cursorStyle={{ style: 'line', blinking: false }}
+                cursorColor={COLOR.text}
+                cursorStyle={{ style: 'block', blinking: true }}
                 onContentChange={syncSlashPrefix}
                 onSubmit={() => {
                   const text = prompt?.plainText ?? ''
