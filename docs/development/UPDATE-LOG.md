@@ -852,3 +852,14 @@
 - 修复：Workbench 主内容链与 Transcript ScrollBox 显式 `flexShrink=1 + minHeight=0`，输入 Dock 固定 `flexShrink=0`；ScrollBox content 恢复正常 column 流，不再使用 `justifyContent:flex-end`。短内容贴底改为 Transcript wrapper 的 `marginTop=auto`：内容不足一屏时 auto margin 吃掉剩余空间，内容超过一屏时 margin 自动归零并让内容自然增高，从而形成真实 scroll range。
 - 兼容：保留 `stickyScroll + stickyStart=bottom`、#78 mouse wheel fallback、PageUp/PageDown/Ctrl+Home/Ctrl+End；用户离开底部后继续暂停自动跟随，返回底部后重新 follow。
 - 回归：OpenTUI 合同新增 viewport `minHeight=0`、Dock `flexShrink=0`、auto-margin bottom anchor，并明确禁止在 Transcript ScrollBox content 上重新引入 `justifyContent:flex-end`。版本保持 `0.1.0`。
+
+##80 · 修复 Prompt 工作流 + Terminal 模块化 / 滚动 / Cursor / 启动链收口
+
+- 日期：2026-09-16
+- 流程治理：新增 `REPAIR-WORKFLOW.md` 与 `REPAIR-PROMPTS.md`。以后非纯文案 Bug 必须先建立 `# 01/# 02/...` 修复 Prompt，再实施、验证、回填证据；完成后同步 UPDATE-LOG，状态变化同步 PROJECT-STATUS。当前 #01 记录本次 Terminal 历史滚动、caret、启动速度与全局开发命令问题，禁止再次只靠聊天上下文修补。
+- 模块化：`apps/cli/opentui-runtime/app.tsx` 从约 1900 行级巨型 Host 收口到约 1050 行父级协调器；新增 `ui/transcript-viewport.tsx`、`prompt-dock.tsx`、`background-sky.tsx`、`home-logo.tsx`、`dialogs.tsx`、`activity-format.ts`、`theme.ts` 与父级 `contracts.ts`。子模块通过稳定 Host contract 连接，避免深层穿透 CLI ownership。
+- Cursor：删除父级 `promptCursorVisible` 800ms 定时 toggle；PromptDock 使用 OpenTUI Textarea 原生 `showCursor=true + blinking=true`。Background/Logo 动画状态留在各自组件，删除 decoration → parent → Prompt `requestRender()` 链；进入会话后背景 motion 继续冻结。
+- 历史滚动：Transcript 成为唯一 ScrollBox owner，`flexGrow=1 + flexShrink=1 + minHeight=0`；短内容使用显式正向 top spacer，长内容自然形成 `content.height > viewport.height`。删除 #78 的 root wheel fallback，回归 OpenTUI 原生 wheel/sticky/manual-scroll，避免双重滚动模型掩盖布局根因；父工作区会话态使用 `flex-start`，Prompt Dock 固定不参与压缩。
+- Windows 启动：`[4]`/全局开发态 `xiaoyu/xma` 直接调用项目 `node_modules\bun\bin\bun.exe run --no-install ../src/main.ts`，不再经过 `pnpm -> tsx -> scripts/cli/bun.ts -> bun`；Native cache 先比较 fingerprint，命中即复用，只有 miss 才做 Cargo offline 校验/build。
+- PATH：开发态全局入口固定 `%LOCALAPPDATA%\Xiaoyu\dev-bin` 并写 Windows User PATH；`.cmd` 为 ASCII 跳板，PowerShell UTF-8 读取 `source-root.txt`。Source Sync 切 checkout 只更新稳定入口的指针并清理旧 checkout-local dev-bin PATH。
+- 回归：OpenTUI 测试调整为按子模块 ownership 验证并新增 direct-Bun / stable User PATH 防回归，当前 29/29 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS；TS/TSX 语法转译 PASS。Source Manifest 现为 225 个受管源码文件；成品候选 ZIP 独立解压后 225 + manifest 内容完整、哈希差异 0、额外文件 0，并从解压树再次执行 29 个回归与 9 项 Gate 全部 PASS。Windows Terminal wheel/caret/启动耗时属于用户实机 E2E，当前 Repair #01 状态保持“验证中”，不提前宣称完成。

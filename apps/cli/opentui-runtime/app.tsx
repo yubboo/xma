@@ -36,270 +36,15 @@ import {
   type TerminalTranscriptItem,
   type TerminalUiSettings,
 } from '../src/tui.ts'
-import { filterTuiMenuItems, type TuiMenuItem } from '../src/tui-menu.ts'
+import type { TuiMenuItem } from '../src/tui-menu.ts'
 import { openTuiContentWidth } from '../src/opentui-layout.ts'
-
-const COLOR = {
-  background: '#0b0c0c',
-  panel: '#151515',
-  panelSelected: '#261911',
-  orange: '#ff7e3f',
-  text: '#e2e2e2',
-  soft: '#a4a4a4',
-  faint: '#626262',
-  green: '#62ca84',
-  blue: '#6faeff',
-  yellow: '#e0be48',
-  red: '#ee5e5e',
-} as const
-
-const LOGO_XIAO = [
-  '██   ██  █████   ███    ███ ',
-  ' ██ ██     ██   ██ ██  ██ ██',
-  '  ███      ██   █████  ██ ██',
-  ' ██ ██     ██   ██ ██  ██ ██',
-  '██   ██  █████  ██ ██   ███ ',
-] as const
-
-const LOGO_YU = [
-  '██   ██  ██  ██',
-  ' ██ ██   ██  ██',
-  '  ███    ██  ██',
-  '  ███    ██  ██',
-  '  ███     ████ ',
-] as const
-
-const SKY_STARS = [
-  { x: 0.07, y: 0.13, offset: 0, period: 18 },
-  { x: 0.19, y: 0.09, offset: 6, period: 23 },
-  { x: 0.36, y: 0.08, offset: 11, period: 27 },
-  { x: 0.63, y: 0.09, offset: 3, period: 21 },
-  { x: 0.81, y: 0.12, offset: 14, period: 25 },
-  { x: 0.94, y: 0.18, offset: 8, period: 31 },
-  { x: 0.06, y: 0.79, offset: 4, period: 22 },
-  { x: 0.17, y: 0.88, offset: 17, period: 29 },
-  { x: 0.78, y: 0.87, offset: 9, period: 24 },
-  { x: 0.91, y: 0.76, offset: 2, period: 28 },
-] as const
-
-const STAR_FRAMES = [
-  { glyph: '·', color: '#303436' },
-  { glyph: '✧', color: COLOR.faint },
-  { glyph: '✧', color: COLOR.soft },
-  { glyph: '✦', color: COLOR.text },
-  { glyph: '✧', color: COLOR.yellow },
-  { glyph: '✧', color: COLOR.soft },
-  { glyph: '·', color: '#303436' },
-] as const
-
-const METEOR_INTERVAL_FRAMES = 160
-const METEOR_DURATION_FRAMES = 72
-const METEOR_FRAME_MS = 50
-const METEOR_DURATION_MS = METEOR_DURATION_FRAMES * METEOR_FRAME_MS
-const METEOR_ANGLE = 0.36
-const METEOR_TAIL = 32
-const METEOR_STEP = 0.15
-const METEOR_TAIL_POINTS = Array.from(
-  { length: Math.floor(METEOR_TAIL / METEOR_STEP) + 1 },
-  (_, index) => index * METEOR_STEP,
-)
-
-interface SkyGlyph {
-  left: number
-  top: number
-  text: string
-  color: string
-}
-
-function toCell(size: number, ratio: number, inset = 1): number {
-  return Math.max(0, Math.min(Math.max(0, size - 1), Math.round((size - inset * 2) * ratio) + inset))
-}
-
-function starGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
-  return SKY_STARS.map(star => {
-    const progress = ((frame + star.offset) % star.period) / star.period
-    const index = Math.min(STAR_FRAMES.length - 1, Math.floor(progress * STAR_FRAMES.length))
-    const visual = STAR_FRAMES[index]!
-    return {
-      left: toCell(width, star.x),
-      top: toCell(height, star.y),
-      text: visual.glyph,
-      color: visual.color,
-    }
-  })
-}
-
-function brailleBit(column: number, row: number): number {
-  if (column === 0) return row === 3 ? 6 : row
-  return row === 3 ? 7 : 3 + row
-}
-
-function parseHex(color: string): [number, number, number] {
-  const value = color.startsWith('#') ? color.slice(1) : color
-  return [
-    Number.parseInt(value.slice(0, 2), 16),
-    Number.parseInt(value.slice(2, 4), 16),
-    Number.parseInt(value.slice(4, 6), 16),
-  ]
-}
-
-function blendHex(from: string, to: string, amount: number): string {
-  const t = Math.max(0, Math.min(1, amount))
-  const a = parseHex(from)
-  const b = parseHex(to)
-  const channel = (index: number) => Math.round(a[index]! + (b[index]! - a[index]!) * t).toString(16).padStart(2, '0')
-  return `#${channel(0)}${channel(1)}${channel(2)}`
-}
-
-/**
- * 中文说明：只生成“真正有像素”的 Braille 流星单元，不再绘制一张覆盖全屏的 StyledText。
- * 这样既保留 MiMo Code 的 2×4 子像素斜向光束，也不会在 OpenTUI 装饰层用空格重绘覆盖主界面文字。
- */
-function meteorGlyphs(width: number, height: number, frame: number): SkyGlyph[] {
-  if (width <= 0 || height <= 0) return []
-  const step = frame % METEOR_INTERVAL_FRAMES
-  if (step >= METEOR_DURATION_FRAMES) return []
-
-  const sequence = Math.floor(frame / METEOR_INTERVAL_FRAMES)
-  const jitter = ((sequence * 37 + 17) % 100) / 100
-  const startX = Math.max(2, width - 2 - jitter * Math.max(1, width * 0.15))
-  const startY = sequence % 2
-  const speed = Math.max(0.011, Math.min(0.038, (height - startY) / (Math.sin(METEOR_ANGLE) * METEOR_DURATION_MS)))
-  const elapsed = step * METEOR_FRAME_MS
-  const distance = elapsed * speed
-  const dx = -Math.cos(METEOR_ANGLE)
-  const dy = Math.sin(METEOR_ANGLE)
-  const headX = startX + distance * dx
-  const headY = startY + distance * dy
-  const envelope = Math.sin((step / METEOR_DURATION_FRAMES) * Math.PI)
-  const cells = new Map<number, { dots: number; nearestTailPoint: number }>()
-
-  const setDot = (pixelX: number, pixelY: number, tailPoint: number) => {
-    const subX = Math.floor(pixelX * 2)
-    const subY = Math.floor(pixelY * 4)
-    const cellX = subX >> 1
-    const cellY = subY >> 2
-    if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) return
-    const bit = brailleBit(subX & 1, subY & 3)
-    const key = cellY * width + cellX
-    const previous = cells.get(key)
-    cells.set(key, {
-      dots: (previous?.dots ?? 0) | (1 << bit),
-      nearestTailPoint: Math.min(previous?.nearestTailPoint ?? Number.POSITIVE_INFINITY, tailPoint),
-    })
-  }
-
-  for (const tailPoint of METEOR_TAIL_POINTS) {
-    setDot(headX - tailPoint * dx, headY - tailPoint * dy, tailPoint)
-  }
-
-  const headSubX = Math.floor(headX * 2)
-  const headSubY = Math.floor(headY * 4)
-  for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
-      if (offsetX * offsetX + offsetY * offsetY > 1) continue
-      const subX = headSubX + offsetX
-      const subY = headSubY + offsetY
-      const cellX = subX >> 1
-      const cellY = subY >> 2
-      if (cellX < 0 || cellX >= width || cellY < 0 || cellY >= height) continue
-      const bit = brailleBit(subX & 1, subY & 3)
-      const key = cellY * width + cellX
-      const previous = cells.get(key)
-      cells.set(key, { dots: (previous?.dots ?? 0) | (1 << bit), nearestTailPoint: 0 })
-    }
-  }
-
-  const glyphs: SkyGlyph[] = []
-  for (const [key, value] of cells) {
-    const left = key % width
-    const top = Math.floor(key / width)
-    const fade = Math.pow(1 - value.nearestTailPoint / METEOR_TAIL, 1.3) * envelope
-    const headBlend = Math.max(0, 1 - value.nearestTailPoint / 5)
-    const beam = blendHex('#b4d7ff', '#ffffff', headBlend)
-    const color = blendHex(COLOR.background, beam, Math.max(0.08, fade))
-    glyphs.push({ left, top, text: String.fromCharCode(0x2800 + value.dots), color })
-  }
-  glyphs.sort((a, b) => a.top - b.top || a.left - b.left)
-  return glyphs
-}
-
-function BackgroundSky(props: {
-  width: number
-  height: number
-  starFrame: number
-  meteorFrame: number
-  vivid: boolean
-  stars: boolean
-  meteors: boolean
-}) {
-  const starItems = createMemo(() => props.stars ? starGlyphs(props.width, props.height, props.starFrame) : [])
-  const meteorItems = createMemo(() => props.meteors ? meteorGlyphs(props.width, props.height, props.meteorFrame) : [])
-  return (
-    <Show when={props.vivid && (props.stars || props.meteors)}>
-      <box position="absolute" zIndex={0} width={props.width} height={props.height} left={0} top={0}>
-        <For each={starItems()}>{star => (
-          <box position="absolute" left={star.left} top={star.top}>
-            <text fg={star.color}>{star.text}</text>
-          </box>
-        )}</For>
-        <For each={meteorItems()}>{meteor => (
-          <box position="absolute" left={meteor.left} top={meteor.top}>
-            <text fg={meteor.color}>{meteor.text}</text>
-          </box>
-        )}</For>
-      </box>
-    </Show>
-  )
-}
-
-const LOGO_HIGHLIGHT = ['#ffffff', '#fff1e4', '#ffc09a', '#ff925c', '#ff7e3f', '#c98f6c', '#a4a4a4'] as const
-
-function logoGlyphColor(index: number, width: number, frame: number, base: string): string {
-  const cycle = frame % 88
-  if (cycle < 20 || cycle > 72) return base
-  const progress = (cycle - 20) / 52
-  const center = -6 + progress * (width + 12)
-  const distance = Math.abs(index - center)
-  if (distance > 6) return base
-  const paletteIndex = Math.min(LOGO_HIGHLIGHT.length - 1, Math.floor(distance))
-  return LOGO_HIGHLIGHT[paletteIndex] ?? base
-}
-
-interface LogoSegment {
-  text: string
-  color: string
-}
-
-function logoLineSegments(left: string, right: string, frame: number, gradient: boolean): LogoSegment[] {
-  const line = `${left}  ${right}`
-  const leftWidth = left.length + 2
-  const segments: LogoSegment[] = []
-  for (let index = 0; index < line.length; index += 1) {
-    const base = index < leftWidth ? COLOR.orange : COLOR.soft
-    const color = gradient ? logoGlyphColor(index, line.length, frame, base) : base
-    const char = line[index] ?? ' '
-    const previous = segments.at(-1)
-    if (previous?.color === color) previous.text += char
-    else segments.push({ text: char, color })
-  }
-  return segments
-}
-
-function LogoLine(props: { left: string; right: string; frame: number; gradient: boolean }) {
-  const segments = createMemo(() => logoLineSegments(props.left, props.right, props.frame, props.gradient))
-  return (
-    <box flexDirection="row" backgroundColor={COLOR.background}>
-      <For each={segments()}>{segment => <text fg={segment.color}>{segment.text}</text>}</For>
-    </box>
-  )
-}
-
-const MODE_META: Record<TerminalAgentMode, { label: string; color: string; description: string }> = {
-  build: { label: 'Build', color: COLOR.orange, description: '完整工具模式' },
-  plan: { label: 'Plan', color: COLOR.green, description: '只读规划模式' },
-  compose: { label: 'Compose', color: COLOR.blue, description: '纯模型对话 · legacy' },
-}
+import { BackgroundSky } from './ui/background-sky.tsx'
+import { TranscriptViewport } from './ui/transcript-viewport.tsx'
+import { PromptDock } from './ui/prompt-dock.tsx'
+import { HomeLogo } from './ui/home-logo.tsx'
+import { ApprovalDialog, InputDialog, ListDialog } from './ui/dialogs.tsx'
+import { toolCallActivityText, toolResultActivityText } from './ui/activity-format.ts'
+import { COLOR, MODE_META } from './ui/theme.ts'
 
 interface NoticeState {
   text: string
@@ -332,482 +77,6 @@ type DialogState =
       resolve: (value: ToolApprovalDecision) => void
     }
 
-function reasoningColor(effort: TerminalReasoningEffort): string {
-  if (effort === 'max') return COLOR.red
-  if (effort === 'high') return COLOR.yellow
-  if (effort === 'low') return COLOR.green
-  return COLOR.soft
-}
-
-function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color: string } {
-  if (role === 'user') return { label: '你', color: COLOR.orange }
-  if (role === 'assistant') return { label: 'Xiaoyu', color: COLOR.orange }
-  if (role === 'reasoning') return { label: '思考', color: COLOR.faint }
-  if (role === 'tool') return { label: 'Xiaoyu · 工具', color: COLOR.blue }
-  if (role === 'activity') return { label: '活动', color: COLOR.soft }
-  return { label: '系统', color: COLOR.soft }
-}
-
-function formatRunElapsed(elapsedMs: number): string {
-  const seconds = Math.max(0, Math.floor(elapsedMs / 1000))
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const remaining = seconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m ${remaining}s`
-  if (minutes > 0) return `${minutes}m ${remaining}s`
-  return `${remaining}s`
-}
-
-function redactActivityText(value: string): string {
-  return value
-    .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer ***')
-    .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
-    .replace(/(api[_-]?key|token|password|secret)(\s*[=:]\s*)[^\s,;]+/gi, '$1$2***')
-}
-
-function compactActivityText(value: string, max = 160): string {
-  const compact = redactActivityText(value.replace(/\s+/g, ' ').trim())
-  return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact
-}
-
-function toolCallActivityText(event: Extract<TerminalRunEvent, { type: 'tool-call' }>): string {
-  const args = event.arguments
-  if (event.name === 'native.fs.read_text') {
-    const path = typeof args.path === 'string' ? compactActivityText(args.path, 120) : ''
-    return path ? `读取文件 · ${path}` : '读取文件'
-  }
-  if (event.name === 'native.fs.write_text') {
-    const path = typeof args.path === 'string' ? compactActivityText(args.path, 120) : ''
-    const length = typeof args.content === 'string' ? Array.from(args.content).length : undefined
-    return `写入文件${path ? ` · ${path}` : ''}${length !== undefined ? ` · ${length} 字符` : ''}`
-  }
-  if (event.name === 'native.process.run') {
-    const program = typeof args.program === 'string' ? compactActivityText(args.program, 100) : '程序'
-    const rawArgv = Array.isArray(args.args) ? args.args.filter((value): value is string => typeof value === 'string') : []
-    const safeArgv: string[] = []
-    let redactNext = false
-    for (const raw of rawArgv.slice(0, 10)) {
-      const arg = compactActivityText(raw, 60)
-      if (redactNext) {
-        safeArgv.push('***')
-        redactNext = false
-        continue
-      }
-      if (/^--?(?:api[_-]?key|token|password|secret|authorization)$/i.test(arg)) {
-        safeArgv.push(arg)
-        redactNext = true
-        continue
-      }
-      safeArgv.push(arg)
-    }
-    const suffix = rawArgv.length > safeArgv.length ? ' …' : ''
-    return `运行程序 · ${program}${safeArgv.length > 0 ? ` ${safeArgv.join(' ')}${suffix}` : ''}`
-  }
-  const visibleArgs = Object.entries(args)
-    .filter(([key]) => !/(content|api[_-]?key|token|password|secret|authorization)/i.test(key))
-    .slice(0, 4)
-    .map(([key, value]) => `${key}=${compactActivityText(typeof value === 'string' ? value : (JSON.stringify(value) ?? String(value)), 56)}`)
-  return `调用工具 · ${event.name}${visibleArgs.length > 0 ? ` · ${visibleArgs.join(' ')}` : ''}`
-}
-
-function toolResultActivityText(event: Extract<TerminalRunEvent, { type: 'tool-result' }>): string {
-  if (event.ok) return `完成 · ${event.name}`
-  const detail = compactActivityText(event.content, 120)
-  return `失败 · ${event.name}${detail ? ` · ${detail}` : ''}`
-}
-
-function RunActivityRow(props: { summary: TerminalActivitySummary; nowMs: number; onToggle: () => void }) {
-  const elapsedMs = () => props.summary.outcome === 'running'
-    ? Math.max(props.summary.elapsedMs, props.nowMs - props.summary.startedAtMs)
-    : props.summary.elapsedMs
-  const outcomeSuffix = props.summary.outcome === 'running' || props.summary.outcome === 'completed'
-    ? ''
-    : props.summary.outcome === 'cancelled'
-      ? ' · 已中止'
-      : ' · 失败'
-  return (
-    <box width="100%" flexDirection="column" paddingTop={1} paddingBottom={1}>
-      <box
-        width="100%"
-        flexDirection="row"
-        onMouseDown={event => event.stopPropagation()}
-        onMouseUp={event => { event.stopPropagation(); props.onToggle() }}
-      >
-        <text fg={props.summary.outcome === 'failed' ? COLOR.red : COLOR.soft}>
-          {`思考了 ${formatRunElapsed(elapsedMs())}${outcomeSuffix} ${props.summary.expanded ? '▾' : '▸'}`}
-        </text>
-      </box>
-      <Show when={props.summary.expanded}>
-        <box width="100%" flexDirection="column" paddingTop={1} paddingLeft={2} gap={1}>
-          <For each={props.summary.entries}>{entry => (
-            <box width="100%" flexDirection="row" gap={1}>
-              <box width={3}>
-                <text fg={entry.kind === 'tool-result' ? (entry.ok === false ? COLOR.red : COLOR.green) : COLOR.faint}>
-                  {entry.kind === 'tool-call' ? '›' : entry.kind === 'tool-result' ? (entry.ok === false ? '✗' : '✓') : '·'}
-                </text>
-              </box>
-              <box flexGrow={1}>
-                <text fg={entry.kind === 'status' ? COLOR.faint : COLOR.soft}>{entry.text}</text>
-              </box>
-              <box width={9} justifyContent="flex-end">
-                <text fg={COLOR.faint}>{`+${formatRunElapsed(entry.elapsedMs)}`}</text>
-              </box>
-            </box>
-          )}</For>
-        </box>
-      </Show>
-    </box>
-  )
-}
-
-function Logo(props: { compact: boolean; frame: number; gradient: boolean }) {
-  return (
-    <box flexDirection="column" alignItems="center" backgroundColor={COLOR.background}>
-      <Show
-        when={!props.compact}
-        fallback={
-          <box flexDirection="column" alignItems="center" paddingBottom={1} backgroundColor={COLOR.background}>
-            <text fg={COLOR.faint}>XIAOYU</text>
-            <text fg={props.gradient ? logoGlyphColor(4, 10, props.frame, COLOR.orange) : COLOR.orange}><strong>✦ XIAOYU</strong></text>
-            <text fg={COLOR.soft}>Model is replaceable. Agent is ours.</text>
-          </box>
-        }
-      >
-        <box flexDirection="column" alignItems="center" paddingBottom={1} backgroundColor={COLOR.background}>
-          <text fg={COLOR.faint}>XIAOYU</text>
-          <box flexDirection="column" backgroundColor={COLOR.background}>
-            <For each={LOGO_XIAO}>{(left, index) => (
-              <LogoLine
-                left={left}
-                right={LOGO_YU[index()] ?? ''}
-                frame={props.frame}
-                gradient={props.gradient}
-              />
-            )}</For>
-          </box>
-          <box paddingTop={1}>
-            <text fg={COLOR.faint}>Model is replaceable. Agent is ours.</text>
-          </box>
-        </box>
-      </Show>
-    </box>
-  )
-}
-
-function ListDialog(props: {
-  title: string
-  items: readonly TuiMenuItem[]
-  searchable: boolean
-  allowCancel: boolean
-  onDone: (value: string | undefined) => void
-}) {
-  const renderer = useRenderer()
-  const dimensions = useTerminalDimensions()
-  const [query, setQuery] = createSignal('')
-  const [selected, setSelected] = createSignal(0)
-  let searchInput: TextareaRenderable | undefined
-
-  const filtered = createMemo(() => filterTuiMenuItems(props.items, query()))
-  const selectedItem = createMemo(() => filtered()[Math.min(selected(), Math.max(0, filtered().length - 1))])
-  const hasShortcut = createMemo(() => props.items.some(item => Boolean(item.shortcut)))
-
-  const move = (delta: number) => {
-    const count = filtered().length
-    if (count === 0) return
-    setSelected(current => (current + delta + count) % count)
-  }
-  const finish = (value: string | undefined) => {
-    if (value === undefined && !props.allowCancel) return
-    props.onDone(value)
-  }
-  const key = (event: KeyEvent) => {
-    if (event.name === 'escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      finish(undefined)
-      return true
-    }
-    if (event.name === 'up') {
-      event.preventDefault()
-      event.stopPropagation()
-      move(-1)
-      return true
-    }
-    if (event.name === 'down' || event.name === 'tab') {
-      event.preventDefault()
-      event.stopPropagation()
-      move(1)
-      return true
-    }
-    if (event.name === 'return' || event.name === 'enter') {
-      event.preventDefault()
-      event.stopPropagation()
-      const item = selectedItem()
-      if (item) finish(item.value)
-      return true
-    }
-    return false
-  }
-
-  useKeyboard(event => {
-    if (props.searchable) return
-    key(event)
-  })
-
-  onMount(() => {
-    if (props.searchable) {
-      queueMicrotask(() => searchInput?.focus())
-      return
-    }
-    renderer.setCursorPosition(0, 0, false)
-  })
-
-  return (
-    <box
-      position="absolute"
-      zIndex={3000}
-      width={dimensions().width}
-      height={dimensions().height}
-      left={0}
-      top={0}
-      alignItems="center"
-      justifyContent="center"
-      backgroundColor={COLOR.background}
-      onMouseDown={event => event.stopPropagation()}
-      onMouseUp={event => event.stopPropagation()}
-    >
-      <box
-        width={Math.max(42, Math.min(74, dimensions().width - 8))}
-        maxHeight={Math.max(12, Math.min(22, dimensions().height - 4))}
-        flexDirection="column"
-        backgroundColor={COLOR.background}
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={2}
-        gap={1}
-        onMouseUp={event => event.stopPropagation()}
-      >
-        <box flexDirection="row" justifyContent="space-between">
-          <text fg={COLOR.text}><strong>{props.title}</strong></text>
-          <text fg={COLOR.faint}>esc</text>
-        </box>
-        <Show when={props.searchable}>
-          <box flexDirection="row" gap={1}>
-            <text fg={COLOR.faint}>搜索</text>
-            <textarea
-              ref={(value: TextareaRenderable) => { searchInput = value }}
-              focused
-              flexGrow={1}
-              minHeight={1}
-              maxHeight={1}
-              wrapMode="none"
-              placeholder="输入关键词…"
-              placeholderColor={COLOR.faint}
-              textColor={COLOR.text}
-              focusedTextColor={COLOR.text}
-              showCursor={true}
-              cursorColor={COLOR.orange}
-              onContentChange={() => {
-                setQuery(searchInput?.plainText ?? '')
-                setSelected(0)
-              }}
-              onKeyDown={(event: KeyEvent) => { key(event) }}
-              keyBindings={[]}
-            />
-          </box>
-        </Show>
-        <box flexDirection="column">
-          <Show when={filtered().length > 0} fallback={<text fg={COLOR.faint}>没有匹配项</text>}>
-            <For each={filtered().slice(Math.max(0, selected() - 7), Math.max(0, selected() - 7) + 10)}>{(item) => {
-              const active = createMemo(() => item === selectedItem())
-              return (
-                <box
-                  flexDirection="row"
-                  backgroundColor={active() ? COLOR.panelSelected : COLOR.panel}
-                  paddingLeft={1}
-                  paddingRight={1}
-                  onMouseUp={(event) => { event.stopPropagation(); finish(item.value) }}
-                >
-                  <text fg={active() ? COLOR.orange : COLOR.faint}>{active() ? '→' : ' '}</text>
-                  <Show when={hasShortcut()}>
-                    <box width={16} paddingLeft={1}><text fg={COLOR.faint}>{item.shortcut ?? ''}</text></box>
-                  </Show>
-                  <box width={20} paddingLeft={1}><text fg={active() ? COLOR.orange : COLOR.text}>{item.label}</text></box>
-                  <box flexGrow={1} paddingLeft={1}><text fg={COLOR.soft}>{item.description ?? ''}</text></box>
-                </box>
-              )
-            }}</For>
-          </Show>
-        </box>
-        <text fg={COLOR.faint}>{props.searchable ? '输入搜索 · ↑↓ 选择 · Enter 执行 · Esc 返回' : '↑↓ 选择 · Enter 确认 · Esc 返回'}</text>
-      </box>
-    </box>
-  )
-}
-
-function SecretInput(props: { initial: string; onDone: (value: string | undefined) => void; allowCancel: boolean }) {
-  const [value, setValue] = createSignal(props.initial)
-  const append = (text: string) => setValue(current => `${current}${text}`)
-
-  usePaste((event: PasteEvent) => {
-    event.preventDefault()
-    append(decodePasteBytes(event.bytes).replace(/\r?\n/g, ''))
-  })
-  useKeyboard(event => {
-    if (event.name === 'escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      if (props.allowCancel) props.onDone(undefined)
-      return
-    }
-    if (event.name === 'backspace') {
-      event.preventDefault()
-      setValue(current => Array.from(current).slice(0, -1).join(''))
-      return
-    }
-    if (event.name === 'return' || event.name === 'enter') {
-      event.preventDefault()
-      event.stopPropagation()
-      props.onDone(value())
-      return
-    }
-    if (event.ctrl || event.meta) return
-    const candidate = event.sequence && event.sequence.length > 0 ? event.sequence : event.name
-    if (!candidate || candidate === 'tab') return
-    if (candidate.length <= 8 && !candidate.includes('\u001b') && !/[\u0000-\u001f\u007f]/.test(candidate)) {
-      event.preventDefault()
-      append(candidate)
-    }
-  })
-
-  return (
-    <box flexDirection="row">
-      <text fg={COLOR.text}>{'•'.repeat(Math.min(48, Array.from(value()).length))}</text>
-      <text fg={COLOR.orange}>█</text>
-    </box>
-  )
-}
-
-function InputDialog(props: {
-  title: string
-  description: string
-  initial: string
-  secret: boolean
-  allowCancel: boolean
-  onDone: (value: string | undefined) => void
-}) {
-  const renderer = useRenderer()
-  const dimensions = useTerminalDimensions()
-  let field: TextareaRenderable | undefined
-  onMount(() => {
-    if (!props.secret) {
-      queueMicrotask(() => field?.focus())
-      return
-    }
-    renderer.setCursorPosition(0, 0, false)
-  })
-  return (
-    <box
-      position="absolute"
-      zIndex={3000}
-      width={dimensions().width}
-      height={dimensions().height}
-      left={0}
-      top={0}
-      alignItems="center"
-      justifyContent="center"
-      backgroundColor={COLOR.background}
-    >
-      <box
-        width={Math.min(74, dimensions().width - 4)}
-        flexDirection="column"
-        backgroundColor={COLOR.background}
-        paddingTop={1}
-        paddingBottom={1}
-        paddingLeft={2}
-        paddingRight={2}
-        gap={1}
-      >
-        <box flexDirection="row" justifyContent="space-between">
-          <text fg={COLOR.text}><strong>{props.title}</strong></text>
-          <text fg={COLOR.faint}>esc</text>
-        </box>
-        <text fg={COLOR.soft}>{props.description}</text>
-        <Show
-          when={!props.secret}
-          fallback={<SecretInput initial={props.initial} allowCancel={props.allowCancel} onDone={props.onDone} />}
-        >
-          <textarea
-            ref={(value: TextareaRenderable) => { field = value }}
-            focused
-            initialValue={props.initial}
-            minHeight={1}
-            maxHeight={4}
-            wrapMode="word"
-            placeholder="输入内容…"
-            placeholderColor={COLOR.faint}
-            textColor={COLOR.text}
-            focusedTextColor={COLOR.text}
-            showCursor={true}
-            cursorColor={COLOR.orange}
-            onSubmit={() => props.onDone(field?.plainText ?? '')}
-            onKeyDown={(event: KeyEvent) => {
-              if (event.name !== 'escape') return
-              event.preventDefault()
-              event.stopPropagation()
-              if (props.allowCancel) props.onDone(undefined)
-            }}
-            keyBindings={[
-              { name: 'return', action: 'submit' },
-              { name: 'return', shift: true, action: 'newline' },
-            ]}
-          />
-        </Show>
-        <text fg={COLOR.faint}>Enter 确认 · Esc 取消</text>
-      </box>
-    </box>
-  )
-}
-
-function ApprovalDialog(props: { request: ToolApprovalRequest; onDone: (value: ToolApprovalDecision) => void }) {
-  const renderer = useRenderer()
-  const dimensions = useTerminalDimensions()
-  const [selected, setSelected] = createSignal(0)
-  onMount(() => renderer.setCursorPosition(0, 0, false))
-  const choices: readonly { label: string; value: ToolApprovalDecision }[] = [
-    { label: '拒绝', value: 'deny' },
-    { label: '仅允许本次', value: 'allow-once' },
-    { label: '本会话允许', value: 'allow-session' },
-  ]
-  useKeyboard(event => {
-    if (event.name === 'escape') {
-      event.preventDefault(); event.stopPropagation(); props.onDone('deny'); return
-    }
-    if (event.name === 'up') { event.preventDefault(); setSelected(v => (v + choices.length - 1) % choices.length); return }
-    if (event.name === 'down' || event.name === 'tab') { event.preventDefault(); setSelected(v => (v + 1) % choices.length); return }
-    if (event.name === 'return' || event.name === 'enter') {
-      event.preventDefault(); event.stopPropagation(); props.onDone(choices[selected()]!.value)
-    }
-  })
-  return (
-    <box position="absolute" zIndex={3200} width={dimensions().width} height={dimensions().height} left={0} top={0} alignItems="center" paddingTop={Math.max(3, Math.floor(dimensions().height * 0.25))} backgroundColor={COLOR.background}>
-      <box width={Math.min(72, dimensions().width - 4)} flexDirection="column" backgroundColor={COLOR.background} padding={2} gap={1}>
-        <text fg={COLOR.yellow}><strong>◆ Tool Approval</strong></text>
-        <text fg={COLOR.text}>{props.request.toolName} · {props.request.effect}</text>
-        <For each={props.request.summary.slice(0, 3)}>{line => <text fg={COLOR.soft}>{line}</text>}</For>
-        <For each={choices}>{(choice, index) => (
-          <box flexDirection="row" backgroundColor={selected() === index() ? COLOR.panelSelected : COLOR.panel}>
-            <text fg={selected() === index() ? COLOR.orange : COLOR.faint}>{selected() === index() ? '→ ' : '  '}</text>
-            <text fg={selected() === index() ? COLOR.orange : COLOR.text}>{choice.label}</text>
-          </box>
-        )}</For>
-        <text fg={COLOR.faint}>↑↓ 选择 · Enter 确认 · Esc 拒绝</text>
-      </box>
-    </box>
-  )
-}
-
 function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
@@ -819,10 +88,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [notice, setNotice] = createSignal<NoticeState | undefined>()
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
   const [setupFlow, setSetupFlow] = createSignal({ active: false, message: '' })
-  const [phase, setPhase] = createSignal(0)
-  // OpenTUI 的 Textarea 必须拥有真实 terminal cursor，Windows IME/Text Cursor Indicator 才能稳定跟随输入位置。
-  // 装饰动画只触发 Textarea 自己重绘 cursor，禁止应用层每帧手工 setCursorPosition。
-  const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)
+  // OpenTUI 的 focused Textarea 独占真实 terminal cursor；父级工作台不得再用定时器模拟闪烁或抢占 caret。
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
@@ -856,9 +122,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         dotColor: COLOR.yellow,
         label: '模型未配置 · Ctrl+P /provider',
       })
-  const starFrame = createMemo(() => Math.floor(phase() / 4))
-  const logoFrame = createMemo(() => Math.floor(phase() / 2))
-  const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][Math.floor(phase() / 3) % 4]!)
+  const [spinnerFrame, setSpinnerFrame] = createSignal(0)
+  const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][spinnerFrame() % 4]!)
   const tip = createMemo(() => {
     clock()
     if (busy()) {
@@ -887,7 +152,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
   const refocusPrompt = () => queueMicrotask(() => {
     if (setupFlow().active || dialog() !== undefined) return
-    setPromptCursorVisible(true)
     prompt?.focus()
     prompt?.requestRender()
   })
@@ -1550,38 +814,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     return false
   }
 
-  // 中文说明：OpenTUI ScrollBox 自身支持鼠标滚轮，但真实终端的 hit-test 可能把会话区空白/装饰单元命中到
-  // 其它 Renderable。键盘 PageUp/PageDown 直接调用 ScrollBox，因此不会暴露这个问题；根容器这里提供坐标级兜底，
-  // 只在事件没有从 transcriptScroll 子树冒泡时接管滚轮，避免与 ScrollBox 原生滚动重复执行。
-  const fallbackTranscriptWheel = (event: {
-    y: number
-    target: { parent: unknown } | null
-    scroll?: { direction: 'up' | 'down' | 'left' | 'right'; delta: number }
-    preventDefault(): void
-    stopPropagation(): void
-  }) => {
-    if (!transcriptScroll || transcript().length === 0 || dialog() !== undefined) return
-
-    let target: unknown = event.target
-    while (target && typeof target === 'object') {
-      if (target === transcriptScroll) return
-      target = 'parent' in target ? (target as { parent: unknown }).parent : null
-    }
-
-    const viewportTop = transcriptScroll.viewport.screenY
-    const viewportBottom = viewportTop + transcriptScroll.viewport.height
-    if (event.y < viewportTop || event.y >= viewportBottom) return
-
-    const direction = event.scroll?.direction
-    if (direction !== 'up' && direction !== 'down') return
-    const rawDelta = Math.abs(event.scroll?.delta ?? 1)
-    const wheelSteps = Math.max(1, Math.min(12, Math.round(rawDelta)))
-    transcriptScroll.scrollBy((direction === 'up' ? -1 : 1) * wheelSteps * 3)
-    event.preventDefault()
-    event.stopPropagation()
-    renderer.requestRender()
-  }
-
   useKeyboard(event => {
     if (event.defaultPrevented) return
     const modal = dialog()
@@ -1636,23 +868,14 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
-    const animation = setInterval(() => {
-      setPhase(value => value + 1)
-      // OpenTUI 0.5.11 的 EditBufferRenderable.renderCursor() 会在 Textarea render pass 最后提交真实 cursor 坐标。
-      // 星星/流星每帧会制造前景之外的 dirty cells，因此活动输入框必须同步 requestRender，让 cursor ownership 回到 Textarea；
-      // 禁止 renderer.setCursorPosition(0,0,false) 抢走 IME/输入焦点。
-      if (!setupFlow().active && dialog() === undefined) prompt?.requestRender()
-    }, 50)
-    const promptCursor = setInterval(() => {
-      if (setupFlow().active || dialog() !== undefined) return
-      setPromptCursorVisible(value => !value)
-    }, 800)
+    const spinnerTimer = setInterval(() => {
+      if (busy()) setSpinnerFrame(value => value + 1)
+    }, 240)
     const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
     const clockTimer = setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => {
-      clearInterval(animation)
-      clearInterval(promptCursor)
+      clearInterval(spinnerTimer)
       clearInterval(streamPump)
       clearInterval(tips)
       clearInterval(clockTimer)
@@ -1686,177 +909,65 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       height={dimensions().height}
       flexDirection="column"
       backgroundColor={COLOR.background}
-      onMouseScroll={fallbackTranscriptWheel}
     >
       <BackgroundSky
         width={dimensions().width}
         height={dimensions().height}
-        starFrame={starFrame()}
-        meteorFrame={phase()}
         vivid={settings().visual === 'vivid'}
         stars={settings().stars}
         meteors={settings().meteors}
+        motion={transcript().length === 0 && dialog() === undefined && !setupFlow().active}
       />
-      <box position="relative" zIndex={10} flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
+      <box position="relative" zIndex={10} flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-start'} paddingTop={1}>
         <Show when={showLogo()}>
           <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
-            <Logo
+            <HomeLogo
               compact={compactLogo()}
-              frame={logoFrame()}
               gradient={settings().visual === 'vivid' && settings().logoGradient}
             />
           </box>
         </Show>
 
         <Show when={transcript().length > 0}>
-          <scrollbox
-            ref={(value: ScrollBoxRenderable) => { transcriptScroll = value }}
+          <TranscriptViewport
             width={dimensions().width}
-            flexGrow={1}
-            flexShrink={1}
-            minHeight={0}
-            scrollX={false}
-            scrollY={true}
-            stickyScroll={true}
-            stickyStart="bottom"
-            contentOptions={{ flexGrow: 1, flexDirection: 'column' }}
-            viewportCulling={true}
-            scrollbarOptions={{ visible: false }}
-          >
-            <box width={dimensions().width} flexDirection="column" alignItems="center" marginTop="auto">
-              <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
-                <For each={transcript()}>{item => {
-                  const meta = roleMeta(item.role)
-                  if (item.role === 'activity' && item.activity) {
-                    return <RunActivityRow summary={item.activity} nowMs={clock()} onToggle={() => toggleRunActivity(item.activity!.id)} />
-                  }
-                  if (item.role === 'user') {
-                    return (
-                      <box width="100%" flexDirection="row" justifyContent="flex-end">
-                        <box
-                          maxWidth={Math.max(20, Math.floor(contentWidth() * 0.72))}
-                          backgroundColor={COLOR.panel}
-                          paddingLeft={2}
-                          paddingRight={1}
-                        >
-                          <text fg={COLOR.text}>{item.text}</text>
-                        </box>
-                      </box>
-                    )
-                  }
-                  if (item.placeholder) {
-                    return (
-                      <box width="100%" flexDirection="row">
-                        <text fg={COLOR.orange}><strong>Xiaoyu</strong></text>
-                        <text fg={COLOR.faint}> · 正在思考</text>
-                      </box>
-                    )
-                  }
-                  if (item.role === 'assistant') {
-                    return (
-                      <box width="100%" flexDirection="column">
-                        <text fg={meta.color}><strong>{meta.label}</strong></text>
-                        <text fg={COLOR.text}>{item.text}</text>
-                      </box>
-                    )
-                  }
-                  // 原始 reasoning 默认不渲染；公开的工作过程只进入可展开“用时”面板。
-                  if (item.role === 'reasoning') return <></>
-                  return (
-                    <box width="100%" flexDirection="row" gap={2}>
-                      <box width={14}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
-                      <box flexGrow={1}>
-                        <text fg={item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.text}</text>
-                      </box>
-                    </box>
-                  )
-                }}</For>
-              </box>
-            </box>
-          </scrollbox>
+            contentWidth={contentWidth()}
+            items={transcript()}
+            nowMs={clock()}
+            onToggleActivity={toggleRunActivity}
+            onScrollReady={value => { transcriptScroll = value }}
+          />
         </Show>
 
-        <box width={dockWidth()} flexShrink={0} flexDirection="column" paddingBottom={1} onMouseDown={() => prompt?.focus()}>
-          <box
-            flexDirection="column"
-            backgroundColor={showLogo() ? COLOR.panel : COLOR.background}
-            paddingTop={1}
-            paddingBottom={1}
-            paddingLeft={showLogo() ? 1 : 0}
-            paddingRight={showLogo() ? 1 : 0}
-          >
-            <box flexDirection="row" alignItems="flex-start">
-              <text fg={MODE_META[mode()].color}>▌</text>
-              <box flexGrow={1} paddingLeft={1}>
-                <textarea
-                  ref={(value: TextareaRenderable) => {
-                    prompt = value
-                    queueMicrotask(() => {
-                      if (setupFlow().active || dialog() !== undefined) return
-                      setPromptCursorVisible(true)
-                      value.focus()
-                      value.requestRender()
-                    })
-                  }}
-                  focused={dialog() === undefined && !setupFlow().active}
-                  minHeight={1}
-                  maxHeight={5}
-                  wrapMode="word"
-                  placeholder="输入消息…（输入 / 唤起命令）"
-                  placeholderColor={COLOR.faint}
-                  textColor={COLOR.text}
-                  focusedTextColor={COLOR.text}
-                  showCursor={promptCursorVisible()}
-                  cursorColor={COLOR.text}
-                  cursorStyle={{ style: 'block', blinking: false }}
-                  onContentChange={() => setPromptCursorVisible(true)}
-                  onCursorChange={() => setPromptCursorVisible(true)}
-                  onSubmit={() => { void submit(prompt?.plainText ?? '') }}
-                  onKeyDown={(event: KeyEvent) => {
-                    if (event.name !== 'tab') return
-                    event.preventDefault(); event.stopPropagation()
-                    const next = cycleTerminalAgentMode(mode(), event.shift ? -1 : 1)
-                    setMode(next)
-                    tell(`模式已切换 · ${MODE_META[next].label} · ${MODE_META[next].description}`, 2600)
-                    refocusPrompt()
-                  }}
-                  keyBindings={[
-                    { name: 'return', action: 'submit' },
-                    { name: 'return', shift: true, action: 'newline' },
-                    { name: 'return', ctrl: true, action: 'newline' },
-                  ]}
-                />
-              </box>
-            </box>
-            <box flexDirection="row" height={1}>
-              <text fg={MODE_META[mode()].color}>▌</text>
-            </box>
-            <box flexDirection="row">
-              <text fg={MODE_META[mode()].color}>▌</text>
-              <box flexGrow={1} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
-                <text fg={MODE_META[mode()].color}><strong>{MODE_META[mode()].label}</strong></text>
-                <box flexDirection="row">
-                  <text fg={providerStatus().dotColor}>{providerStatus().dot}</text>
-                  <text fg={COLOR.text}> {providerStatus().label}</text>
-                  <Show when={providerConfigured()}>
-                    <text fg={COLOR.soft}> · </text>
-                    <text fg={reasoningColor(reasoningEffort())}><strong>{reasoningEffort()}</strong></text>
-                  </Show>
-                </box>
-              </box>
-            </box>
-          </box>
-        </box>
+        <PromptDock
+          width={dockWidth()}
+          panel={showLogo()}
+          mode={mode()}
+          providerStatus={providerStatus()}
+          providerConfigured={providerConfigured()}
+          reasoningEffort={reasoningEffort()}
+          focused={dialog() === undefined && !setupFlow().active}
+          hintItems={hintItems()}
+          tipsEnabled={settings().tips}
+          tip={tip()}
+          onPromptReady={value => {
+            prompt = value
+            queueMicrotask(() => {
+              if (setupFlow().active || dialog() !== undefined) return
+              value.focus()
+              value.requestRender()
+            })
+          }}
+          onPromptFocus={() => prompt?.focus()}
+          onSubmit={text => { void submit(text) }}
+          onCycleMode={direction => {
+            const next = cycleTerminalAgentMode(mode(), direction)
+            setMode(next)
+            tell(`模式已切换 · ${MODE_META[next].label} · ${MODE_META[next].description}`, 2600)
+            refocusPrompt()
+          }}
+        />
 
-        <box width={dockWidth()} flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1}>
-          <For each={hintItems()}>{item => <text fg={COLOR.soft}>{item}</text>}</For>
-        </box>
-        <Show when={settings().tips}>
-          <box width={dockWidth()} flexDirection="row" gap={2} justifyContent="center" paddingBottom={1}>
-            <text fg={COLOR.orange}>●  提示</text>
-            <text fg={COLOR.soft}>{tip()}</text>
-          </box>
-        </Show>
       </box>
 
       <box position="relative" zIndex={10} flexDirection="row" justifyContent="space-between" paddingLeft={1} paddingRight={1}>

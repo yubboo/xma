@@ -133,6 +133,15 @@ XMA 当前固定五条参考线：
 
 当前用户 Windows 已证明 Setup 能安装、Electron 能启动；但完整 Workbench 仍未实现，因此不得把“能安装启动”写成“Desktop 产品完成”。
 
+## 6.1 当前阻断性修复状态（2026-09-16）
+
+- `REPAIR-PROMPTS #01` 已进入**验证中**：OpenTUI Host 已拆为父级协调器 + Transcript / Prompt / Background / Home Logo / Dialog 子模块；父级应用层 cursor blink timer 与 root wheel fallback 已移除。
+- Transcript 使用单一受限高度 ScrollBox + 正向 spacer 处理短对话贴底；长内容不再使用 `justifyContent:flex-end`/负向 overflow。用户手动离底后的 sticky 行为继续交给 OpenTUI 原生 ScrollBox。
+- Prompt Textarea 恢复原生 cursor blink ownership；背景/Logo 动画不再通过父级状态或回调触发 Prompt 重绘。
+- Windows `[4]` 开发启动改为项目 Bun 直接执行 CLI 源码，Native Runtime 先 fingerprint 快路径，cache miss 才验证 Cargo/build；`[1]` 使用固定 `%LOCALAPPDATA%\Xiaoyu\dev-bin` User PATH 入口。
+- 自动证据：OpenTUI 29/29 回归通过，9 项 Gate 通过，TS/TSX 语法转译通过；Source Manifest 已扩展为 225 个受管源码文件，成品候选 ZIP 独立解压后缺失/哈希差异/额外文件均为 0，并从解压树再次跑过 29 个回归与 9 项 Gate。**Windows Terminal 鼠标滚轮、caret 与实际启动耗时仍待用户实机 E2E，因此当前不标“已完成”。**
+- 实机通过后再结束 #01，并恢复 Stage P1 Agent Engine 主线；若任一症状仍存在，必须新增/继续 Repair Prompt 证据，不再直接往 `app.tsx` 叠补丁。
+
 ## 7. 下一开发批次
 
 Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
@@ -151,4 +160,4 @@ Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；
 
 详细分阶段出口见 `DEVELOPMENT-PLAN.md`。
 
-- Terminal 启动合同已固定为两层：每次 `xiaoyu / xma` 都先对调用者当前目录显示 Workspace Trust；通过后仅在没有已配置 Profile 时，在同一 Xiaoyu TUI 中央打开 Brain Setup。已有 Profile 跳过第二步，Ctrl+P 长期管理不变。Windows 开发环境 `[1]` 会注册当前 checkout 的 `.git/xma-state/dev-bin` 到 User PATH，便于在任意 Workspace 直接运行开发态 `xiaoyu / xma`。
+- Terminal 启动合同已固定为两层：每次 `xiaoyu / xma` 都先对调用者当前目录显示 Workspace Trust；通过后仅在没有已配置 Profile 时，在同一 Xiaoyu TUI 中央打开 Brain Setup。已有 Profile 跳过第二步，Ctrl+P 长期管理不变。Windows 开发环境 `[1]` 会把稳定 `%LOCALAPPDATA%\Xiaoyu\dev-bin` 注册到 User PATH，并通过 UTF-8 `source-root.txt` 指向当前激活 checkout；Source Sync 切换 checkout 时只更新该指针，便于在任意 Workspace 直接运行开发态 `xiaoyu / xma`。

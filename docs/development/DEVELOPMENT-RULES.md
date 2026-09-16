@@ -76,6 +76,20 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 - 改名必须同时修复 import、脚本、文档、Gate 和测试，禁止留下兼容别名文件制造两套命名；
 - 完成前运行 `pnpm gate:naming`；该 Gate 不替代架构判断，不能因为 Gate 通过就继续过度拆文件。 Naming Gate 只检查 XMA 自己维护的源码/配置，必须递归忽略 `node_modules/.cache/dist/build/target/release` 等第三方依赖、缓存和生成产物；第三方包命名不受 XMA 命名规则约束。
 
+## 3.2 Bug 修复 Prompt 与工程留痕
+
+所有非纯文案 Bug/回归都必须遵守 `REPAIR-WORKFLOW.md`，并在主要代码修改前先写入 `REPAIR-PROMPTS.md`：
+
+1. 新增连续编号 `# 01 / # 02 / # 03 ...`，标题必须说明修复的真实问题；
+2. 先记录症状、证据、排除项、上游参考、修复 Prompt、禁止回归行为和验收条件，再实施；
+3. 实施时优先修根因与 ownership，不允许为了赶快通过而继续扩张巨型文件；
+4. 回归测试必须覆盖故障路径。静态源码字符串断言可以保护架构合同，但不能取代真正的行为/E2E；
+5. 完成后回填最终根因、修改文件、测试/Gate、待实机 E2E、残留风险和待优化项；
+6. 同步 `UPDATE-LOG.md`；当前状态改变时同步 `PROJECT-STATUS.md`；长期路线改变时才同步 `DEVELOPMENT-PLAN.md`；
+7. 当前环境不能运行的 Windows Terminal / 真实 Provider / Desktop E2E 必须标记“验证中”，禁止声称已经实机修好。
+
+Terminal OpenTUI 额外遵循模块化 ownership：父 `app.tsx` 只负责协调；Transcript、Prompt、Decoration、Logo、Dialog 分别拥有自己的布局/输入/动画生命周期。focused Textarea 原生拥有 cursor；父级不得用定时 `showCursor` 模拟闪烁，Decoration 不得触发 Prompt render。Transcript 是唯一历史滚动 owner，父级不得再叠第二套 wheel fallback。
+
 ## 4. Agent Runtime 硬规则
 
 ### 4.1 真实模型是推理核心

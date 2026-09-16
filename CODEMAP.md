@@ -46,6 +46,9 @@
 | Rust Native Protocol | `native/protocol/` |
 | Rust Security / Native Runtime | `native/runtime/` |
 | 迁移期旧入口 | `core/`（Compatibility Facade only） |
+| Terminal OpenTUI 父级协调 | `apps/cli/opentui-runtime/app.tsx` |
+| Terminal UI 子模块 | `apps/cli/opentui-runtime/ui/`（Transcript / Prompt / Decoration / Logo / Dialog） |
+| Terminal 子模块稳定合同 | `apps/cli/opentui-runtime/contracts.ts` |
 
 ## 文档与规则
 
@@ -61,6 +64,8 @@
 | 当前状态 | `docs/development/PROJECT-STATUS.md` |
 | 上游参考 | `docs/development/UPSTREAM-REFERENCE.md` |
 | 实时工程更新记录 | `docs/development/UPDATE-LOG.md` |
+| Bug 修复工作流 | `docs/development/REPAIR-WORKFLOW.md` |
+| 修复 Prompt / 历史台账 | `docs/development/REPAIR-PROMPTS.md` |
 
 ## 定位规则
 

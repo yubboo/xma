@@ -70,26 +70,41 @@ for (const marker of ['访问工作区：', '安全确认：', '是的，我信�
   if (!tui.includes(marker)) throw new Error(`XMA Workspace Trust / legacy TUI contract missing: ${marker}`)
 }
 const openTui = text('apps/cli/opentui-runtime/app.tsx')
+const openTuiPrompt = text('apps/cli/opentui-runtime/ui/prompt-dock.tsx')
+const openTuiDialogs = text('apps/cli/opentui-runtime/ui/dialogs.tsx')
+const openTuiBackground = text('apps/cli/opentui-runtime/ui/background-sky.tsx')
+const openTuiTranscript = text('apps/cli/opentui-runtime/ui/transcript-viewport.tsx')
 const openTuiLayout = text('apps/cli/src/opentui-layout.ts')
 for (const marker of ['openTuiContentWidth', 'openTuiSidePadding']) {
   if (!openTuiLayout.includes(marker)) throw new Error(`XMA OpenTUI responsive layout marker missing: ${marker}`)
 }
 for (const marker of [
-  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}', 'showCursor={promptCursorVisible()}',
-  "event.name === 'tab'", "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
-  'commandPaletteOptions()', '模型 / 提供方', '连接测试', '选择真实模型', '终端设置', 'Tool Approval',
-  'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: false', 'useMouse: true',
+  'createCliRenderer', 'useKeyboard', 'useTerminalDimensions',
+  "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
+  'commandPaletteOptions()', '模型 / 提供方', '连接测试', '选择真实模型', '终端设置',
+  'enableMouseMovement: false', 'useMouse: true',
 ]) {
-  if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI marker missing: ${marker}`)
+  if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI parent marker missing: ${marker}`)
+}
+for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（输入 / 唤起命令）"']) {
+  if (!openTuiPrompt.includes(marker)) throw new Error(`XMA PromptDock marker missing: ${marker}`)
+}
+for (const marker of ['Tool Approval', "event.name === 'escape'"]) {
+  if (!openTuiDialogs.includes(marker)) throw new Error(`XMA OpenTUI dialog marker missing: ${marker}`)
+}
+for (const marker of ['stickyScroll={true}', 'stickyStart="bottom"', 'flexShrink={1}', 'minHeight={0}']) {
+  if (!openTuiTranscript.includes(marker)) throw new Error(`XMA Transcript viewport marker missing: ${marker}`)
 }
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
 }
-if (!openTui.includes('const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)') ||
-    !openTui.includes('focused={dialog() === undefined && !setupFlow().active}') ||
-    !openTui.includes('prompt?.requestRender()') ||
-    !openTui.includes('showCursor={true}')) {
-  throw new Error('XMA active OpenTUI must let focused Textarea own the terminal cursor and re-render it after animated decoration frames.')
+if (!openTui.includes('focused={dialog() === undefined && !setupFlow().active}') ||
+    !openTuiPrompt.includes("cursorStyle={{ style: 'block', blinking: true }}") ||
+    !openTuiPrompt.includes('showCursor={true}')) {
+  throw new Error('XMA active OpenTUI must let the focused PromptDock Textarea own the native terminal cursor.')
+}
+if (/promptCursorVisible|setPromptCursorVisible/.test(openTui) || /onAnimationFrame/.test(openTuiBackground) || /onAnimationFrame=/.test(openTui)) {
+  throw new Error('Decoration animation must not drive parent Prompt cursor visibility/render state.')
 }
 const activeMountStart = openTui.indexOf("onMount(() => {\n    process.title = 'Xiaoyu'")
 const activeMountEnd = openTui.indexOf('  return (', activeMountStart)

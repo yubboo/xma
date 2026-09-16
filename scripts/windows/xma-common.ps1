@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Rust/Cargo 环境恢复、版本读取与外部命令执行。
 关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1、开发态 xiaoyu/xma shim。
-当前实现：Rust/Cargo 使用项目本地 `runtime/rust/{cargo,rustup}`，与根 `node_modules` 同属 checkout 本地依赖；XMA 通过 `CARGO_HOME/RUSTUP_HOME` 让 rustup、cargo、crates 与 toolchain 跟随项目目录，不写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`。Bun/OpenTUI 统一由根 pnpm Workspace `node_modules` 管理；开发态 `xiaoyu/xma` shim 的生成、UTF-8 自检与单 checkout User PATH 路由也统一在此共享，供 `[1]` 与 Source Sync 复用。
-职责边界：这里只提供跨 Windows 入口共享的项目本地 Rust 路径、开发 shim 与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，Resolve-XmaRustRuntime 只解析当前项目 `runtime/rust` 中已真实可运行的 Rust/Cargo，不负责联网安装；开发 shim helper 只写 checkout 控制状态与 User PATH，不安装依赖；联网安装仍只由 xma-prepare.ps1 的 [1]/[9] 负责。
+当前实现：Rust/Cargo 使用项目本地 `runtime/rust/{cargo,rustup}`，与根 `node_modules` 同属 checkout 本地依赖；XMA 通过 `CARGO_HOME/RUSTUP_HOME` 让 rustup、cargo、crates 与 toolchain 跟随项目目录，不写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`。Bun/OpenTUI 统一由根 pnpm Workspace `node_modules` 管理；开发态 `xiaoyu/xma` shim 的生成、UTF-8 自检与稳定 User PATH 路由也统一在此共享，供 `[1]` 与 Source Sync 复用。
+职责边界：这里只提供跨 Windows 入口共享的项目本地 Rust 路径、开发 shim 与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，Resolve-XmaRustRuntime 只解析当前项目 `runtime/rust` 中已真实可运行的 Rust/Cargo，不负责联网安装；开发 shim helper 只写当前用户 `%LOCALAPPDATA%/Xiaoyu/dev-bin` 与 User PATH，不安装依赖；联网安装仍只由 xma-prepare.ps1 的 [1]/[9] 负责。
 #>
 
 function Get-XmaProjectVersion {
@@ -93,10 +93,20 @@ function Get-XmaPathEntries {
   return $entries.ToArray()
 }
 
+function Get-XmaUserDevelopmentCommandBin {
+  $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { $localAppData = $env:LOCALAPPDATA }
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { throw '无法解析 LOCALAPPDATA，不能注册全局开发态 xiaoyu/xma。' }
+  return (Join-Path $localAppData 'Xiaoyu\dev-bin')
+}
+
 function Test-XmaDevelopmentCommandPath {
   param([string]$Path)
   $normalized = Get-XmaNormalizedPath $Path
   if ([string]::IsNullOrWhiteSpace($normalized)) { return $false }
+  $stable = Get-XmaNormalizedPath (Get-XmaUserDevelopmentCommandBin)
+  if ($normalized -ieq $stable) { return $true }
+  # 旧 checkout-local dev-bin 只作为迁移清理对象继续识别。
   if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { return $true }
   return ($normalized -match '(?i)[\\/]xma-state[\\/]dev-bin$')
 }
@@ -123,14 +133,14 @@ function Get-XmaDevelopmentCommandSourceRoot {
 function Assert-XmaDevelopmentCommandTarget {
   param([Parameter(Mandatory = $true)][string]$ProjectRoot)
   $expectedRoot = Get-XmaNormalizedPath $ProjectRoot
-  $expectedDevBin = Get-XmaNormalizedPath (Join-Path (Get-XmaStateRoot -ProjectRoot $ProjectRoot) 'dev-bin')
+  $expectedDevBin = Get-XmaNormalizedPath (Get-XmaUserDevelopmentCommandBin)
   $registered = @(Get-XmaRegisteredDevelopmentCommandEntries)
   if ($registered.Count -ne 1) {
-    throw "开发态 xiaoyu/xma User PATH 应只保留 1 个 XMA dev-bin，当前检测到 $($registered.Count) 个。请在目标 checkout 运行 xma-dev.bat → [1] 修复。"
+    throw "开发态 xiaoyu/xma User PATH 应只保留 1 个稳定 XMA dev-bin，当前检测到 $($registered.Count) 个。请在目标 checkout 运行 xma-dev.bat → [1] 修复。"
   }
   $actualDevBin = Get-XmaNormalizedPath $registered[0]
   if ($actualDevBin -ine $expectedDevBin) {
-    throw "开发态 xiaoyu/xma 仍指向其他 checkout：$actualDevBin；期望：$expectedDevBin。"
+    throw "开发态 xiaoyu/xma PATH 入口不正确：$actualDevBin；期望稳定入口：$expectedDevBin。"
   }
   $actualRoot = Get-XmaNormalizedPath (Get-XmaDevelopmentCommandSourceRoot -DevBin $registered[0])
   if ($actualRoot -ine $expectedRoot) {
@@ -157,8 +167,9 @@ function Install-XmaDevelopmentCommands {
     throw "无法注册开发态 xiaoyu/xma：目标 checkout 缺少 scripts\\windows\\xma-console.ps1：$root"
   }
 
-  # 开发 shim 属于 checkout 控制状态，不属于 JavaScript/Rust 依赖实体。放到 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）。
-  $devBin = Join-Path (Get-XmaStateRoot -ProjectRoot $root) 'dev-bin'
+  # 开发命令入口属于当前用户级稳定 launcher，不跟 checkout 路径一起进入 PATH。`source-root.txt` 决定当前激活源码。
+  # 这样 `[1]` 只需把 `%LOCALAPPDATA%\Xiaoyu\dev-bin` 写入 User PATH 一次，之后 Source Sync/checkout 切换只更新指针。
+  $devBin = Get-XmaUserDevelopmentCommandBin
   New-Item -ItemType Directory -Force -Path $devBin | Out-Null
   # `.cmd` 只做纯 ASCII 跳板；中文 checkout 路径始终由 PowerShell/.NET UTF-8 读取并直接进入 PowerShell 控制台。
   $launcher = @'
@@ -193,7 +204,7 @@ exit $LASTEXITCODE
   foreach ($entry in $userEntries) {
     $normalized = Get-XmaNormalizedPath $entry
     if ($normalized -ieq $normalizedDevBin) { continue }
-    # 同一用户只激活一个 XMA checkout；清掉旧 `.xma/dev-bin` 以及其他 checkout/git-worktree 的 `xma-state/dev-bin`。
+    # 同一用户只保留一个稳定 XMA dev-bin；旧 `.xma/dev-bin` / checkout `xma-state/dev-bin` 只做迁移清理。
     if (Test-XmaDevelopmentCommandPath -Path $entry) { continue }
     $nextUserEntries += $entry
   }
@@ -398,10 +409,8 @@ function Ensure-XmaNativeRuntimeBuildCache {
     [Parameter(Mandatory = $true)]$RustRuntime
   )
 
-  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $ProjectRoot -CargoExecutable $RustRuntime.CargoExe)) {
-    throw 'XMA Native Runtime 构建需要的 Rust crates 尚未完整准备。请先运行 [1]/[9] 完成 cargo fetch。'
-  }
-
+  # 中文说明：日常 `[4]` 必须先走纯本地 fingerprint 快路径。只有源码/工具链真的变化、需要 cargo build 时，
+  # 才执行 `cargo fetch --offline` 完整依赖校验；禁止每次启动 TUI 都先跑一次 Cargo 解析，再重复检查一次。
   $builtExe = Get-XmaNativeRuntimeBuiltExecutable -ProjectRoot $ProjectRoot
   $stampFile = Get-XmaNativeRuntimeBuildStampFile -ProjectRoot $ProjectRoot
   $fingerprint = Get-XmaNativeRuntimeInputFingerprint -ProjectRoot $ProjectRoot -RustRuntime $RustRuntime
@@ -409,6 +418,10 @@ function Ensure-XmaNativeRuntimeBuildCache {
   if ((Test-Path -LiteralPath $builtExe -PathType Leaf) -and $cachedFingerprint -eq $fingerprint) {
     Write-Host '[缓存] Xiaoyu Native Runtime 与当前 Rust 源码/依赖一致；无需重新 cargo build。' -ForegroundColor DarkCyan
     return
+  }
+
+  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $ProjectRoot -CargoExecutable $RustRuntime.CargoExe)) {
+    throw 'XMA Native Runtime 构建需要的 Rust crates 尚未完整准备。请先运行 [1]/[9] 完成 cargo fetch。'
   }
 
   $targetDir = Join-Path $ProjectRoot '.cache\cargo-target'

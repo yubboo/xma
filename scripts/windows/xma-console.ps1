@@ -212,6 +212,7 @@ function Assert-CliJsDependencies {
   Write-Host "[通过] Xiaoyu OpenTUI Runtime 已就绪（Bun $($bunRuntime.Version) + OpenTUI core $core / solid $solidRenderer + Solid $solidJs）。" -ForegroundColor Green
   Write-Host "[Bun] $($bunRuntime.BunExe)" -ForegroundColor DarkGray
   Write-Host "[OpenTUI] $(Join-Path $Root 'node_modules\@opentui')" -ForegroundColor DarkGray
+  return $bunRuntime
 }
 
 function Assert-DesktopJsDependencies {
@@ -282,15 +283,9 @@ function Remove-StaleCliNativeRuns {
 }
 
 function Build-CliNativeRuntime {
-  Assert-CliJsDependencies
   $runtime = Resolve-XmaRustRuntime -ProjectRoot $Root
   if (-not $runtime) { throw '未检测到项目本地 Rust/Cargo。请先运行 [1] 或 [9]。' }
-  Assert-XmaCargoOfflineReady -CargoRuntime ([pscustomobject]@{
-    Cargo = $runtime.CargoExe
-    Rustc = $runtime.RustcExe
-    CargoHome = $runtime.CargoHome
-    RustupHome = $runtime.RustupHome
-  }) -Purpose 'Xiaoyu Terminal Native Runtime'
+  # `Ensure-XmaNativeRuntimeBuildCache` 自己先检查 fingerprint；只有缓存失效才验证 offline crates 并 cargo build。
   Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $runtime
 }
 
@@ -312,19 +307,28 @@ function Stage-CliNativeRuntime {
 
 
 function Start-Cli([string]$WorkspacePath = '') {
+  # 中文说明：`[4]`/全局 `xiaoyu` 的开发态启动不再绕 `pnpm -> tsx -> bun.ts -> bun` 四层进程。
+  # `[1]` 已准备 Workspace 依赖；这里验证一次 Bun/OpenTUI 后直接用项目 Bun 执行源码入口。
+  $bunRuntime = Assert-CliJsDependencies
   Build-CliNativeRuntime
   $nativeExe = Stage-CliNativeRuntime
   $previousNativeRuntime = $env:XIAOYU_NATIVE_RUNTIME
   $env:XIAOYU_NATIVE_RUNTIME = $nativeExe
   try {
-    $cliArguments = @('run','dev:cli')
+    $runtimeRoot = Join-Path $Root 'apps\cli\opentui-runtime'
+    $cliArguments = @('run','--no-install','../src/main.ts')
     if (-not [string]::IsNullOrWhiteSpace($WorkspacePath)) {
       $resolvedWorkspace = (Resolve-Path -LiteralPath $WorkspacePath).Path
-      $cliArguments += @('--', $resolvedWorkspace)
+      $cliArguments += @($resolvedWorkspace)
       Write-Host "[Workspace] $resolvedWorkspace" -ForegroundColor DarkGray
     }
-    Write-Host '[启动] 正在启动 Xiaoyu Terminal / TUI...' -ForegroundColor Cyan
-    Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList $cliArguments
+    Write-Host '[启动] 正在直接启动 Xiaoyu Terminal / TUI（跳过 pnpm/tsx 启动壳）...' -ForegroundColor Cyan
+    Push-Location $runtimeRoot
+    try {
+      Invoke-XmaExternal -FilePath $bunRuntime.BunExe -ArgumentList $cliArguments
+    } finally {
+      Pop-Location
+    }
   } finally {
     if ($null -eq $previousNativeRuntime) { Remove-Item Env:XIAOYU_NATIVE_RUNTIME -ErrorAction SilentlyContinue } else { $env:XIAOYU_NATIVE_RUNTIME = $previousNativeRuntime }
     try { Remove-Item -LiteralPath $nativeExe -Force -ErrorAction Stop } catch {
@@ -377,7 +381,7 @@ function Start-Desktop {
 
 function Invoke-FullCheck {
   Assert-CoreDependencies
-  Assert-CliJsDependencies
+  $null = Assert-CliJsDependencies
   Assert-DesktopJsDependencies
   $cargoRuntime = Resolve-XmaCargoRuntime
   # 中文说明：全量检查必须完全离线；先验证 `[1]` 记录的 Cargo Home 与 crate 缓存，
