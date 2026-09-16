@@ -12,7 +12,7 @@ import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import type { JsonObject } from 'xma-ai'
 import type { SessionRuntimeMetrics } from 'xma-session'
-import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
+import type { PermissionProfileId, ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
 import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
 
@@ -78,6 +78,7 @@ const COMMANDS = [
   { value: 'workspace', label: 'workspace', description: '查看当前工作区' },
   { value: 'provider', label: 'provider', description: '配置模型 / 提供方' },
   { value: 'model', label: 'model', description: '切换当前真实模型' },
+  { value: 'permission', label: 'permission', description: '切换请求批准 / 替我审批 / 完全权限' },
   { value: 'agent', label: 'agent', description: '查看当前智能体' },
   { value: 'clear', label: 'clear', description: '清空当前终端显示' },
   { value: 'exit', label: 'exit', description: '退出 Xiaoyu Terminal' },
@@ -90,6 +91,7 @@ const PALETTE_ACTIONS: readonly TuiMenuItem[] = [
   { value: 'workspace', label: '工作区', description: '查看当前目录', shortcut: '/workspace', keywords: ['workspace', '目录'] },
   { value: 'provider', label: '模型 / 提供方', description: '配置模型与 API Key', shortcut: '/provider', keywords: ['provider', 'model', 'api key', 'deepseek', '模型', '提供方'] },
   { value: 'model', label: '模型切换', description: '切换当前模型', shortcut: '/model', keywords: ['model', 'deepseek', '模型'] },
+  { value: 'permission', label: '权限 / 审批', description: '请求批准 / 替我审批 / 完全权限', shortcut: '/permission', keywords: ['permission', 'approval', '权限', '审批', '完全权限'] },
   { value: 'agent', label: '智能体', description: '查看当前智能体', shortcut: '/agent', keywords: ['agent', '智能体'] },
   { value: 'clear', label: '清空显示', description: '清空会话显示', shortcut: '/clear', keywords: ['clear', '清空'] },
   { value: 'exit', label: '退出 Xiaoyu', description: '返回父终端', shortcut: '/exit', keywords: ['exit', 'quit', '退出'] },
@@ -102,6 +104,7 @@ export interface TerminalUiSettings {
   stars: boolean
   meteors: boolean
   logoGradient: boolean
+  permissionProfile: PermissionProfileId
 }
 
 export const DEFAULT_TERMINAL_UI_SETTINGS: Readonly<TerminalUiSettings> = Object.freeze({
@@ -111,6 +114,7 @@ export const DEFAULT_TERMINAL_UI_SETTINGS: Readonly<TerminalUiSettings> = Object
   stars: true,
   meteors: true,
   logoGradient: true,
+  permissionProfile: 'ask',
 })
 
 function terminalSettingsPath(): string {
@@ -134,6 +138,7 @@ export function loadTerminalUiSettings(): TerminalUiSettings {
       stars: raw.stars !== false,
       meteors: raw.meteors !== false,
       logoGradient: raw.logoGradient !== false,
+      permissionProfile: raw.permissionProfile === 'smart' || raw.permissionProfile === 'full' ? raw.permissionProfile : 'ask',
     }
   } catch {
     return { ...DEFAULT_TERMINAL_UI_SETTINGS }
@@ -253,7 +258,7 @@ function modeColor(mode: TerminalAgentMode): string {
 
 function modeDescription(mode: TerminalAgentMode): string {
   if (mode === 'build') return '完整工具模式'
-  if (mode === 'plan') return '只读规划模式'
+  if (mode === 'plan') return '只读规划 · 无写入/执行工具'
   return '纯模型对话 · legacy'
 }
 
@@ -282,6 +287,8 @@ export interface TerminalBackend {
   readonly reasoningSupported: boolean
   readonly reasoningEffort: TerminalReasoningEffort
   readonly sessionMetrics: SessionRuntimeMetrics
+  readonly permissionProfile: PermissionProfileId
+  setPermissionProfile(profile: PermissionProfileId): void
   listBrainProviderCatalog(): readonly BrainProviderCatalogItem[]
   listBrainProfiles(): readonly TerminalBrainProfileView[]
   saveBrainProfile(input: {

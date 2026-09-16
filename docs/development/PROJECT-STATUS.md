@@ -142,7 +142,8 @@ XMA 当前固定五条参考线：
 - #05 完整 Gate / Manifest / Windows 状态栏实机验收完成后标记已完成。
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
-- `REPAIR-PROMPTS #06` 当前**验证中**：模型配置 SecretInput 在模块拆分后调用 `usePaste` 但未在 `dialogs.tsx` 导入，触发 `ReferenceError`；已修正 hook/helper ownership，并用 Dialog ErrorBoundary + Promise settlement 防止单个弹窗异常拖死整个 TUI。等待 Windows 实机完成首次配置、Ctrl+P 重配、API Key 粘贴与失败后继续操作验收。
+- `REPAIR-PROMPTS #07` 当前**验证中**：已把 Work Mode 与三档 Permission Profile 分离并接入真实 Tool Policy；Plan 保持只读上限；Context 小比例/used-window、DeepSeek 官方余额可见性与 V4 Pro 当前路由计费已修正。等待 Windows 权限切换、Plan+full、真实余额与 context 实机验收。
+- `REPAIR-PROMPTS #06` 已通过用户实机核心路径并标记**已完成**：模型配置 SecretInput 在模块拆分后调用 `usePaste` 但未在 `dialogs.tsx` 导入，触发 `ReferenceError`；已修正 hook/helper ownership，并用 Dialog ErrorBoundary + Promise settlement 防止单个弹窗异常拖死整个 TUI。等待 Windows 实机完成首次配置、Ctrl+P 重配、API Key 粘贴与失败后继续操作验收。
 
 - `REPAIR-PROMPTS #01` 仍处于**验证中**：用户 Windows 实机已确认稳定 User PATH 生效（任意目录 `xiaoyu/xma` 可启动）、Textarea caret 稳定、Prompt 可持续多轮聊天、历史鼠标滚轮与离底后 sticky follow 均已通过；#01 仅保留 `[4]` 二次启动耗时的独立验收项。
 - Transcript 使用单一受限高度 ScrollBox + 正向 spacer 处理短对话贴底；长内容不再使用 `justifyContent:flex-end`/负向 overflow。用户手动离底后的 sticky 行为继续交给 OpenTUI 原生 ScrollBox。

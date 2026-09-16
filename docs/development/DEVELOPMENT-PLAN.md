@@ -156,7 +156,7 @@ Stage P6  Browser + Computer + Artifact capabilities
 - parallel-safe / exclusive scheduling；
 - structured ToolResult；
 - Policy pipeline；
-- Permission Profile：`ask / smart / full`（请求批准 / 帮我批准 / 完全访问），统一归 Runtime/App Protocol；
+- Permission Profile：`ask / smart / full`（请求批准 / 替我审批 / 完全权限），统一归 Runtime/App Protocol；
 - Approval：本次 / 本 Session / 拒绝；批准挂起的 Tool Call 后继续同一 Turn，拒绝作为 Observation 回同一模型；
 - Native Capability request；
 - Rust Native Protocol 扩展。

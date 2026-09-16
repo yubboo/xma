@@ -16,8 +16,8 @@ export type PermissionProfileId = 'ask' | 'smart' | 'full'
 
 export const PERMISSION_PROFILE_LABELS: Readonly<Record<PermissionProfileId, string>> = Object.freeze({
   ask: '请求批准',
-  smart: '帮我批准',
-  full: '完全访问',
+  smart: '替我审批',
+  full: '完全权限',
 })
 
 export interface ToolPolicyRequest {
@@ -56,6 +56,58 @@ export class DefaultToolPolicy implements ToolPolicy {
       return { action: 'allow', reason: `Standard policy allows ${request.effect} tool without approval.` }
     }
     return { action: 'ask', reason: `Standard policy requires approval for ${request.effect} tool.` }
+  }
+}
+
+/**
+ * 产品级三档权限策略。它只决定 TypeScript Policy 层是否需要 Approval；
+ * Workspace/Security Guard 与 Rust Native Kernel 仍拥有最终单调拒绝权。
+ */
+export class PermissionProfileToolPolicy implements ToolPolicy {
+  constructor(readonly profile: PermissionProfileId = 'ask') {}
+
+  decide(request: ToolPolicyRequest): ToolPolicyDecision {
+    if (this.profile === 'full') {
+      return { action: 'allow', reason: `Full permission profile auto-approves ${request.effect} inside the current frozen ToolPlan.` }
+    }
+
+    if (request.effect === 'read' || request.effect === 'control') {
+      return { action: 'allow', reason: `${this.profile} permission profile allows ${request.effect} without approval.` }
+    }
+
+    if (this.profile === 'smart') {
+      if (request.effect === 'write' && request.workspaceAccess?.permission === 'write') {
+        return { action: 'allow', reason: 'Smart permission profile auto-approves workspace-scoped writes.' }
+      }
+      return { action: 'ask', reason: `Smart permission profile requires approval for ${request.effect} outside routine workspace writes.` }
+    }
+
+    return { action: 'ask', reason: `Ask permission profile requires approval for ${request.effect} tool.` }
+  }
+}
+
+
+/**
+ * Host-neutral Permission Profile 状态容器。Host 只负责接收用户选择；
+ * 每个 Turn 通过 createPolicy() 获取不可变策略快照，避免执行中途被 UI 改写。
+ */
+export class PermissionProfileController {
+  #profile: PermissionProfileId
+
+  constructor(initial: PermissionProfileId = 'ask') {
+    this.#profile = initial
+  }
+
+  get current(): PermissionProfileId { return this.#profile }
+
+  set(profile: PermissionProfileId): void {
+    this.#profile = profile
+  }
+
+  label(): string { return PERMISSION_PROFILE_LABELS[this.#profile] }
+
+  createPolicy(): PermissionProfileToolPolicy {
+    return new PermissionProfileToolPolicy(this.#profile)
   }
 }
 

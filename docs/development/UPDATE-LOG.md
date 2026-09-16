@@ -1,5 +1,16 @@
 # XMA Update Log
 
+## 85 · 真实模型身份 / Work Mode / 三档 Permission / Context 与账户指标一致性
+
+- 修复 Terminal Permission 长期硬编码 `ask`：新增 Host-neutral `PermissionProfileController`，`ask / smart / full` 进入真实 ToolRouter Policy；每个 Turn 冻结 Policy 快照。
+- Work Mode 与 Permission 分离：Tab 只切 Build/Plan/Compose；Plan ToolPlan 保持 read-only ceiling，`full` 也不能恢复 write/execute Tool。
+- Terminal 新增 `/permission` 与 Ctrl+P 权限入口并持久化，状态栏权限来自同一 Runtime state；产品文案统一“请求批准 / 替我审批 / 完全权限”。
+- Context 显示改为真实同模型 input/window，并保留 sub-percent 精度；例如 1,791/1M 显示约 0.2%，切模后不会混用旧 usage。
+- DeepSeek 官方 telemetry 保持 1M context 与真实 `/user/balance`；按 2026-09-16 官方价格页更新 `deepseek-v4-pro` 在 2026-09-14 04:00 UTC 后路由 V4.1 Flash 并按 Flash 价格计费的估算语义。
+- 窄/中等 Terminal 状态栏优先保留 context、真实账户/套餐与权限；Xiaoyu 明确锁定为 Agent/Product identity，不形成隐藏第二模型。
+- 当前状态：验证中，等待 Windows 权限策略、Plan+full、真实余额/context E2E。
+- 自动验证：#07 相关 Node 测试 54/54 PASS，Runtime updater 2/2 PASS，9 项 Gate PASS；Source Manifest 235 files。
+
 ## 84 · Provider Setup usePaste 模块归属与 Modal 存活性修复
 
 - 修复 `ui/dialogs.tsx` SecretInput 在运行时调用未导入 `usePaste/decodePasteBytes` 导致模型配置失败的问题；hook/helper 现在由使用它们的子模块自己拥有。
@@ -849,7 +860,7 @@
 - 日期：2026-09-16
 - 目的：在正式进入下一阶段 Agent Engine 开发前，锁定“顶级模型保持完整行动决策权、权限完全归用户、CLI/Desktop/Web/Server 只是一套 Runtime 的不同 UI/部署 Host”三条产品底线，避免后续为了安全或 UI 便利把 XMA 做成固定流程助手或三套平行系统。
 - Model Autonomy：当前真实 Provider Model 负责理解目标、规划下一步、选择 Tool、根据 Observation 自纠、决定验证与完成条件；Skill/专业 Agent/Workflow 默认只增强知识、loadout 与能力，不得用隐藏 Planner、固定 A→B→C 或缩水 Tool Surface 取代旗舰模型智力。缺少行动能力时优先补 Tool/Plugin/Native capability，不把可自动化工作默认甩回用户。
-- Permission Profile：统一三档 `ask / smart / full`，产品文案为“请求批准 / 帮我批准 / 完全访问”。权限只 gate 文件/进程/网络/系统等副作用，不限制模型思考。`full` 仍受 OS 权限、Rust hard invariant、Secret 隔离和当前 Host 真实 capability 约束。
+- Permission Profile：统一三档 `ask / smart / full`，产品文案为“请求批准 / 替我审批 / 完全权限”。权限只 gate 文件/进程/网络/系统等副作用，不限制模型思考。`full` 仍受 OS 权限、Rust hard invariant、Secret 隔离和当前 Host 真实 capability 约束。
 - Approval lifecycle：需要批准的 Tool Call 在同一 active Turn 中挂起；Host 收集 `allow-once / allow-session / deny` 后先 durable audit，再继续执行或把 deny 作为结构化 Observation 返回同一模型。批准后不得要求用户重新发送“继续”；拒绝也不默认结束任务，模型应先寻找缩小 scope、替代 Tool、portable/local 等可行路径。
 - Multi-Host：Terminal、Desktop、Web、Server 的 Agent/Session/Provider/Tool/Permission/Approval 只允许实现一次，通过 App Protocol/Runtime Event 消费。Host 只负责输入、渲染、交互与部署环境 capability bridge。Web 连接云 Server 时 Native 副作用作用于服务器；未来控制用户本机必须使用显式 Remote Node/Device capability，浏览器不能绕过 OS 安全边界。
 - 文档：同步更新 `AGENTS.md`、`PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`CODEMAP.md` 与 `README.md`；大路线不变，下一步仍正式进入 Pi-first 的 Agent Engine 行为级开发，但实现必须从第一天保持 Host-neutral 与用户权限续跑语义。

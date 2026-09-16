@@ -6,6 +6,12 @@ XMA 的核心理念是 **Model is replaceable. Agent is ours.** Provider 层必�
 
 当前 0.1.0 已落地第一版 Provider 平台 Contract：`packages/xma-ai/src/provider/provider.ts` 负责非 Secret Profile、Credentials、Capabilities、Catalog、Registry、Probe 与统一错误分类；`packages/xma-ai/src/openai-compatible.ts` 已实现真实 HTTP/SSE 的 OpenAI-compatible Chat Completions transport family；`plugins/deepseek/catalog.ts` 把用户看到的真实 Provider 品牌与底层协议 Adapter 分离。首个品牌产品入口是 **DeepSeek Official**，使用官方 endpoint、OS Credentials 与动态 `/models`；它复用 OpenAI-compatible transport 的前提是目标官方 API 实际兼容，而不是因为品牌名相似。当前本地协议测试仍**不能**替代 DeepSeek 外部真实凭据 E2E，未取得真实 E2E 前不得宣称 Product Ready。
 
+## 1.0.1 Xiaoyu Agent identity ≠ Model identity（锁死）
+
+`Xiaoyu` 是 XMA 的产品/Agent identity，不是隐藏模型名。真实推理请求的唯一模型身份是用户当前 Profile 选择的 `providerId + profileId + modelId`；切换 Provider/Model 后，后续 `step/start.provider` 必须原样记录该真实身份。Skill、Agent、Terminal、Desktop、Web 都不得把用户模型替换成内部“小鱼模型”。
+
+模型上下文、usage、费用、账户余额/套餐必须来自 Provider Telemetry / 真实响应：已知官方模型可由品牌插件提供 context window 与价格元数据；未知 Provider/自定义 endpoint 没有可信元数据时必须显示 `—`，不能猜。Context 占用使用最近一次**同一模型真实请求的 input tokens / 该模型 context window**，小比例不得被显示成假 `0%`。
+
 ## 1.1 `xma-ai` 长期边界
 
 Model/Provider/streaming 基础抽象已经归属 `packages/xma-ai/`；具体品牌实现按插件本体聚合，DeepSeek 位于 `plugins/deepseek/`。Platform Skeleton 只完成 ownership 迁移，`xma-ai` 后续仍要以 **Pi AI** 为第一参考吸收成熟多 Provider、streaming 与统一消息/工具事件语义，同时保留 XMA 自己的 Provider Profile、OS Credential、Provider/Model Truth Contract、Brain Ready Probe 与品牌身份/协议 Adapter 分层。

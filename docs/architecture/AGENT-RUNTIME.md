@@ -237,10 +237,12 @@ XMA 要把四个概念分开：
 | Runtime id | 产品文案 | 语义 |
 | --- | --- | --- |
 | `ask` | 请求批准 | 需要副作用的 Tool Call 按 Policy 请求用户批准；允许后继续当前调用 |
-| `smart` | 帮我批准 | Workspace/任务范围内的常规低风险动作可统一自动批准；跨域/系统级/敏感动作仍询问 |
-| `full` | 完全访问 | 对当前 Host 已暴露且用户明确授权的能力自动批准，适合长时间无人值守任务 |
+| `smart` | 替我审批 | Workspace/任务范围内的常规低风险动作可统一自动批准；跨域/系统级/敏感动作仍询问 |
+| `full` | 完全权限 | 对当前 Host 已暴露且用户明确授权的能力自动批准，适合长时间无人值守任务 |
 
 Permission Profile 是 Runtime/App Protocol Contract。Terminal 可以在设置/命令面板选择，Desktop/Web 可以在输入 Dock 或权限面板选择，但它们必须修改同一个 Runtime 状态，不能各自维护隐藏权限。
+
+Work Mode 与 Permission Profile 不互相替代：Build 暴露当前完整 Tool Surface；Plan 只暴露只读 Tool；Compose legacy 不暴露 Workspace Tool。Permission Profile 只在这个 ToolPlan 内决定是否需要 Approval，所以 Plan + full 仍然只能读，不能写/执行。每个 Turn 开始时冻结 Permission Policy 快照，后续 UI 修改只影响下一 Turn。
 
 ### 7.2 Approval 续跑语义
 

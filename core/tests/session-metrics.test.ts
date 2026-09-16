@@ -108,3 +108,22 @@ test('Session metrics never invent context or cost when Provider telemetry is ab
   assert.equal(metrics.sessionCost.amount, undefined)
   assert.equal(metrics.account, undefined)
 })
+
+
+test('context never combines old-model usage with a newly selected model window', () => {
+  const metrics = projectSessionRuntimeMetrics(fixture(), {
+    activeIdentity: { provider: 'deepseek', profile: 'deepseek-main', model: 'deepseek-v4-pro', displayName: 'DeepSeek' },
+    billingSource: () => ({ kind: 'api', label: 'API' }),
+    modelDescriptor: identity => ({
+      id: identity.model,
+      contextWindow: identity.model === 'deepseek-v4-pro' ? 1_000_000 : 4_000,
+      source: 'static',
+      fetchedAt: '2026-09-16T00:00:00.000Z',
+    }),
+  })
+
+  assert.equal(metrics.context.identity?.model, 'deepseek-v4-pro')
+  assert.equal(metrics.context.windowTokens, 1_000_000)
+  assert.equal(metrics.context.usedTokens, undefined)
+  assert.equal(metrics.context.ratio, undefined)
+})

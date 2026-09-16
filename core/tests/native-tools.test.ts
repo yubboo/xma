@@ -19,7 +19,7 @@ import type {
   NativeWriteTextRequest,
   NativeWriteTextResult,
 } from '../src/native.ts'
-import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
+import { PermissionProfileToolPolicy, StaticToolApprovalProvider } from '../src/tool/policy.ts'
 import { ToolRegistry } from '../src/tool/router.ts'
 import { registerNativeTools } from 'xma-plugin-native-tools'
 
@@ -116,11 +116,19 @@ test('native read requests only filesystem.read scope and never uses Approval in
   assert.equal(client.reads[0]?.path, 'read.txt')
 })
 
-test('native Plan toolset can expose read without write', () => {
+test('native Plan toolset stays read-only even under full permission profile', async () => {
   const client = new FakeNativeClient()
   const registry = new ToolRegistry()
   registerNativeTools(registry, { client, workspaceId: 'workspace-main', allowedRoots: ['C:/workspace'], allowWrite: false })
-  assert.deepEqual(registry.createPlan().modelVisibleSpecs().map(item => item.name), ['native.fs.read_text'])
+  const plan = registry.createPlan()
+  assert.deepEqual(plan.modelVisibleSpecs().map(item => item.name), ['native.fs.read_text'])
+  const hiddenWrite = await plan.createRouter({ policy: new PermissionProfileToolPolicy('full') }).dispatch({
+    callId: 'plan-write',
+    name: 'native.fs.write_text',
+    arguments: { path: 'forbidden.txt', content: 'nope' },
+  }, toolContext)
+  assert.equal(hiddenWrite.result.code, 'TOOL_NOT_FOUND')
+  assert.equal(client.writes.length, 0)
 })
 
 test('native write fails closed before Capability issuance, then runs only after explicit Approval', async () => {

@@ -24,6 +24,7 @@ const DEEPSEEK_PRICE_SOURCE = Object.freeze({
   id: 'deepseek-api-pricing-2026-09-16',
   label: 'DeepSeek 官方 API 模型与价格',
   url: 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing/',
+  effectiveAt: '2026-09-10T04:00:00Z',
   checkedAt: '2026-09-16T00:00:00Z',
 })
 
@@ -56,11 +57,13 @@ function v4ProLegacyRates(timestamp: string): DeepSeekRates {
 
 function billedModel(model: string, timestamp: string): 'flash' | 'v4-pro' | undefined {
   if (model === 'deepseek-flash' || model === 'deepseek-v4-flash' || model === 'deepseek-v4-flash-vision-exp') return 'flash'
-  // DeepSeek's current pricing table and 2026-09-10 change log still publish
-  // V4 Pro as a separately billed API model. Do not infer a silent reroute from
-  // stale/conflicting prose; if the official table changes, update this source.
-  if (model === 'deepseek-v4-pro') return 'v4-pro'
-  return undefined
+  if (model !== 'deepseek-v4-pro') return undefined
+
+  // DeepSeek 官方当前价格页说明：2026-09-14 12:00（UTC+8）起，
+  // deepseek-v4-pro 请求路由到 V4.1 Flash，并按 Flash 价格计费。
+  const at = Date.parse(timestamp)
+  const flashRoutingAt = Date.parse('2026-09-14T04:00:00Z')
+  return Number.isFinite(at) && at >= flashRoutingAt ? 'flash' : 'v4-pro'
 }
 
 function modelDescriptor(model: string): ModelDescriptor | undefined {

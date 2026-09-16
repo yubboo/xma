@@ -203,6 +203,11 @@ function sameProfile(account: ProviderAccountSnapshot | undefined, identity: Mod
   return identity.profile === undefined || account.profileId === identity.profile
 }
 
+function sameIdentity(left: ModelIdentity | undefined, right: ModelIdentity | undefined): boolean {
+  if (!left || !right) return false
+  return left.provider === right.provider && left.profile === right.profile && left.model === right.model
+}
+
 export function projectSessionRuntimeMetrics(
   snapshot: SessionSnapshot,
   options: SessionMetricsProjectionOptions = {},
@@ -236,13 +241,17 @@ export function projectSessionRuntimeMetrics(
   const billing = identity ? options.billingSource?.(identity) ?? { kind: 'unknown' as const } : { kind: 'unknown' as const }
 
   const context: SessionContextMetrics = {}
-  if (latestUsage?.identity && latestUsage.event.inputTokens !== undefined) {
-    context.usedTokens = latestUsage.event.inputTokens
-    context.identity = structuredClone(latestUsage.identity)
-    const descriptor = options.modelDescriptor?.(latestUsage.identity)
+  const contextIdentity = identity ?? latestUsage?.identity
+  if (contextIdentity) {
+    context.identity = structuredClone(contextIdentity)
+    const descriptor = options.modelDescriptor?.(contextIdentity)
     if (descriptor?.contextWindow !== undefined && descriptor.contextWindow > 0) {
       context.windowTokens = descriptor.contextWindow
-      context.ratio = latestUsage.event.inputTokens / descriptor.contextWindow
+    }
+    // 切换模型后，在新模型尚未产生真实 usage 前不能拿旧模型 prompt tokens 配新模型窗口。
+    if (latestUsage?.identity && latestUsage.event.inputTokens !== undefined && sameIdentity(latestUsage.identity, contextIdentity)) {
+      context.usedTokens = latestUsage.event.inputTokens
+      if (context.windowTokens !== undefined) context.ratio = latestUsage.event.inputTokens / context.windowTokens
     }
   }
 

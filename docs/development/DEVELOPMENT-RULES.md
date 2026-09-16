@@ -104,7 +104,9 @@ Terminal OpenTUI 额外遵循模块化 ownership：父 `app.tsx` 只负责协调
 - 当前真实 Provider Model 自己决定任务分解、下一步、Tool 选择、重试、验证和完成条件；Runtime/Host 不得用隐藏 Planner、关键词路由或固定领域流程替模型做正常任务判断。
 - Skill/Agent 是增强层，不得默认裁掉旗舰模型原本可用的 Tool Surface；只有用户显式选择受限模式、Provider capability 不支持或统一 Policy/Security 明确限制时才可收窄。
 - 遇到“模型会做但没有手”的问题，优先补 Tool/Plugin/Native capability，而不是在 Prompt 里要求用户手工完成可自动化步骤。
-- 权限三档 canonical id 固定为 `ask / smart / full`，UI 文案分别为“请求批准 / 帮我批准 / 完全访问”；CLI、Desktop、Web 只能渲染不同 UI，必须消费同一 Permission Profile / Approval Contract。
+- 权限三档 canonical id 固定为 `ask / smart / full`，UI 文案分别为“请求批准 / 替我审批 / 完全权限”；CLI、Desktop、Web 只能渲染不同 UI，必须消费同一 Permission Profile / Approval Contract。
+- Work Mode 与 Permission Profile 必须分离：Build/Plan/Compose 只改变冻结 ToolPlan，权限只改变已暴露 Tool 的 Approval Policy。Plan 是 read-only ceiling，`full` 不能把 write/execute Tool 重新加回 Plan。
+- Xiaoyu 只代表 Agent/Product identity；模型请求必须使用用户真实配置的 Provider/Profile/Model。任何隐藏 reroute、降级模型、内部 Xiaoyu Model 都视为架构违规。
 - Approval 请求必须挂起当前 Tool Call；允许后自动恢复同一 Turn，不得把批准动作变成一次任务终止。拒绝必须作为结构化 Observation 回同一个模型，让模型尝试替代方案；不要直接把问题甩回用户。
 - `full` 只表示对当前 Host 已暴露、用户已明确授权的能力自动批准，不表示绕过 OS 权限、Secret 边界、Rust hard invariant 或平台不存在的 capability。
 

@@ -84,3 +84,47 @@ test('unknown telemetry stays unknown instead of rendering fake zeros', () => {
   assert.match(text, /上下文 —/)
   assert.doesNotMatch(text, /80%|0\.0000|12\.93/)
 })
+
+
+test('context status preserves sub-percent truth and shows used/window capacity', () => {
+  const metrics = baseMetrics()
+  metrics.context = { usedTokens: 1_791, windowTokens: 1_000_000, ratio: 1_791 / 1_000_000 }
+  const text = sessionStatusItems(metrics, 110).join(' | ')
+  assert.match(text, /上下文 0\.2%/)
+  assert.match(text, /1,791\/1\.0m/)
+  assert.doesNotMatch(text, /上下文 0%/)
+})
+
+test('medium-width API status keeps real balance visible', () => {
+  const metrics = baseMetrics()
+  metrics.billing = { kind: 'api', label: 'API' }
+  metrics.account = {
+    providerId: 'provider-x',
+    profileId: 'profile-x',
+    billing: { kind: 'api', label: 'API' },
+    checkedAt: '2026-09-16T00:00:00.000Z',
+    available: true,
+    balances: [{ currency: 'CNY', total: '12.34' }],
+  }
+  const text = sessionStatusItems(metrics, 110).join(' | ')
+  assert.match(text, /余额 ¥12\.34/)
+})
+
+
+test('compact-width status prioritizes real account/context/permission instead of clipping them behind secondary counters', () => {
+  const metrics = baseMetrics()
+  metrics.billing = { kind: 'api', label: 'API' }
+  metrics.context = { usedTokens: 1_791, windowTokens: 1_000_000, ratio: 1_791 / 1_000_000 }
+  metrics.account = {
+    providerId: 'provider-x',
+    profileId: 'profile-x',
+    billing: { kind: 'api', label: 'API' },
+    checkedAt: '2026-09-16T00:00:00.000Z',
+    available: true,
+    balances: [{ currency: 'CNY', total: '8.88' }],
+  }
+  const text = sessionStatusItems(metrics, 80).join(' | ')
+  assert.match(text, /上下文 0\.2% · 1,791\/1\.0m/)
+  assert.match(text, /余额 ¥8\.88/)
+  assert.match(text, /权限 请求批准/)
+})

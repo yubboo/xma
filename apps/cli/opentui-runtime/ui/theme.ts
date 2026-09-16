@@ -22,7 +22,7 @@ export const COLOR = {
 
 export const MODE_META: Record<TerminalAgentMode, { label: string; color: string; description: string }> = {
   build: { label: 'Build', color: COLOR.orange, description: '完整工具模式' },
-  plan: { label: 'Plan', color: COLOR.green, description: '只读规划模式' },
+  plan: { label: 'Plan', color: COLOR.green, description: '只读规划 · 无写入/执行工具' },
   compose: { label: 'Compose', color: COLOR.blue, description: '纯模型对话 · legacy' },
 }
 

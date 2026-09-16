@@ -8,12 +8,14 @@
 import type { RuntimeLiveEvent, TurnRunResult } from './runtime.ts'
 import type { SessionRuntimeMetrics, SessionStat } from 'xma-session'
 import type { WorkspaceDescriptor, WorkspacePermission } from './workspace.ts'
+import type { PermissionProfileId } from 'xma-tools'
 
 export type AppCommand =
   | { type: 'session/create'; agentId: string; workspaceId?: string }
   | { type: 'session/resume'; sessionId: string }
   | { type: 'session/list' }
   | { type: 'session/metrics'; sessionId: string }
+  | { type: 'session/permission/set'; sessionId: string; profile: PermissionProfileId }
   | { type: 'workspace/list' }
   | { type: 'workspace/access/grant'; sessionId: string; workspaceId: string; permissions: readonly WorkspacePermission[]; reason: string }
   | { type: 'workspace/access/revoke'; sessionId: string; grantId: string; reason: string }
@@ -25,6 +27,7 @@ export type AppCommandResult =
   | { type: 'session/resumed'; sessionId: string }
   | { type: 'session/list'; sessions: readonly SessionStat[] }
   | { type: 'session/metrics'; metrics: SessionRuntimeMetrics }
+  | { type: 'session/permission/set'; sessionId: string; profile: PermissionProfileId }
   | { type: 'workspace/list'; workspaces: readonly WorkspaceDescriptor[] }
   | { type: 'workspace/access/granted'; sessionId: string; grantId: string; workspaceId: string; permissions: readonly WorkspacePermission[] }
   | { type: 'workspace/access/revoked'; sessionId: string; grantId: string }

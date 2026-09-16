@@ -74,7 +74,7 @@ Rust Kernel 不接受“TypeScript 已经检查过路径”作为安全依据。
 - `allow-session` 只保存在当前 `AgentSession` 进程生命周期内，不写进 Session 持久授权；Session 恢复后默认重新询问；
 - Approval 决策作为 durable `tool/approval` 事件先于 `tool/result` 写入，用于审计。
 
-未来 UI 的“完整访问/请求批准/帮我批准”等交互只能映射到这些 Contract，不能让 UI 直接执行 Node fs/child_process 绕过 ToolRouter。
+未来 UI 的“完整访问/请求批准/替我审批”等交互只能映射到这些 Contract，不能让 UI 直接执行 Node fs/child_process 绕过 ToolRouter。
 
 ## 7. 下一步
 

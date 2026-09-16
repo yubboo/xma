@@ -95,15 +95,22 @@ test('DeepSeek telemetry parses official balance shape through a local HTTP mock
 
     const descriptor = telemetry.modelDescriptor(profile, 'deepseek-v4-pro')
     assert.equal(descriptor?.contextWindow, 1_000_000)
+    const legacyEstimate = telemetry.estimateCost(
+      profile,
+      { provider: 'deepseek', profile: profile.id, model: 'deepseek-v4-pro' },
+      { inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 },
+      '2026-09-11T07:00:00.000Z',
+    )
+    assert.equal(legacyEstimate?.amount, 9)
     const estimate = telemetry.estimateCost(
       profile,
       { provider: 'deepseek', profile: profile.id, model: 'deepseek-v4-pro' },
       { inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 0 },
       '2026-09-16T07:00:00.000Z',
     )
-    // 07:00 UTC weekday is current official peak window; V4 Pro stays on V4 Pro billing.
+    // 2026-09-14 04:00 UTC 起官方把 deepseek-v4-pro 路由到 V4.1 Flash，并按 Flash 价格计费。
     assert.equal(estimate?.currency, 'CNY')
-    assert.equal(estimate?.amount, 9)
+    assert.equal(estimate?.amount, 2)
     assert.equal(estimate?.precision, 'estimated')
   } finally {
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))

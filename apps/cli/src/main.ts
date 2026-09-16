@@ -19,7 +19,7 @@ import { ContextRegistry, WorkspaceRegistry } from 'xma-context'
 import { NativeCredentialStore, StdioNativeClient, type NativeRuntimeStatus } from 'xma-native'
 import type { Disposer } from 'xma-plugin'
 import { JsonlSessionStore, projectSessionRuntimeMetrics, type SessionRuntimeMetrics } from 'xma-session'
-import { PERMISSION_PROFILE_LABELS, ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
+import { PermissionProfileController, ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
 import { SkillLoader, SkillRegistry, createAgentSkillContextSource } from 'xma-core-compat'
 import {
   CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -293,7 +293,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   let accountSnapshot: ProviderAccountSnapshot | undefined
   let accountRefreshAt = 0
   let accountRefreshPromise: Promise<void> | undefined
-  const permissionProfile = 'ask' as const
+  const permissions = new PermissionProfileController('ask')
 
   const refreshCredentialState = async (): Promise<void> => {
     osCredentialReadiness.clear()
@@ -356,7 +356,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       return profile ? providerTelemetry.estimateCost(profile, identity, usage, timestamp) : undefined
     },
     ...(accountSnapshot ? { account: accountSnapshot } : {}),
-    permission: { id: permissionProfile, label: PERMISSION_PROFILE_LABELS[permissionProfile] },
+    permission: { id: permissions.current, label: permissions.label() },
   })
   const refreshAccountSnapshot = async (force = false): Promise<void> => {
     const profile = activeProfile ? providerRegistry.getProfile(activeProfile.id) : undefined
@@ -443,6 +443,12 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     },
     get sessionMetrics() {
       return sessionMetrics()
+    },
+    get permissionProfile() {
+      return permissions.current
+    },
+    setPermissionProfile(profile) {
+      permissions.set(profile)
     },
     get reasoningSupported() {
       return activeProfile?.options?.reasoning === true
@@ -606,7 +612,8 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const dispose = runtime.subscribe(listener)
       try {
         const modeTools = mode === 'build' ? buildTools : mode === 'plan' ? planTools : composeTools
-        await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals })
+        const policy = permissions.createPolicy()
+        await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals, policy })
       } finally {
         dispose()
         void refreshAccountSnapshot(true)

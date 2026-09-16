@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { StaticToolApprovalProvider } from '../src/tool/policy.ts'
+import { PermissionProfileToolPolicy, StaticToolApprovalProvider } from '../src/tool/policy.ts'
 import { ToolApprovalSessionCache, ToolRegistry } from '../src/tool/router.ts'
 import type { ToolContext } from '../src/tool/router.ts'
 
@@ -20,6 +20,63 @@ function context(): ToolContext {
     signal: new AbortController().signal,
   }
 }
+
+
+test('Permission profiles produce real Tool Policy decisions instead of UI-only labels', async () => {
+  const writeRequest = {
+    toolName: 'fixture.write',
+    effect: 'write' as const,
+    arguments: {},
+    runId: 'run',
+    callId: 'call',
+    workspaceAccess: { workspaceId: 'workspace-main', permission: 'write' as const },
+  }
+  const executeRequest = { toolName: 'fixture.exec', effect: 'execute' as const, arguments: {}, runId: 'run', callId: 'call-exec' }
+
+  assert.equal((await new PermissionProfileToolPolicy('ask').decide(writeRequest)).action, 'ask')
+  assert.equal((await new PermissionProfileToolPolicy('smart').decide(writeRequest)).action, 'allow')
+  assert.equal((await new PermissionProfileToolPolicy('smart').decide(executeRequest)).action, 'ask')
+  assert.equal((await new PermissionProfileToolPolicy('full').decide(executeRequest)).action, 'allow')
+})
+
+
+test('Permission profiles change real Approval execution while full still cannot bypass Security Guard', async () => {
+  const registry = new ToolRegistry()
+  let executions = 0
+  registry.register({
+    spec: { name: 'fixture.write.scoped', description: 'Scoped write fixture.', inputSchema: { type: 'object' } },
+    effect: 'write',
+    workspaceAccess: () => ({ workspaceId: 'workspace-main', permission: 'write' }),
+    async execute() {
+      executions += 1
+      return { ok: true, code: 'OK', content: 'written' }
+    },
+  })
+  const ctx: ToolContext = {
+    ...context(),
+    workspace: { workspaceId: 'workspace-main', ownerAgentId: 'xiaoyu', name: 'Main', root: '/workspace', allowedRoots: ['/workspace'], descriptorDigest: 'fixture-digest' },
+  }
+  let approvals = 0
+  const approval = new StaticToolApprovalProvider(() => { approvals += 1; return 'allow-once' })
+  const call = { callId: 'permission-call', name: 'fixture.write.scoped', arguments: {} }
+
+  const ask = await registry.createPlan().createRouter({ policy: new PermissionProfileToolPolicy('ask'), approvals: approval }).dispatch(call, ctx)
+  assert.equal(ask.result.code, 'OK')
+  assert.equal(approvals, 1)
+
+  const smart = await registry.createPlan().createRouter({ policy: new PermissionProfileToolPolicy('smart'), approvals: approval }).dispatch({ ...call, callId: 'permission-call-smart' }, ctx)
+  assert.equal(smart.result.code, 'OK')
+  assert.equal(approvals, 1)
+
+  const fullBlocked = await registry.createPlan().createRouter({
+    policy: new PermissionProfileToolPolicy('full'),
+    approvals: approval,
+    guards: [{ id: 'fixture.guard', check: () => ({ allow: false as const, reason: 'guard remains authoritative' }) }],
+  }).dispatch({ ...call, callId: 'permission-call-full' }, ctx)
+  assert.equal(fullBlocked.result.code, 'TOOL_SECURITY_DENIED')
+  assert.equal(approvals, 1)
+  assert.equal(executions, 2)
+})
 
 test('Frozen ToolPlan keeps the exact runtime paired with the schemas advertised for that step', async () => {
   const registry = new ToolRegistry()

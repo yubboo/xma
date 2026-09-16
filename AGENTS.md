@@ -58,7 +58,9 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - **Skill / Specialist / Workflow 的默认职责是增强，不是降智。** Skill 提供领域知识、方法、边界和验收；专业 Agent 提供 loadout/context/tool capability；除用户显式选择只读/受限模式、Provider capability 不支持或安全 Policy 明确禁止外，不得因为“用了某个 Skill/专家”就缩小模型本来可用的 Tool Surface。
 - **Tool Surface 是模型的行动能力。** 模型常用但当前缺失的文件、进程、Shell/PTY、Git、网络、Browser、MCP、Archive 等能力，应优先通过 `xma-tools` / Plugin / Native capability 补齐；不得把“Framework 没给手”包装成“模型不会做”，再把本可自动完成的步骤甩回用户手工执行。
 - **Permission 决定副作用是否允许，不决定模型能不能思考。** 用户对文件/进程/网络/系统等真实副作用拥有最终控制权；Policy/Approval/Rust Kernel 只能 gate/约束执行，不能把已授权能力从模型面前隐藏成假不可用。
-- XMA 产品权限模式统一为三档稳定语义：`ask`（**请求批准**）、`smart`（**帮我批准**）、`full`（**完全访问**）。Host 可以有不同 UI，但必须映射到同一 Runtime Permission Profile，禁止 CLI/Desktop/Web 各写一套权限逻辑。
+- XMA 产品权限模式统一为三档稳定语义：`ask`（**请求批准**）、`smart`（**替我审批**）、`full`（**完全权限**）。Host 可以有不同 UI，但必须映射到同一 Runtime Permission Profile，禁止 CLI/Desktop/Web 各写一套权限逻辑。
+- **Work Mode 与 Permission Profile 是正交状态。** `Build / Plan / Compose` 决定当前模型可见 ToolPlan；`ask / smart / full` 决定已暴露 Tool 的 Approval 策略。Tab 只切 Work Mode，不得暗改用户权限；Plan 永远以只读 ToolPlan 作为能力上限，即使 `full` 也不能获得写入/执行 Tool。
+- **Xiaoyu 不是第二模型。** Xiaoyu 是产品/Agent identity；每个 Step 的唯一推理模型必须是用户当前真实选择的 `providerId + profileId + modelId`。禁止隐藏换模、代理模型代跑或把 `Xiaoyu` 当 Model ID。
   - `ask`：需要副作用的调用按 Policy 请求用户批准；用户批准后必须在**同一 Turn / 同一任务**继续执行，不得要求用户重新发送“继续”。
   - `smart`：当前 Workspace/任务范围内的常规低风险动作可按统一 Policy 自动批准；跨 Workspace、系统级、敏感凭据或显著扩大影响面的动作仍请求用户确认。该模式是权限策略，不是隐藏 Planner。
   - `full`：对当前 Host/Workspace 已暴露且用户明确授予的能力自动批准，使模型可以连续完成长任务；仍受操作系统真实权限、Rust hard safety invariant、Secret 隔离和不可伪造的 capability 边界约束。

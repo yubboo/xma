@@ -13,7 +13,7 @@ import {
 } from '@opentui/core'
 import { render, useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { ErrorBoundary, For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
-import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
+import { PERMISSION_PROFILE_LABELS, type PermissionProfileId, type ToolApprovalDecision, type ToolApprovalRequest } from 'xma-tools'
 import {
   applyTerminalRunEvent,
   commandPaletteOptions,
@@ -409,7 +409,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const modelDescription = (providerId: string, model: string): string => {
     if (providerId !== 'deepseek') return ''
     if (model === 'deepseek-flash') return 'V4.1 Flash · 正式版 · 多模态 / 高吞吐'
-    if (model === 'deepseek-v4-pro') return 'V4 Pro 0813 · 正式版 · Agent / 复杂任务'
+    if (model === 'deepseek-v4-pro') return 'V4 Pro API ID · 官方当前路由至 V4.1 Flash · 1M 上下文'
     return 'DeepSeek API 动态发现模型'
   }
 
@@ -573,10 +573,38 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
 
   const commitSettings = (next: TerminalUiSettings, message: string) => {
+    props.backend.setPermissionProfile(next.permissionProfile)
     setSettings(next)
     saveTerminalUiSettings(next)
     tell(message, 3200)
     refresh()
+  }
+
+  const permissionDialog = async (): Promise<void> => {
+    const current = props.backend.permissionProfile
+    const value = await askList('权限 / 审批', [
+      {
+        value: 'ask',
+        label: `${current === 'ask' ? '●' : '○'} 请求批准`,
+        description: '读取直接进行；写入 / 执行 / 网络副作用需要用户确认',
+      },
+      {
+        value: 'smart',
+        label: `${current === 'smart' ? '●' : '○'} 替我审批`,
+        description: '当前工作区常规读写自动批准；执行 / 网络 / 高风险动作仍询问',
+      },
+      {
+        value: 'full',
+        label: `${current === 'full' ? '●' : '○'} 完全权限`,
+        description: '对当前 ToolPlan 自动批准；Workspace / Security Guard / Rust Kernel 仍强制执行',
+      },
+      { value: 'back', label: '返回', description: '不修改当前权限' },
+    ])
+    if (!value || value === 'back') return
+    if (value !== 'ask' && value !== 'smart' && value !== 'full') return
+    const profile = value as PermissionProfileId
+    const next = { ...settings(), permissionProfile: profile }
+    commitSettings(next, `权限模式已切换 · ${PERMISSION_PROFILE_LABELS[profile]}`)
   }
 
   const appearanceSettingsDialog = async (): Promise<void> => {
@@ -706,12 +734,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           label: '系统',
           description: `提示 ${current.tips ? '开' : '关'} · 默认设置 · 进入子菜单`,
         },
+        {
+          value: 'permission',
+          label: '权限 / 审批',
+          description: `当前：${PERMISSION_PROFILE_LABELS[props.backend.permissionProfile]} · 独立于 Build / Plan / Compose`,
+        },
         { value: 'back', label: '返回命令面板', description: '返回 Ctrl+P 命令' },
       ])
       if (!value || value === 'back') return
       if (value === 'appearance') { await appearanceSettingsDialog(); continue }
       if (value === 'effects') { await effectsSettingsDialog(); continue }
-      if (value === 'system') { await systemSettingsDialog() }
+      if (value === 'system') { await systemSettingsDialog(); continue }
+      if (value === 'permission') { await permissionDialog() }
     }
   }
 
@@ -730,6 +764,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     if (command === 'workspace') { tell(`工作区 · ${props.backend.workspace}`, 9000); return true }
     if (command === 'provider') { await providerManager(false); return true }
     if (command === 'model') { await selectModel(false); return true }
+    if (command === 'permission') { await permissionDialog(); return true }
     if (command === 'agent') { tell(`智能体 · ${props.backend.agentLabel}`); return true }
     if (command === 'clear') { setTranscript([]); tell('已清空当前显示'); return true }
     if (command === 'exit') { props.onExit(); return true }
@@ -754,7 +789,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     if (!line || busy() || dialog()) return
     prompt?.clear()
     if (line === '/' || line === '/help') {
-      tell('/settings · /vivid · /doctor · /workspace · /provider · /model · /agent · /clear · /exit', 9000)
+      tell('/settings · /permission · /vivid · /doctor · /workspace · /provider · /model · /agent · /clear · /exit', 9000)
       return
     }
     if (line.startsWith('/')) {
@@ -880,6 +915,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
+    props.backend.setPermissionProfile(settings().permissionProfile)
     const spinnerTimer = setInterval(() => {
       if (busy()) setSpinnerFrame(value => value + 1)
     }, 240)

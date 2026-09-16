@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import {
   applyTerminalRunEvent,
   approvalDecision,
@@ -9,7 +10,9 @@ import {
   cycleTerminalAgentMode,
   DEFAULT_TERMINAL_UI_SETTINGS,
   isTerminalMouseInput,
+  loadTerminalUiSettings,
   renderHome,
+  saveTerminalUiSettings,
   needsInitialBrainSetup,
   renderWorkspaceTrustPrompt,
   SafePromptInput,
@@ -145,7 +148,7 @@ test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
 
 test('TUI slash command suggestions expose only implemented terminal commands', () => {
   const all = slashCommandSuggestions('/')
-  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
+  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'model', 'permission', 'agent', 'clear', 'exit'])
   assert.deepEqual(slashCommandSuggestions('/pro').map(item => item.value), ['provider'])
   assert.deepEqual(slashCommandSuggestions('/mod').map(item => item.value), ['model'])
   assert.equal(slashCommandSuggestions('/missing').length, 0)
@@ -154,7 +157,7 @@ test('TUI slash command suggestions expose only implemented terminal commands', 
 test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {
   const options = commandPaletteOptions()
   const values = options.map(item => item.value)
-  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'agent', 'clear', 'exit'])
+  assert.deepEqual(values, ['settings', 'visual', 'doctor', 'workspace', 'provider', 'model', 'permission', 'agent', 'clear', 'exit'])
   assert.equal(options.find(item => item.value === 'workspace')?.label, '工作区')
   assert.equal(options.find(item => item.value === 'provider')?.label, '模型 / 提供方')
   assert.equal(options.find(item => item.value === 'agent')?.label, '智能体')
@@ -170,7 +173,7 @@ test('TUI command palette search matches labels, descriptions and provider alias
 
 test('TUI menu projection keeps command, menu and description columns stable', () => {
   const projected = projectTuiMenu(commandPaletteOptions(), '', 0, 72, 10)
-  assert.equal(projected.rows.length, 9)
+  assert.equal(projected.rows.length, 10)
   assert.equal(projected.rows[0]?.selected, true)
   for (const row of projected.rows) {
     assert.equal(tuiMenuCellWidth(row.label), projected.labelWidth)
@@ -214,8 +217,8 @@ test('TUI chat shortcut row distributes items evenly and aligns Esc to the same 
 })
 
 test('TUI home tips rotate when ready and become provider-aware when setup is incomplete', () => {
-  assert.equal(terminalHomeTip(0, true, true), 'Ctrl+P 打开命令面板')
-  assert.equal(terminalHomeTip(1, true, true), 'Ctrl+K 直接搜索命令')
+  assert.equal(terminalHomeTip(0, true, true), '模型已就绪 · Ctrl+P 打开命令面板')
+  assert.equal(terminalHomeTip(1, true, true), '模型已就绪 · Ctrl+K 直接搜索命令')
   assert.match(terminalHomeTip(0, false, false), /模型未配置.*\/provider/)
   assert.match(terminalHomeTip(0, true, false), /模型已配置.*凭据未就绪.*检查凭据/)
 })
@@ -265,6 +268,33 @@ test('TUI Tab mode cycle is Build -> Plan -> Compose and Shift+Tab reverses it',
   assert.equal(cycleTerminalAgentMode('plan'), 'compose')
   assert.equal(cycleTerminalAgentMode('compose'), 'build')
   assert.equal(cycleTerminalAgentMode('build', -1), 'compose')
+})
+
+
+test('Terminal exposes permission as a separate user setting instead of coupling it to Tab mode', () => {
+  assert.equal(DEFAULT_TERMINAL_UI_SETTINGS.permissionProfile, 'ask')
+  const permission = commandPaletteOptions().find(item => item.value === 'permission')
+  assert.ok(permission)
+  assert.equal(permission?.shortcut, '/permission')
+  assert.match(permission?.description ?? '', /请求批准.*替我审批.*完全权限/)
+})
+
+
+test('Terminal permission profile persists independently from Build/Plan/Compose mode', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'xma-tui-settings-'))
+  const previous = process.env.XIAOYU_CONFIG_HOME
+  process.env.XIAOYU_CONFIG_HOME = root
+  try {
+    saveTerminalUiSettings({ ...DEFAULT_TERMINAL_UI_SETTINGS, permissionProfile: 'full' })
+    const restored = loadTerminalUiSettings()
+    assert.equal(restored.permissionProfile, 'full')
+    assert.equal(cycleTerminalAgentMode('build'), 'plan')
+    assert.equal(restored.permissionProfile, 'full')
+  } finally {
+    if (previous === undefined) delete process.env.XIAOYU_CONFIG_HOME
+    else process.env.XIAOYU_CONFIG_HOME = previous
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 

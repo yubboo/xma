@@ -20,6 +20,25 @@ function percent(value: number | undefined): string {
   return `${Math.round(value * 100)}%`
 }
 
+function contextPercent(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return '—'
+  if (value === 0) return '0%'
+  const percentage = value * 100
+  if (percentage > 0 && percentage < 0.1) return '<0.1%'
+  if (percentage < 10) return `${percentage.toFixed(1)}%`
+  return `${Math.round(percentage)}%`
+}
+
+function contextLabel(metrics: SessionRuntimeMetrics): string {
+  const used = metrics.context.usedTokens
+  const window = metrics.context.windowTokens
+  const ratio = metrics.context.ratio
+  if (window === undefined) return '上下文 —'
+  const capacity = `${compactInteger(used)}/${compactInteger(window)}`
+  if (ratio === undefined) return `上下文 — · ${capacity}`
+  return `上下文 ${contextPercent(ratio)} · ${capacity}`
+}
+
 function currencyPrefix(currency: string): string {
   if (currency === 'CNY') return '¥'
   if (currency === 'USD') return '$'
@@ -64,30 +83,28 @@ export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number
   const model = metrics.identity?.model ?? '模型—'
   const turnTokens = compactInteger(metrics.currentTurn?.usage.totalTokens)
   const sessionTokens = compactInteger(metrics.sessionUsage.totalTokens)
-  const context = percent(metrics.context.ratio)
-  const permission = metrics.permission?.label ?? '权限—'
+  const context = contextLabel(metrics)
+  const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
   const quota = subscriptionQuota(metrics)
+  const account = metrics.billing.kind === 'api' ? `余额 ${balance(metrics)}` : undefined
 
-  const essential = [
+  // Terminal 窄屏优先保证“当前模型 / 上下文 / 账户 / 权限”可见；
+  // token/cost/request 等完整指标仍保留在 canonical metrics，宽屏再逐步展开。
+  const compact = [
     model,
-    billingLabel(metrics),
-    `本轮 ${turnTokens}`,
-    `会话 ${sessionTokens}`,
-    `上下文 ${context}`,
+    context,
+    ...(account ? [account] : []),
+    ...(quota ? [quota] : []),
     permission,
   ]
-  if (width < 92) return essential
+  if (width < 92) return compact
 
   const medium = [
     model,
     billingLabel(metrics),
     `本轮 ${turnTokens}`,
-    `会话 ${sessionTokens}`,
-    `会话 ${metrics.turnCount}轮`,
-    `上下文 ${context}`,
-    metrics.compaction.available
-      ? `压缩 ${metrics.compaction.active ? '进行中' : percent(metrics.compaction.thresholdRatio)}`
-      : '压缩—',
+    context,
+    ...(account ? [account] : []),
     ...(quota ? [quota] : []),
     permission,
   ]
@@ -106,7 +123,7 @@ export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number
     `本轮 ${turnTokens}`,
     `请求 ${metrics.requestCount}`,
     `会话 ${metrics.turnCount}轮`,
-    `上下文 ${context}`,
+    context,
     metrics.compaction.available
       ? `压缩 ${metrics.compaction.active ? '进行中' : percent(metrics.compaction.thresholdRatio)}`
       : '压缩—',

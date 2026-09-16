@@ -525,3 +525,124 @@
 - 任一配置步骤故意失败后，TUI 动画/键盘/Prompt/命令面板仍可操作，不需重启进程。
 - 已保存 Profile 不因后续模型目录/Probe/UI 失败而丢失。
 - Secret 不进入 Transcript/notice/log。
+
+# 07 真实模型身份、工作模式、三档权限与上下文/账户指标一致性
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：#05 收口 + Runtime 权限能力修复
+- 影响范围：`xma-tools` Tool Policy、App Protocol、CLI Backend、Terminal 权限设置、Session Metrics/StatusBar、Provider Telemetry
+- 关联记录：`#05`、`#06`
+
+## 用户可见症状
+
+1. Tab 已切换 Build / Plan，但状态栏仍固定显示“请求批准”，看起来工作模式和权限没有真实联动。
+2. 用户之前明确要求三种权限：请求批准 / 替我审批 / 完全权限，但当前 Terminal 没有真正可选择、可持久、可进入 Runtime Tool Policy 的三档状态。
+3. DeepSeek V4 Pro 已产生真实本轮 token，但 `1,791 / 1M` 被显示成“上下文 0%”，误导用户认为上下文没有变化。
+4. 官方 DeepSeek API Profile 已具备真实余额接口，但常见终端宽度状态栏看不到余额。
+5. 产品身份“Xiaoyu”容易被误解成另一个模型；实际上每个真实 Step 必须使用用户配置的 Provider/Profile/Model 作为唯一模型请求目标。
+
+## 已确认代码证据
+
+- `apps/cli/src/main.ts` 当前存在 `const permissionProfile = 'ask' as const`，导致 Session Metrics 权限永远固定为 ask。
+- `sendMessage()` 当前只根据 `Build / Plan / Compose` 选择 ToolRegistry，没有把用户 Permission Profile 作为 Tool Policy 注入 `session.runTurn()`。
+- Plan 已通过 `registerNativeTools(... allowWrite: false)` 只暴露 read Tool；Compose 不暴露 Workspace Tool。这一方向保留。
+- `apps/cli/opentui-runtime/ui/session-status.ts` 的百分比使用 `Math.round(value * 100)`；1M context 下约 1.8k input 被错误展示为 `0%`。
+- `plugins/deepseek/telemetry.ts` 已有官方 1M context metadata 与 `/user/balance` account snapshot；状态栏中等宽度分支没有包含 balance。
+
+## 强制架构语义
+
+1. **模型身份只有用户实际选择的 Provider/Profile/Model。** `Xiaoyu` 是 Agent/Product identity，不是隐藏第二模型，不允许重路由、降级或用另一模型代跑。
+2. **Work Mode 与 Permission Profile 是两条正交轴。**
+   - Build：完整当前 Tool Surface；具体副作用由 Permission Profile + Guard + Rust Kernel 决定。
+   - Plan：同一个真实模型，但 ToolPlan 强制只读；权限再高也不能突破 Plan 的 read-only ceiling。
+   - Compose：legacy 纯模型对话，不暴露 Workspace Tools。
+3. **Permission Profile 三档必须是真实 Runtime Policy，不是 UI 标签。**
+   - `ask` / 请求批准：read/control 自动允许；write/execute/network 请求用户确认。
+   - `smart` / 替我审批：当前 Workspace 内常规 read/write 可自动批准；execute/network、跨 Workspace、系统级或高风险动作仍请求用户。
+   - `full` / 完全权限：Policy 对当前 Host 已暴露 Tool 自动批准，但 Security Guard、Workspace Guard、Rust Capability/OS 权限仍不可绕过。
+4. 权限切换应由 Terminal 设置/命令面板完成并持久化为用户偏好；Desktop/Web 未来通过同一 App Protocol/Runtime Permission Contract 设置，禁止各自实现另一套 Policy。
+5. Permission Profile 在一个 Turn 开始时形成稳定快照；用户下一次修改影响后续 Turn，不允许中途无审计地改变当前执行中的策略。
+6. Context = 最近真实模型请求 input tokens / **该请求对应模型** context window；不能拿 Session 累计 token 当 context。
+7. 小于 1% 的真实 context 不得四舍五入成 0%；至少显示 0.1% 级精度，并优先显示 `used/window`，例如 `上下文 0.2% · 1.8k/1.0m`。
+8. API 余额只能显示 Provider Account Snapshot 的真实值；常见终端宽度也要保留余额/套餐关键信息，不能因为一行裁剪让功能实际不可见。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 最新包为第一事实源，完成 #05 剩余真实指标，并实现 Host-neutral 三档 Permission Profile。禁止用 UI 文案伪装权限变化，禁止创建 Xiaoyu 自有模型层。
+>
+> ### A. xma-tools Permission Policy
+> - 新增稳定 `PermissionProfileToolPolicy`，输入 `ask | smart | full`。
+> - ask：read/control allow；write/execute/network ask。
+> - smart：read/control allow；具备当前 Workspace 明确 write scope 的常规 write allow；execute/network 和没有 Workspace scope 的副作用 ask。跨 Workspace/越权仍由 Workspace/Security Guard 单调 deny/ask，不得被 smart 放大。
+> - full：Policy allow 当前 ToolPlan 中所有 effect，但 Guards/Rust Kernel 仍可 deny。
+> - 增加 Contract Tests，证明三档会导致真实不同的 Approval 请求次数/execute 结果；Security Guard 在 full 下仍单调生效。
+>
+> ### B. Work Mode 与 Permission 分离
+> - Build/Plan/Compose 保留同一个当前真实 ModelProvider。
+> - Plan ToolPlan 必须持续只读；即使 permission=full，也不注册 write/execute Tool。
+> - Compose 不注册 Workspace Tool。
+> - Terminal Tab 只切工作模式；权限使用独立 `/permission` 与 Ctrl+P/设置入口。UI 要明确两者不是同一个开关。
+>
+> ### C. Runtime/Host Permission State
+> - CLI Backend 将 permissionProfile 从硬编码常量改为可读/可设置状态。
+> - `sendMessage()` 在每个 Turn 开始时用当前 profile 创建 Permission Policy 并传给 `session.runTurn()`。
+> - `sessionMetrics.permission` 必须读取同一个 Runtime 状态，不允许 UI 自己猜。
+> - Terminal 用户选择写入持久偏好；重启后仍恢复。
+> - App Protocol 增加统一 permission set/result Contract，供未来 Desktop/Web 直接复用。
+>
+> ### D. Context/Balance #05 收口
+> - 修正 context 百分比精度；1,791 / 1,000,000 不得显示 0%。
+> - 状态栏显示真实 `used/window`；Model Telemetry 不知道 window 时显示 `—`。
+> - 切换模型但尚未对新模型发请求时，不得拿旧模型 usage 配上新模型 window；可显示新模型 window，但 used/ratio 保持 unavailable，直到新模型真实 usage 到达。
+> - DeepSeek 官方 API balance 成功时在常见 90~130 列状态栏也可见；失败/不支持显示 `—`，不影响聊天。
+>
+> ### E. 模型身份合同
+> - 文档与测试锁定：Xiaoyu 是 Agent identity；真正模型请求永远使用当前 `providerId + profileId + modelId`。
+> - 禁止 Terminal 状态栏、Agent Runtime 或 Skill 把 `Xiaoyu` 当 Model ID 或把用户模型换成隐藏内部模型。
+>
+> ### F. 验证
+> - Tool Policy 三档行为单测。
+> - Plan + full 仍只有 read Tool 的测试。
+> - Terminal settings 持久化 permission profile 测试。
+> - Session Metrics：active model 切换、context 精度、unknown context 测试。
+> - StatusBar：中等宽度显示余额/套餐，1M context 小比例不是 0%。
+> - 更新 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`AGENT-RUNTIME.md`、`MODEL-PROVIDER.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`；重新生成 Source Manifest 与最终 ZIP。
+
+## 验收条件
+
+- Ctrl+P 或 `/permission` 可选择 请求批准 / 替我审批 / 完全权限，重启 Terminal 后仍保持。
+- Build 下三种权限会造成真实不同的 Tool Approval 行为，而不仅是状态栏文字变化。
+- Plan 下不论权限选哪档，都不能看到/执行 write/execute Tool；仍使用用户当前同一个真实模型。
+- DeepSeek 1M context 使用约 1.8k prompt tokens 时显示约 0.2%，而不是 0%。
+- DeepSeek 官方 API balance 查询成功时常见终端宽度可看到真实余额；余额接口失败时显示 — 且不阻断对话。
+- 切换 Provider/Model 后后续 Step 的 `step/start.provider` 与用户选择完全一致；Xiaoyu 不形成第二模型层。
+
+
+## 实施结果（自动验证前）
+
+- `xma-tools` 新增 `PermissionProfileController + PermissionProfileToolPolicy`：三档权限进入真实 ToolRouter Policy；每个 Turn 通过 `createPolicy()` 形成不可变快照。
+- Terminal `/permission` / Ctrl+P 可独立选择三档并持久化；Tab 继续只切 Build/Plan/Compose。
+- Plan registry 继续只注册 `native.fs.read_text`；即使 `full` 也无法执行未进入 ToolPlan 的 write/execute Tool。
+- Session status 的权限字段来自 Backend 同一 Permission state，不再硬编码 ask；文案统一“请求批准 / 替我审批 / 完全权限”。
+- Context 小比例使用 0.1% 精度并显示 used/window；切换模型后在新模型产生真实 usage 前不会把旧 usage 配新 window。
+- DeepSeek 官方 API context 固定按当前官方 1M metadata；`/user/balance` 真实查询保持官方 Host 限制。2026-09-14 04:00 UTC 后 `deepseek-v4-pro` 的费用估算按官方当前路由到 V4.1 Flash 的计费语义处理。
+- 窄/中等 Terminal 宽度优先保留 context、账户/套餐与权限，避免真实余额被次要计数器裁掉。
+
+## Windows 实机待验收
+
+1. Ctrl+P → 权限/审批依次切 ask/smart/full，状态栏实时显示并重启保持。
+2. Build+ask 写操作必须弹 Approval；Build+smart 的当前 Workspace 常规写不弹，execute/network 仍按策略询问；Build+full 对当前 ToolPlan 不弹 Approval。
+3. Plan+full 仍无 write/execute Tool；模型仍是用户当前配置的同一 Provider/Model。
+4. DeepSeek 1M 模型在约 1.8k prompt tokens 时显示约 0.2% + `1.8k/1.0m`，不是 0%。
+5. 官方 DeepSeek API 余额接口成功时状态栏显示真实余额；失败/不支持只显示 `—` 且不影响聊天。
+
+
+## 自动验证证据
+
+- Node 22 `--experimental-transform-types`：#07 相关 Tool Policy / Plan ToolSet / Session Metrics / StatusBar / Provider Telemetry / TUI settings 共 **54/54 PASS**。
+- Runtime updater：**2/2 PASS**。
+- 项目 Gate：Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository **9/9 PASS**。
+- 修改过的 14 个 TS/TSX 文件已通过 TypeScript transpile syntax diagnostics。
+- Source Manifest 已重新生成：235 个正式受管源码文件。
+- 仍需 Windows 实机验证真实 Provider 余额、权限切换/重启持久化与 Plan+full 行为后才能把 #07 标为已完成。
