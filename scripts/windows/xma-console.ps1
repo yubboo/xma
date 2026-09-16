@@ -69,9 +69,16 @@ function Assert-XmaGitCloneForUpdate {
   if (-not (Get-Command git.exe -ErrorAction SilentlyContinue)) { throw '未检测到 Git，无法更新项目。' }
   $inside = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--is-inside-work-tree')
   if ($inside.Trim().ToLowerInvariant() -ne 'true') { throw '当前目录不是 Git 工作树，无法执行项目更新。' }
-  $top = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--show-toplevel')
-  if ([IO.Path]::GetFullPath($top) -ine [IO.Path]::GetFullPath($Root)) {
-    throw "当前脚本根目录不是 Git 顶层：$top"
+  # $Root 已由脚本自身位置解析并 Set-Location；不要再把 `git --show-toplevel` 的 native 文本
+  # 交给 GetFullPath。Windows 的 Unicode checkout / native 附加输出会把本来合法的项目路径
+  # 变成不可安全解析的字符串。用 `.git` marker + show-prefix 的空值语义验证顶层即可。
+  $gitEntry = Join-Path $Root '.git'
+  if (-not (Test-Path -LiteralPath $gitEntry -PathType Container) -and -not (Test-Path -LiteralPath $gitEntry -PathType Leaf)) {
+    throw "当前脚本根目录缺少 .git，不能作为 Git 顶层更新：$Root"
+  }
+  $prefix = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--show-prefix')
+  if (-not [string]::IsNullOrWhiteSpace($prefix)) {
+    throw "当前脚本根目录不是 Git 顶层：$Root（Git prefix=$prefix）"
   }
   $branch = Invoke-XmaGitCapture -ArgumentList @('rev-parse','--abbrev-ref','HEAD')
   if ($branch.Trim() -ne 'main') { throw "[10] 只更新 main 分支；当前分支是 $branch。请先切回 main 再执行。" }

@@ -119,17 +119,23 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   // Runtime metrics are canonical Session/Provider facts. The 1s clock only asks the
   // Host getter for a fresh projection; Terminal never recomputes usage/cost itself.
   const sessionMetrics = createMemo(() => { clock(); return props.backend.sessionMetrics })
-  const providerStatus = createMemo(() => providerConfigured()
-    ? {
-        dot: providerReady() ? '●' : '○',
-        dotColor: providerReady() ? COLOR.green : COLOR.yellow,
-        label: `${providerLabel()} · ${providerReady() ? '模型已就绪' : '凭据未就绪'}`,
-      }
-    : {
+  const providerStatus = createMemo(() => {
+    if (!providerConfigured()) {
+      return {
         dot: '○',
         dotColor: COLOR.yellow,
         label: '模型未配置 · Ctrl+P /provider',
-      })
+      }
+    }
+    // #11 主状态行只保留 canonical model id。Provider 品牌与 Ready 正常态不再重复常驻；
+    // readiness 仍由 dot 表达，异常时保留明确的凭据提示。
+    const modelLabel = sessionMetrics().identity?.model ?? '模型—'
+    return {
+      dot: providerReady() ? '●' : '○',
+      dotColor: providerReady() ? COLOR.green : COLOR.yellow,
+      label: providerReady() ? modelLabel : `${modelLabel} · 凭据未就绪`,
+    }
+  })
   const [spinnerFrame, setSpinnerFrame] = createSignal(0)
   const spinnerGlyph = createMemo(() => ['✦', '✧', '·', '✧'][spinnerFrame() % 4]!)
   const tip = createMemo(() => {

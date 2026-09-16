@@ -900,3 +900,71 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 - 定向自动验证：`session-status.test.ts + opentui-runtime.test.ts + terminal-shortcuts.test.ts` 共 41/41 PASS；关键 TS/TSX 使用 TypeScript transpile syntax check 全部 PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 为 242 个受管源码文件。
 - 成品发行复核：242 source + manifest = 243 ZIP entries；独立解压后 missing 0 / extra 0 / content hash diff 0，并从解压成品再次跑过定向 41/41、Runtime updater 2/2、9/9 Gate。
 - Windows 实机仍需验证：常见/全屏宽度 headline 不挤 Provider、不换行；detail row 比旧版明显更短；Ctrl+C 不再长期出现在快捷栏且实际按键反馈正确。
+
+# 11 Terminal 状态信息密度 / 用户消息高亮与 `[10]` Unicode 路径同步修复
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：Terminal Host UI 投影优化 / Windows Git Update 回归
+- 影响范围：`PromptDock`、Session Metrics Terminal projection、Transcript user message、`xma-dev.bat -> [10]`
+- 关联历史：#05 Session Runtime Metrics、#09 GitHub 原地同步、#10 状态栏分区布局
+
+## 用户可见症状
+
+1. #10 后 Prompt 主状态行仍显示 `● DeepSeek · deepseek-v4-pro · 模型已就绪 · high`；用户希望主状态行只保留真正需要持续查看的 `● deepseek-v4-pro · high`，并继续固定在最右侧。
+2. #10 为缩短 detail row，把 cache hit、会话/本次 token、轮次等真实 telemetry 只留在较宽阈值下，用户在常见窗口看不到这些已经存在的 canonical metrics，误以为功能被删除。
+3. 用户消息当前只是右侧小块深色 panel，视觉上仍不够明确；希望每条用户提问使用一行浅色/浅白背景强调“这是用户输入”，同时不影响 Transcript 滚动、assistant/activity 排版。
+4. Windows 实机在含中文路径的 checkout（例如 `H:\一键部署\xma`）执行 `xma-dev.bat -> [10]` 时，在进入同步选择前抛出 `[IO.Path]::GetFullPath(...)` “路径中具有非法字符”，导致 GitHub 原地更新不可用。
+
+## 已确认事实
+
+- #05 `SessionRuntimeMetrics` 仍保存真实 `currentTurn/sessionUsage cache ratio`、会话/本次 tokens、turnCount、cost、permission；#10 只是 Terminal formatter 的宽度裁剪改变，没有删除 canonical metrics 数据。
+- 当前 `session-status.ts` 在 `<170` 列时不会展示 cache hit；token 又使用 `k/m/b` compact formatter，因此不能呈现用户要求的精确大整数。
+- 当前 durable context compaction **尚未实现**，canonical `metrics.compaction.available=false`；历史规则明确禁止把 `80%` 当 UI 常量伪造。此次只能在真实 threshold 存在时显示 `压缩阈值 <real>`，否则显示 `压缩阈值—`，不能为了视觉还原写死 80%。
+- 当前 Prompt Provider group 的 `label` 来自 `providerLabel + Ready 文案`，因此会重复品牌 Provider 与“模型已就绪”；真实 model id 已存在于 canonical `sessionMetrics.identity.model`。
+- `[10]` 当前在 `Assert-XmaGitCloneForUpdate()` 中把 `git rev-parse --show-toplevel` 的捕获文本直接传给 `[IO.Path]::GetFullPath($top)`。这是本次异常发生点；Git 输出在 Windows/Unicode/额外 native 输出场景下不应再作为 .NET path 字符串解析。
+
+## 被证伪 / 禁止的错误修法
+
+- 禁止从 Session Metrics Contract 删除 Provider/account/usage 字段；本轮只调整 Terminal 投影。
+- 禁止写死 `DeepSeek`、`deepseek-v4-pro`、`80%`、token 数、余额或费用示例。
+- 禁止为了显示“压缩阈值80%”伪造 compaction 已实现；真实 unavailable 必须仍可见为 `—`。
+- 禁止把用户消息高亮实现成额外 ScrollBox / Overlay；Transcript 仍只有一个 scroll owner。
+- 禁止 `[10]` 通过删除 clone、重新 clone、`git clean` 或绕过 origin/main 安全校验来“解决”路径异常。
+
+## 修复 / 优化 Prompt
+
+> 1. Prompt 主状态行保持 Mode 左侧、headline 中间、model group 最右；配置完成时 model group 只显示 readiness dot + canonical model id + reasoning，例如 `● deepseek-v4-pro · high`，删除 Provider display name 与“模型已就绪”常驻文案。未配置/凭据异常仍必须用 dot/明确提示表达异常状态。
+> 2. `session-status.ts` 恢复常见宽度下的真实 telemetry：billing、本次命中、平均命中、会话 tokens、本次 tokens、compaction threshold、当前会话轮次、真实会话费用、permission。cache 百分比按两位小数显示；token 使用精确千分位整数，不用 k/m/b 缩写。
+> 3. compaction 只消费 canonical `metrics.compaction`：`available=true + thresholdRatio` 才显示真实百分比；未实现时显示 `压缩阈值—`。不得写死 80%。
+> 4. 用户 Transcript message 使用专用浅灰背景 token，默认单行提问视觉为一行高亮条；长内容仍允许正常换行，不能为了强制单行截断用户文本。保持右对齐与现有 content width ownership。
+> 5. `[10]` 顶层仓库校验不得再把 `git --show-toplevel` 文本送入 `GetFullPath`。脚本已从自身位置解析 `$Root` 且运行前 `Set-Location $Root`，因此使用 `.git` marker + `git rev-parse --show-prefix`（根目录应为空）验证“当前脚本根就是 Git 顶层”，避免解析 Unicode path 输出；保留 branch=main 与 origin 白名单。
+> 6. 新增/更新自动回归：Prompt 状态不再渲染 Provider display name/Ready 常驻文案；detail row 在常见宽度包含精确 cache/token/turn/compaction truth；unknown compaction 不出现 80%；Transcript user row 使用专用浅色背景；Windows Gate/静态合同禁止重新引入 `GetFullPath($top)`。
+> 7. 按现有流程回填 UPDATE-LOG / PROJECT-STATUS，运行定向测试、Runtime updater、9 项 Gate、Source Manifest/ZIP 一致性检查。Windows PowerShell 5.1 的 `[10]` 中文路径仍标记为用户实机最终验收，不用 Linux 自动测试冒充。
+
+## 不允许回归
+
+- #03 Transcript bounded slot、mouse wheel、sticky follow。
+- #04 OpenTUI Textarea caret / IME ownership。
+- #05 canonical metrics “真实数据优先，unknown 即 unknown”。
+- #08 Ctrl+C Selection copy 路由。
+- #09 `[10]` 原地 fetch/pull/rebase、强制恢复备份、禁止 clone/clean。
+- #10 PromptDock 单根 `flexShrink=0` 与 Provider/model group 右侧保护。
+
+## 验收条件
+
+- 常见 Windows Terminal 宽度主状态行形如：`Build  上下文 ... · 余额 ...    ● deepseek-v4-pro · high`；不再常驻显示 `DeepSeek` 与 `模型已就绪`。
+- detail row 能看到真实 `本次命中0.00% · 平均命中0.00% · 会话 tokens63,112,938 · 本次 tokens198,157 · 压缩阈值—/真实值 · 当前会话35轮` 等字段；数值来自 canonical metrics。
+- 当前 compaction 未实现时不会出现假的 `80%`；未来 canonical threshold 真正提供 0.8 时 formatter 自动显示 `80.00%`。
+- 用户提问使用浅灰背景明确高亮；长提问仍完整可读，历史滚动/Assistant/Activity 不受影响。
+- Windows 中文/Unicode checkout 执行 `[10]` 不再触发 `GetFullPath` 非法字符异常，并仍拒绝错误 origin、非 main、非 Git 顶层。
+## #11 实施结果
+
+- Prompt Provider status 正常态只消费 `sessionMetrics.identity.model`：绿色 `●` 表达 Ready，label 为 canonical model id，reasoning 继续由 PromptDock 独立追加；不再以 Provider displayName 作为回退，因此不会把 `DeepSeek` 品牌重新带回主状态。未配置/凭据异常分支仍明确显示异常。
+- `session-status.ts` 恢复 #05 canonical cache/token/turn truth：cache hit 两位小数、session/turn token 精确千分位整数、turn count、费用/permission 按宽度保留；124~149 列优先使用用户可读的 `会话 tokens... / 本次 tokens... / 压缩阈值... / 当前会话...轮` 标签。SessionStatusBar 分隔符收紧为 ` · `，给真实指标留出横向空间。
+- compaction 未伪造：当前 canonical `available=false` 时显示 `压缩阈值—`；测试额外锁定只有 `available=true, thresholdRatio=0.8` 才能显示 `80.00%`。这部分不是“删掉 80%”，而是遵守 #05 真实功能边界。
+- Transcript 用户消息新增 `COLOR.userMessage=#d7d7d7` 与 `userMessageText=#181818`，短消息显示为右对齐浅灰单行高亮；长消息继续正常换行，未新增 ScrollBox/Overlay。
+- `[10]` 已删除 `rev-parse --show-toplevel -> [IO.Path]::GetFullPath($top)` 路径解析，改为脚本自身 `$Root` 下 `.git` marker + `rev-parse --show-prefix` 顶层语义校验；main 分支、`yubboo/xma` origin whitelist、fetch/pull/reset/backup/no-clean 合同保持不变。PowerShell 文件继续保持 UTF-8 BOM + CRLF。
+- 自动验证：`session-status.test.ts` 8/8、`opentui-runtime.test.ts` 34/34、`terminal-shortcuts.test.ts` 1/1，定向合计 43/43 PASS；Runtime updater 2/2 PASS；9 项静态 Gate 全部 PASS。
+- 残留实机验收：当前环境没有 Windows PowerShell 5.1 / Windows Terminal，因此仍需在含中文 checkout 路径上执行 `xma-dev.bat -> [10]`，以及目视确认常见窗口主状态/metrics/user message 的最终宽度与对比度；在此之前状态保持“验证中”。
+

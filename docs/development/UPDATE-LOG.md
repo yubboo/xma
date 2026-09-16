@@ -1,5 +1,13 @@
 # XMA Update Log
 
+## 90 · Terminal 模型状态精简、真实 Metrics 回显与 `[10]` Unicode 路径修复
+
+- #11 将 Prompt 正常模型组从 `● Provider · model · 模型已就绪 · reasoning` 收口为 `● canonical-model · reasoning`；绿色 dot 继续表达 Ready truth，未配置/凭据异常仍保留明确异常文案，最右 `flexShrink=0` ownership 不变。
+- #05 canonical metrics 没有丢失：#10 只是把部分 cache/token/turn 指标裁到超宽屏。#11 在常见宽度恢复本次/平均 cache hit（两位小数）、精确 session/turn token 千分位、turn count、真实费用/permission；compaction 只在 canonical `available=true` 时显示真实 threshold，当前未实现时继续显示 `—`，不伪造 80%。
+- Transcript 用户消息使用独立浅灰背景 + 深色文字，短提问形成清晰的一行用户会话高亮；长文本仍按既有 content width 正常换行，ScrollBox ownership 不变。
+- Windows `[10]` 不再读取 `git rev-parse --show-toplevel` 后交给 `[IO.Path]::GetFullPath`；脚本已从自身位置解析 `$Root`，现在用 `$Root/.git` marker + `git rev-parse --show-prefix` 空前缀验证仓库顶层，保留 main/origin whitelist、安全 rebase/autostash、强制恢复前备份与 no-clean 约束。
+- 自动验证：`session-status.test.ts` 8/8、`opentui-runtime.test.ts` 34/34、`terminal-shortcuts.test.ts` 1/1（定向合计 43/43）PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。当前 Linux 沙箱没有 Windows PowerShell 5.1 / Windows Terminal，因此 `[10]` 中文路径与最终 TUI 视觉仍保留实机 E2E。
+
 ## 89 · Terminal Session Metrics 分区布局与 Ctrl+C 按需提示
 
 - #05 Metrics 的 Terminal 投影改为两层：Prompt 主状态行在 Provider truth 左侧显示真实 `上下文 used/window + API 余额/套餐额度`，Provider/Model/Ready/Reasoning 保持最右固定；两组之间保留稳定间距。

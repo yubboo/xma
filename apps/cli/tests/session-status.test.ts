@@ -52,10 +52,12 @@ test('API headline shows canonical context/balance while detail keeps real cost 
   assert.match(headline, /余额 \$9\.75/)
   assert.doesNotMatch(headline, /future-model-42/)
 
-  assert.match(detail, /本轮命中 40%/)
-  assert.match(detail, /平均命中 20%/)
-  assert.match(detail, /本轮费用 ≈\$0\.0042/)
-  assert.match(detail, /会话费用 ≈\$1\.25/)
+  assert.match(detail, /本次命中40\.00%/)
+  assert.match(detail, /平均命中20\.00%/)
+  assert.match(detail, /会话 tokens1,000/)
+  assert.match(detail, /本次 tokens120/)
+  assert.match(detail, /压缩阈值—/)
+  assert.match(detail, /会话费用≈\$1\.25/)
   assert.match(detail, /权限 请求批准/)
   assert.doesNotMatch(detail, /future-model-42|上下文|余额/)
 })
@@ -75,7 +77,7 @@ test('subscription headline shows quota and detail never invents API cost fields
   const detail = sessionStatusItems(metrics, 220).join(' | ')
   assert.match(headline, /额度 12\/100/)
   assert.match(detail, /Ultra Plan/)
-  assert.doesNotMatch(detail, /本轮费用|会话费用|余额/)
+  assert.doesNotMatch(detail, /费用|余额/)
 })
 
 test('unknown telemetry stays unknown instead of rendering fake zeros', () => {
@@ -86,7 +88,7 @@ test('unknown telemetry stays unknown instead of rendering fake zeros', () => {
   const headline = sessionHeadlineItems(metrics, 110).join(' | ')
   const detail = sessionStatusItems(metrics, 110).join(' | ')
   assert.match(headline, /上下文 —/)
-  assert.match(detail, /本轮 —/)
+  assert.match(detail, /本次—t/)
   assert.doesNotMatch(headline + detail, /80%|0\.0000|12\.93/)
 })
 
@@ -113,6 +115,55 @@ test('common-width API headline keeps real balance beside context', () => {
   }
   const text = sessionHeadlineItems(metrics, 100).join(' · ')
   assert.equal(text, '上下文 0.2% · 1,793/1.0m · 余额 ¥12.02')
+})
+
+
+
+test('common-width detail restores exact cache/token/turn telemetry without inventing compaction', () => {
+  const metrics = baseMetrics()
+  metrics.billing = { kind: 'api', label: 'API' }
+  metrics.currentTurn!.usage = {
+    requestCount: 1,
+    inputTokens: 198_000,
+    outputTokens: 157,
+    totalTokens: 198_157,
+    cachedInputTokens: 0,
+    cacheHitRatio: 0,
+    averageCacheHitRatio: 0,
+  }
+  metrics.sessionUsage = {
+    requestCount: 35,
+    inputTokens: 63_000_000,
+    outputTokens: 112_938,
+    totalTokens: 63_112_938,
+    cachedInputTokens: 0,
+    cacheHitRatio: 0,
+    averageCacheHitRatio: 0,
+  }
+  metrics.turnCount = 35
+  metrics.permission = { id: 'smart', label: '替我审批' }
+
+  const compact = sessionStatusItems(metrics, 120).join(' · ')
+  assert.match(compact, /本次命中0\.00%/)
+  assert.match(compact, /平均命中0\.00%/)
+  assert.match(compact, /会话63,112,938t/)
+  assert.match(compact, /本次198,157t/)
+  assert.match(compact, /压缩—/)
+  assert.match(compact, /35轮/)
+  assert.match(compact, /替我审批/)
+  assert.doesNotMatch(compact, /80\.00%|63\.1m|198\.2k/)
+
+  const common = sessionStatusItems(metrics, 136).join(' · ')
+  assert.match(common, /会话 tokens63,112,938/)
+  assert.match(common, /本次 tokens198,157/)
+  assert.match(common, /压缩阈值—/)
+  assert.match(common, /当前会话35轮/)
+})
+
+test('compaction threshold is rendered only from canonical available truth', () => {
+  const metrics = baseMetrics()
+  metrics.compaction = { available: true, active: false, thresholdRatio: 0.8 }
+  assert.match(sessionStatusItems(metrics, 220).join(' | '), /压缩阈值80\.00%/)
 })
 
 test('very narrow headline yields space back to Provider truth while detail keeps permission', () => {

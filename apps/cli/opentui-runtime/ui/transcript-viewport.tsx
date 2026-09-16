@@ -131,12 +131,12 @@ export function TranscriptViewport(props: {
                 <box width="100%" flexDirection="row" justifyContent="flex-end" flexShrink={0}>
                   <box
                     maxWidth={Math.max(20, Math.floor(props.contentWidth * 0.72))}
-                    backgroundColor={COLOR.panel}
-                    paddingLeft={2}
+                    backgroundColor={COLOR.userMessage}
+                    paddingLeft={1}
                     paddingRight={1}
                     flexShrink={0}
                   >
-                    <text fg={COLOR.text}>{item.text}</text>
+                    <text fg={COLOR.userMessageText}>{item.text}</text>
                   </box>
                 </box>
               )

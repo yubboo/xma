@@ -1,7 +1,7 @@
 /**
  * 文件作用：把 Host-neutral SessionRuntimeMetrics 投影成 Prompt 主状态行的精简摘要与下方次要指标。
  * 关联模块：session-status.ts、prompt-dock.tsx、contracts.ts。
- * 当前实现：Headline 只显示 context + 真实账户/套餐摘要；Detail Row 显示 billing/tokens/cost/permission 等次要指标。
+ * 当前实现：Headline 显示 context + 真实账户/套餐摘要；Detail Row 恢复真实 cache/tokens/compaction/turn/cost/permission，并按宽度裁标签。
  * 职责边界：禁止在组件内按 Provider 品牌计算 usage、价格、余额或套餐额度。
  */
 
@@ -43,7 +43,7 @@ export function SessionStatusBar(props: { width: number; metrics: SessionRuntime
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={COLOR.faint}>{items().join('  ·  ')}</text>
+        <text fg={COLOR.faint}>{items().join(' · ')}</text>
       </box>
     </Show>
   )

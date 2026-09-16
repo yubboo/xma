@@ -142,9 +142,10 @@ XMA 当前固定五条参考线：
 - API/subscription/unknown、多模型历史归属、DeepSeek balance 本地 HTTP mock 已有自动测试；DeepSeek 外部真实余额/费用仍需用户真实 API E2E 才能作为 Product Ready 证据。
 - Desktop/Web 尚未做 UI，但后续必须直接消费同一 `session/metrics` Contract，禁止复制统计逻辑。
 - #05 完整 Gate / Manifest / Windows 状态栏实机验收完成后标记已完成。
-- #10 只调整 Terminal 对 #05 canonical metrics 的视觉分层：context + account/quota 上移到 Provider truth 左侧，detail row 去重复；Desktop/Web 后续仍直接消费同一 `session/metrics` Contract。
+- #10 建立 Terminal 对 #05 canonical metrics 的 headline/detail 分层；#11 在不改变 Contract 的前提下继续收口投影：正常主状态只保留 Ready dot + canonical model + reasoning，detail 常见宽度重新展示真实 cache hit、精确 token、真实 compaction truth 与 turn count。Desktop/Web 后续仍直接消费同一 `session/metrics` Contract。
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
+- `REPAIR-PROMPTS #11` 当前**验证中**：Prompt 正常模型组已收口为 `● canonical-model · reasoning`，不再常驻 Provider 品牌/“模型已就绪”；detail row 恢复常见宽度 cache hit、精确 session/turn tokens、compaction truth、轮次、费用/权限；用户消息改为浅灰底深色字的一行视觉高亮（长文本仍可换行）；Windows `[10]` 顶层校验移除 `show-toplevel -> GetFullPath`，改用脚本自身 `$Root + .git + rev-parse --show-prefix`，避免中文 checkout 路径触发非法字符。定向 43/43 PASS、Runtime updater 2/2、9 项 Gate PASS；当前环境无 Windows PowerShell 5.1/Windows Terminal，仍待用户实机复核 `[10]` 与最终视觉。
 - `REPAIR-PROMPTS #09` 当前**验证中**：Terminal Turn Activity 已升级为真实 `已处理 N + Xiaoyu · 正在思考` / 完成态 `用时 N`，展开区只显示公开阶段与脱敏 Tool 活动，不展示 hidden reasoning；Windows `[10]` 已升级为正确 clone 原地 fetch/prune + ahead/behind 核验 + 安全同步/带恢复备份的强制恢复。35/35 Activity 定向回归、Runtime updater 2/2 与 9 项 Gate 已通过；Source Manifest 242 files/成品 243 entries 已做独立解压一致性复核，仍待 Windows Terminal 点击展开和 PowerShell 5.1 Git 同步实机验收。
 - `REPAIR-PROMPTS #10` 当前**验证中**：#05 Session Metrics 的 Terminal 投影已拆成主状态行 headline（真实 context + balance/quota）与短 detail row；Provider truth 保持最右固定，永久快捷栏移除 Ctrl+C，按键后才 transient 提示。等待 Windows 常见/全屏宽度布局 E2E。
 - `REPAIR-PROMPTS #08` 已由用户 Windows 实机确认**已完成**：Ctrl+C 真实 Selection 复制优先、busy Abort、modal cancel、idle 二次确认退出均不再出现“选中回复后一按 Ctrl+C 直接退出”的原始故障；#10 只优化其永久提示布局，不改 #08 快捷键路由。

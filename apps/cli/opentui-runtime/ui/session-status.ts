@@ -15,9 +15,14 @@ function compactInteger(value: number | undefined): string {
   return Math.round(value).toLocaleString('en-US')
 }
 
-function percent(value: number | undefined): string {
+function percent(value: number | undefined, digits = 0): string {
   if (value === undefined || !Number.isFinite(value)) return '—'
-  return `${Math.round(value * 100)}%`
+  return `${(value * 100).toFixed(digits)}%`
+}
+
+function exactInteger(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return '—'
+  return Math.round(value).toLocaleString('en-US')
 }
 
 function contextPercent(value: number | undefined): string {
@@ -98,54 +103,76 @@ export function sessionHeadlineItems(metrics: SessionRuntimeMetrics, width: numb
 /**
  * Prompt 下方的次要 Session 指标。
  *
- * 详细 telemetry 仍完整保存在 SessionRuntimeMetrics；这里不再把 model/context/balance
- * 全部重复绘制成一条超长状态栏，只保留与当前操作直接相关的少量辅助信息。
+ * #11 重新把 #05 已存在的 cache/token/turn 真值带回常见宽度，但不恢复旧版
+ * model/context/balance 重复。常见宽度使用紧凑标签保留所有关键值；超宽屏再展开
+ * 用户可读的完整标签。compaction 仍只消费 canonical truth，未实现时必须显示 —。
  */
 export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
-  const turnTokens = compactInteger(metrics.currentTurn?.usage.totalTokens)
-  const sessionTokens = compactInteger(metrics.sessionUsage.totalTokens)
+  const turnTokens = exactInteger(metrics.currentTurn?.usage.totalTokens)
+  const sessionTokens = exactInteger(metrics.sessionUsage.totalTokens)
   const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
   const billing = billingLabel(metrics)
+  const turnHit = percent(metrics.currentTurn?.usage.cacheHitRatio, 2)
+  const averageHit = percent(metrics.sessionUsage.averageCacheHitRatio, 2)
+  const compactionThreshold = metrics.compaction.available
+    ? percent(metrics.compaction.thresholdRatio, 2)
+    : '—'
+  const sessionCost = metrics.billing.kind === 'api' ? money(metrics.sessionCost) : '—'
 
   if (width < 82) return [permission]
 
-  const sessionCost = metrics.billing.kind === 'api' ? money(metrics.sessionCost) : '—'
-  const turnCost = metrics.billing.kind === 'api'
-    ? money(metrics.currentTurn?.cost ?? { status: 'unavailable', sources: [] })
-    : '—'
+  // 很窄时继续优先保证“计费 + 本次 token + 费用 + 权限”；不让 detail row 自动换行挤高 Dock。
+  if (width < 104) {
+    return [
+      billing,
+      `本次 ${turnTokens}`,
+      ...(sessionCost !== '—' ? [`费用 ${sessionCost}`] : []),
+      permission,
+    ]
+  }
 
-  const medium = [
-    billing,
-    `本轮 ${turnTokens}`,
-    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
-    permission,
-  ]
-  if (width < 132) return medium
+  // 常见 Windows Terminal 宽度用短标签保留用户要求的全部真实 telemetry。
+  // 这里刻意不显示 requestCount/model/context/balance，避免把 #10 已去重的字段重新堆回来。
+  if (width < 124) {
+    return [
+      billing,
+      `本次命中${turnHit}`,
+      `平均命中${averageHit}`,
+      `会话${sessionTokens}t`,
+      `本次${turnTokens}t`,
+      `压缩${compactionThreshold}`,
+      `${metrics.turnCount}轮`,
+      ...(sessionCost !== '—' ? [`费用${sessionCost}`] : []),
+      metrics.permission?.label ?? '权限—',
+    ]
+  }
 
-  const wide = [
-    billing,
-    `本轮 ${turnTokens}`,
-    `会话 ${sessionTokens}`,
-    `会话 ${metrics.turnCount}轮`,
-    ...(turnCost !== '—' ? [`本轮费用 ${turnCost}`] : []),
-    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
-    permission,
-  ]
-  if (width < 170) return wide
+  // 中宽屏优先把本次/平均命中、精确 token、压缩阈值和轮次用完整标签展开；
+  // 费用/权限仍使用短标签，避免在常见 130~150 列窗口被裁掉。
+  if (width < 150) {
+    return [
+      billing,
+      `本次命中${turnHit}`,
+      `平均命中${averageHit}`,
+      `会话 tokens${sessionTokens}`,
+      `本次 tokens${turnTokens}`,
+      `压缩阈值${compactionThreshold}`,
+      `当前会话${metrics.turnCount}轮`,
+      ...(sessionCost !== '—' ? [`费用${sessionCost}`] : []),
+      metrics.permission?.label ?? '权限—',
+    ]
+  }
 
   return [
     billing,
-    `本轮命中 ${percent(metrics.currentTurn?.usage.cacheHitRatio)}`,
-    `平均命中 ${percent(metrics.sessionUsage.averageCacheHitRatio)}`,
-    `本轮 ${turnTokens}`,
-    `会话 ${sessionTokens}`,
-    `请求 ${metrics.requestCount}`,
-    `会话 ${metrics.turnCount}轮`,
-    metrics.compaction.available
-      ? `压缩 ${metrics.compaction.active ? '进行中' : percent(metrics.compaction.thresholdRatio)}`
-      : '压缩—',
-    ...(turnCost !== '—' ? [`本轮费用 ${turnCost}`] : []),
-    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
+    `本次命中${turnHit}`,
+    `平均命中${averageHit}`,
+    `会话 tokens${sessionTokens}`,
+    `本次 tokens${turnTokens}`,
+    `压缩阈值${compactionThreshold}`,
+    `当前会话${metrics.turnCount}轮`,
+    ...(sessionCost !== '—' ? [`会话费用${sessionCost}`] : []),
     permission,
   ]
 }
+

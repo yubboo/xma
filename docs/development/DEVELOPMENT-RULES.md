@@ -167,7 +167,7 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - Provider-specific JSON/headers/auth 不得散落 Agent Loop。
 - UI 不通过 model name 猜 capability；以 Provider/Model Descriptor 为准。
 - Secret 通过 Credentials Service 获取，不进入 Session message、Workspace、普通日志、导出。
-- 产品 UI 的“模型已就绪”表示当前 Provider/Profile/Model 已保存且凭据引用当前可读取；`Brain Ready Probe / 连接测试` 是可选的真实连接诊断与 Provider 验收证据，fixture/mock 不能伪造 Probe 通过。Probe 未执行/失败不得把一个已配置且凭据可用的模型重新标成“尚未就绪”；真实发送失败必须原样暴露 auth/network/model 错误。
+- 产品 Ready 状态表示当前 Provider/Profile/Model 已保存且凭据引用当前可读取；`Brain Ready Probe / 连接测试` 是可选的真实连接诊断与 Provider 验收证据，fixture/mock 不能伪造 Probe 通过。Terminal Prompt 正常态可使用绿色 `● + canonical model id` 表达 Ready，而不长期重复“模型已就绪”文字；未配置、凭据不可读或真实发送失败必须明确显示异常。Probe 未执行/失败不得把一个已配置且凭据可用的模型重新标成“尚未就绪”；真实发送失败必须原样暴露 auth/network/model 错误。
 - Terminal 每次 `xiaoyu / xma` 交互式启动都必须先对调用者当前目录执行 Workspace Trust；本次授权不得持久化为“以后跳过”。Trust 通过后，仅在没有已配置 Brain/Profile 时进入同一 TUI 的居中 Brain Setup；已有 Profile 时跳过第二步。`Ctrl+P → 模型 / 提供方` 必须始终可用，并与首次 Setup 复用同一配置实现。工作区信任选择“否，退出”是正常取消，CLI 必须干净退出，不得向开发包装层返回错误状态。
 - 新 Provider 必须跑同一套 Conformance Tests；没有真实 E2E 不得宣称产品支持完成。
 - 同品牌不同 API 协议不能假定兼容；OpenAI-compatible 必须以真实协议/实测为依据。
@@ -251,7 +251,7 @@ TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/proce
 CLI、Desktop、Web、Server 是同一个 Core 的 Shell，禁止复制 Agent Runtime。
 - Terminal 的 `Ctrl+C` 必须按 `真实选区复制 → busy 中止 Turn → modal 取消/deny → idle 二次确认退出` 的顺序路由；有选区时禁止退出。复制优先使用 OpenTUI/Renderer 官方 clipboard 能力，不以 shell `clip.exe` 作为唯一实现。
 - `Ctrl+C` 不进入 Terminal 永久快捷栏；它的含义依赖当前 Selection/busy/modal/idle 状态，只有实际触发时才显示短时反馈。永久快捷栏必须优先保持单行，不能为了描述上下文动作产生换行。
-- Terminal 会话指标必须做层级投影而不是把 canonical metrics 全塞一行：主 Mode/Provider 行右侧优先显示真实 context used/window + API balance 或 subscription quota，再与 Provider/Model/Ready/Reasoning 保持稳定间距；第二 detail 行禁止重复 model/context/account，只保留少量 billing/tokens/cost/permission。任何 Host 布局调整都不得改变 `session/metrics` 真值或写死 Provider 品牌。
+- Terminal 会话指标必须做层级投影而不是把 canonical metrics 无差别塞一行：主 Mode 行右侧优先显示真实 context used/window + API balance 或 subscription quota，再与 `Ready dot + canonical Model + Reasoning` 保持稳定间距；正常态不长期重复 Provider 品牌或“模型已就绪”。第二 detail 行禁止重复 model/context/account，但常见宽度必须优先保留真实 cache hit、精确 session/turn tokens、真实 compaction threshold（unavailable=`—`）、turn count、真实费用和 permission，并通过缩短标签而不是伪造数值适配宽度。任何 Host 布局调整都不得改变 `session/metrics` 真值、写死 Provider 品牌或硬编码 `80%`。
 
 当前 0.1.x **底层优先**：在 Agent Runtime、真实 Provider、Tool/Permission、Workspace、App Protocol 没达到计划出口前，不继续大规模堆 Desktop UI。
 

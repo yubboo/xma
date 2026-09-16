@@ -198,8 +198,12 @@ for (const marker of [
   '确认强制恢复？请输入 YES 继续',
   '当前源码已经是 GitHub main 最新版本，无需重新 clone',
   '.xma-package\\source-manifest.json',
+  "@('rev-parse','--show-prefix')",
 ]) {
   if (!updateConsoleSource.includes(marker)) throw new Error(`XMA [10] project update contract regression: missing ${marker}`)
+}
+if (updateConsoleSource.includes("@('rev-parse','--show-toplevel')") || updateConsoleSource.includes('[IO.Path]::GetFullPath($top)')) {
+  throw new Error('XMA [10] must not parse native show-toplevel text through GetFullPath; Unicode checkout validation uses .git + show-prefix.')
 }
 if (updateConsoleSource.includes("@('clean','-fd')") || updateConsoleSource.includes('git clean -fd') || updateConsoleSource.includes("@('clean','-fdx')")) {
   throw new Error('XMA [10] force update must not automatically git clean local dependencies/caches.')
