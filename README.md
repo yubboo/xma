@@ -75,7 +75,7 @@ JavaScript Runtime 统一位于根 `node_modules/`：`node_modules/bun` 提供 B
 
 删除/清理依赖后的行为按真实文件状态判断：删除 `node_modules/` 后，下一次 `[1]` 会重新安装当前 Workspace JavaScript 依赖；需要主动刷新 Bun/OpenTUI/Solid latest 时使用 `[8]`。Rust/Cargo 若未安装或损坏，重新运行 `[1]`（或 `[9]`）会在当前项目 `runtime/rust` 内通过官方 rustup-init 自动补齐 stable 与 rustfmt；已经可运行则直接复用。旧项目根 `xma-path/rust` 会由准备器安全清理，不再参与解析。`[4]`/`[7]` 只校验和运行，不会偷偷执行 `pnpm update`、`pnpm install` 或 Rust 联网安装。
 
-开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。
+开发态命令使用 checkout 本地 `.git\xma-state\dev-bin` shim，并只把该目录写入当前用户 `User PATH`，而不是把整个 Git 仓库加入 PATH；这样不会把 `XMA-Sync.bat`、构建脚本等维护文件暴露成全局命令。移动/重命名仓库后，项目默认依赖位置会随 checkout 一起解析；重新运行 `xma-dev.bat → [1]` 可刷新开发 shim。维护者如果通过 `XMA-Sync.bat` 把源码明确同步到另一 checkout，且本机此前已经注册开发 shim，Sync 会自动把 `xiaoyu/xma` 路由切到本次目标并做 `source-root.txt` 自检；已经运行中的旧 TUI 需要退出后重新启动。
 
 Linux / macOS：
 

@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：把解压后的 XMA 版本源码按 Source Manifest 安全同步到自动识别或用户指定的 Git 工作目录。
 关联模块：XMA-Sync.bat、.xma-package/source-manifest.json、checkout 本地 xma-state/source-sync.json、XMA-GitHub.bat、GitHub yubboo/xma。
-当前实现：优先按包内 Source Manifest 比较文件内容；默认识别同级已存在且 origin 正确的 XMA Git 工作目录，存在多个或未找到时由用户明确选择；绝不自动创建/占用标准 git clone 使用的 xma 目录。
-职责边界：不得删除目标仓库 .git、项目 runtime、node_modules、.cache 与正式本机构建产物；历史 xma-path 仅作为兼容迁移对象保留，禁止重新承载 Rust/开发依赖；不得按通用目录名误伤 scripts/release 等正式源码目录。
+当前实现：优先按包内 Source Manifest 比较文件内容并在写入后全量 SHA-256 复核；默认识别同级已存在且 origin 正确的 XMA Git 工作目录，存在多个或未找到时由用户明确选择；绝不自动创建/占用标准 git clone 使用的 xma 目录。用户此前已注册开发态 xiaoyu/xma 时，同步完成会把 shim/User PATH 路由切换到本次目标 checkout。
+职责边界：不得删除目标仓库 .git、项目 runtime、node_modules、.cache 与正式本机构建产物；不得安装/刷新依赖或调用 xma-prepare；开发 shim 迁移只允许修改 checkout 本地 dev-bin 与当前用户 User PATH；历史 xma-path 仅作为兼容迁移对象保留，禁止重新承载 Rust/开发依赖；不得按通用目录名误伤 scripts/release 等正式源码目录。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -116,6 +116,7 @@ $SyncState = Join-Path $CheckoutStateRoot 'source-sync.json'
 $SyncReport = Join-Path $CheckoutStateRoot 'source-sync-last.txt'
 $ChangePreviewLimit = 20
 $SyncSummaryText = $null
+$RegisteredDevCommandsBefore = @(Get-XmaRegisteredDevelopmentCommandEntries)
 
 Write-Host '====================================================================' -ForegroundColor DarkCyan
 Write-Host "  XMA $ProjectVersion Source Sync" -ForegroundColor Cyan
@@ -231,6 +232,37 @@ function Test-XmaFileContentEqual {
   return $sourceHash -eq $targetHash
 }
 
+function Assert-XmaSourceManifestApplied {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$CurrentFiles,
+    [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$PreviousFiles,
+    [Parameter(Mandatory = $true)][hashtable]$CurrentSet
+  )
+
+  $mismatches = New-Object System.Collections.Generic.List[string]
+  foreach ($relative in $CurrentFiles) {
+    $sourceFile = Join-Path $Source (Convert-XmaRelativeToNative $relative)
+    $targetFile = Join-Path $Target (Convert-XmaRelativeToNative $relative)
+    if (-not (Test-XmaFileContentEqual -SourceFile $sourceFile -TargetFile $targetFile)) {
+      [void]$mismatches.Add("内容不一致：$relative")
+    }
+  }
+  foreach ($relative in $PreviousFiles) {
+    if (Test-XmaProtectedRelativePath $relative) { continue }
+    if ($CurrentSet.ContainsKey($relative)) { continue }
+    $targetFile = Join-Path $Target (Convert-XmaRelativeToNative $relative)
+    if (Test-Path -LiteralPath $targetFile -PathType Leaf) {
+      [void]$mismatches.Add("应删除但仍存在：$relative")
+    }
+  }
+
+  if ($mismatches.Count -gt 0) {
+    $preview = @($mismatches.ToArray() | Select-Object -First 12) -join '；'
+    throw "Source Sync 写入后 SHA-256 复核失败，共 $($mismatches.Count) 项：$preview"
+  }
+  Write-Host "[验证] Source Manifest 写入后 SHA-256 复核通过：$($CurrentFiles.Count) 个受管源码文件与目标 checkout 完全一致。" -ForegroundColor Green
+}
+
 function Save-XmaSyncReport {
   param(
     [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Added,
@@ -344,6 +376,7 @@ if (Test-Path $PackageManifest) {
     $updatedFiles += $relative
   }
 
+  Assert-XmaSourceManifestApplied -CurrentFiles $newFiles -PreviousFiles $previousFiles -CurrentSet $newSet
   Save-XmaSyncState -Files $newFiles
   Save-XmaSyncReport -Added $addedFiles -Updated $updatedFiles -Removed $removedFiles -Unchanged $unchangedFiles
 
@@ -432,7 +465,23 @@ if (-not (Test-XmaExpectedGitOrigin $Target)) {
 }
 Write-Host '[验证] Git 工作目录与 origin 仍指向 yubboo/xma。' -ForegroundColor Green
 
-Write-Host '[完成] XMA 新源码已同步；.git checkout 状态 / runtime / node_modules / .cache / dist 等当前本地状态均保留；历史 xma-path 如存在仅保留用于迁移。' -ForegroundColor Green
+# 中文说明：Source Sync 本身不安装依赖，但不能留下“源码已更新、全局开发命令仍启动旧 checkout”的假成功状态。
+# 只有用户此前已经注册过开发态 xiaoyu/xma 时才自动迁移这条控制路由；从未注册过则不擅自新增 User PATH。
+if ($RegisteredDevCommandsBefore.Count -gt 0) {
+  $previousRoots = @($RegisteredDevCommandsBefore | ForEach-Object {
+    $root = Get-XmaDevelopmentCommandSourceRoot -DevBin $_
+    if ([string]::IsNullOrWhiteSpace($root)) { $_ } else { $root }
+  } | Sort-Object -Unique)
+  Write-Host "[开发命令] 检测到已注册的开发态 xiaoyu/xma：$($previousRoots -join '；')" -ForegroundColor DarkCyan
+  Write-Host "[开发命令] 正在把开发命令切换到本次 Source Sync 目标：$Target" -ForegroundColor Cyan
+  Install-XmaDevelopmentCommands -ProjectRoot $Target -OnlyIfAlreadyRegistered -Reason 'Source Sync checkout 切换'
+  Assert-XmaDevelopmentCommandTarget -ProjectRoot $Target
+  Write-Host '[验证] 新打开的 xiaoyu / xma 将使用本次同步后的目标 checkout；已运行中的旧 TUI 进程需要退出后重新启动。' -ForegroundColor Green
+} else {
+  Write-Host '[开发命令] 当前用户没有已注册的开发态 xiaoyu/xma；未修改 User PATH。需要全局开发命令时，在目标目录运行 xma-dev.bat → [1]。' -ForegroundColor DarkGray
+}
+
+Write-Host '[完成] XMA 新源码已同步并完成运行入口一致性检查；.git checkout 状态 / runtime / node_modules / .cache / dist 等当前本地状态均保留；历史 xma-path 如存在仅保留用于迁移。' -ForegroundColor Green
 if ($SyncSummaryText) {
   Write-Host "[本次同步] $SyncSummaryText" -ForegroundColor Cyan
   Write-Host "[完整清单] $SyncReport" -ForegroundColor DarkGray

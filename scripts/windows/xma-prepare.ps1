@@ -57,16 +57,6 @@ function Set-XmaPrepareStamp([string]$Name, [string]$Fingerprint) {
   [IO.File]::WriteAllText((Join-Path $PrepareStateRoot "$Name.sha256"), "$Fingerprint`r`n", ([Text.UTF8Encoding]::new($false)))
 }
 
-function Set-XmaTextFileIfChanged([string]$Path, [string]$Content) {
-  $normalized = ($Content -replace "`r?`n", "`r`n")
-  if (Test-Path -LiteralPath $Path -PathType Leaf) {
-    $current = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
-    if ($current -eq $normalized) { return $false }
-  }
-  [IO.File]::WriteAllText($Path, $normalized, ([Text.UTF8Encoding]::new($false)))
-  return $true
-}
-
 function Refresh-XmaPath {
   # 新安装 Git/Node/MSVC 后，当前 PowerShell 可能仍持有旧 PATH；这里只刷新系统/用户 PATH。
   # 项目本地 Rust 由 Use-XmaProjectRustEnvironment 单独注入当前进程，不写 User/Machine PATH。
@@ -264,81 +254,6 @@ function Ensure-XmaCargoCrates($RustRuntime) {
   Write-Host '[验证] cargo fetch 完成后 offline 复检通过。' -ForegroundColor DarkCyan
 }
 
-function Install-XmaDevelopmentCommands {
-  # 开发 shim 属于 checkout 控制状态，不属于 JavaScript/Rust 依赖实体。放到 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）。
-  $devBin = Join-Path (Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'
-  New-Item -ItemType Directory -Force -Path $devBin | Out-Null
-  # `.cmd` 只做纯 ASCII 跳板；中文 checkout 路径始终由 PowerShell/.NET UTF-8 读取并直接进入 PowerShell 控制台。
-  # 禁止再从 shim 回跳 xma-dev.bat/cmd.exe：Windows cmd 对中文 checkout 路径/代码页的二次解析会导致“系统找不到指定的路径”。
-  $launcher = @'
-@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0xiaoyu-dev.ps1"
-exit /b %ERRORLEVEL%
-'@
-  $powershellLauncher = @'
-$ErrorActionPreference = 'Stop'
-$rootFile = Join-Path $PSScriptRoot 'source-root.txt'
-if (-not (Test-Path -LiteralPath $rootFile -PathType Leaf)) { Write-Error 'XMA development shim lost source-root.txt. Run xma-dev.bat -> [1] again.'; exit 1 }
-$root = [IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8).Trim()
-$console = Join-Path $root 'scripts\windows\xma-console.ps1'
-if (-not (Test-Path -LiteralPath $console -PathType Leaf)) { Write-Error "XMA source checkout no longer exists or is incomplete: $root. Run [1] in the active checkout to refresh the shim."; exit 1 }
-if ($env:XMA_DEV_SHIM_VERIFY -eq '1') { Write-Output $root; exit 0 }
-& $console -Command cli -Workspace (Get-Location).Path
-exit $LASTEXITCODE
-'@
-  $shimChanged = $false
-  foreach ($name in @('xiaoyu.cmd','xma.cmd')) {
-    if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin $name) -Content $launcher) { $shimChanged = $true }
-  }
-  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'xiaoyu-dev.ps1') -Content $powershellLauncher) { $shimChanged = $true }
-  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'source-root.txt') -Content "$Root`r`n") { $shimChanged = $true }
-
-  $normalizedDevBin = Get-XmaNormalizedPath $devBin
-  $currentUserPath = [Environment]::GetEnvironmentVariable('Path','User')
-  $userEntries = @(Get-XmaPathEntries $currentUserPath)
-  $nextUserEntries = @($devBin)
-  foreach ($entry in $userEntries) {
-    $normalized = Get-XmaNormalizedPath $entry
-    if ($normalized -ieq $normalizedDevBin) { continue }
-    # 同一用户只激活一个 XMA checkout；清掉旧 `.xma/dev-bin` 以及其他 checkout 的 `.git/.cache/xma-state/dev-bin`。
-    if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
-    if ($normalized -match '(?i)[\\/](?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$') { continue }
-    $nextUserEntries += $entry
-  }
-  $nextUserPath = ($nextUserEntries -join ';')
-  $pathChanged = $currentUserPath -ne $nextUserPath
-  if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }
-
-  $processEntries = @(Get-XmaPathEntries $env:Path)
-  $nextProcessEntries = @($devBin)
-  foreach ($entry in $processEntries) {
-    $normalized = Get-XmaNormalizedPath $entry
-    if ($normalized -ieq $normalizedDevBin) { continue }
-    if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { continue }
-    if ($normalized -match '(?i)[\\/](?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$') { continue }
-    $nextProcessEntries += $entry
-  }
-  $env:Path = ($nextProcessEntries -join ';')
-
-  # 用刚生成的真实 `.cmd -> PowerShell UTF-8 shim` 链路做一次自检，但不启动 TUI。
-  # 这能在 [1] 内直接抓住中文 checkout 路径、source-root.txt 或 shim 转发错误，而不是等用户去任意目录才发现。
-  $previousShimVerify = $env:XMA_DEV_SHIM_VERIFY
-  try {
-    $env:XMA_DEV_SHIM_VERIFY = '1'
-    Invoke-XmaExternal -FilePath (Join-Path $devBin 'xiaoyu.cmd') -ArgumentList @() -QuietCommand
-  } finally {
-    if ($null -eq $previousShimVerify) { Remove-Item Env:XMA_DEV_SHIM_VERIFY -ErrorAction SilentlyContinue }
-    else { $env:XMA_DEV_SHIM_VERIFY = $previousShimVerify }
-  }
-  Write-Host '[验证] 开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检。' -ForegroundColor Green
-
-  if ($pathChanged -or $shimChanged) { Write-Host '[更新] 开发态 xiaoyu / xma shim 或 User PATH 已同步。' -ForegroundColor Green }
-  else { Write-Host '[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。' -ForegroundColor DarkCyan }
-  Write-Host "[位置] $devBin" -ForegroundColor DarkGray
-  Write-Host '[说明] 移动/重命名仓库后重新运行 xma-dev.bat → [1] 即可刷新。' -ForegroundColor DarkGray
-}
-
 function Remove-XmaLegacyLocalDirectory {
   $legacyRoot = Join-Path $Root '.xma'
   if (-not (Test-Path -LiteralPath $legacyRoot -PathType Container)) { return }
@@ -405,6 +320,7 @@ function Install-XmaWorkspaceJavaScriptDependencies {
     Write-Host '[状态] node_modules 已存在；仍执行 pnpm install，由 pnpm 自己复用 store、补齐新增/变更依赖。' -ForegroundColor DarkCyan
   }
   Write-Host '[pnpm] 以下直接交给 pnpm/Windows Terminal 原生渲染；不经过 PowerShell pipeline，保持同一行进度刷新与原始字符编码。' -ForegroundColor DarkGray
+  Write-Host '[提示] pnpm 自身的 Scope / Progress / 确认提示属于第三方 CLI 原生输出，可能显示英文；若询问是否重建 node_modules，按 Enter 或输入 Y 继续，输入 n 取消。' -ForegroundColor DarkYellow
   Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')
   Write-Host '[完成] pnpm install 已完成。' -ForegroundColor Green
 }
@@ -585,7 +501,7 @@ Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $rustRuntime
 Write-Host ''
 Write-Host '[8/8] 开发态 Xiaoyu 命令' -ForegroundColor Cyan
 Write-Host '[PATH] 正在校验当前源码 checkout 的 xiaoyu/xma shim 与当前用户 PATH...' -ForegroundColor DarkCyan
-Install-XmaDevelopmentCommands
+Install-XmaDevelopmentCommands -ProjectRoot $Root -Reason '[1] 一键准备开发环境'
 Remove-XmaLegacyLocalDirectory
 Remove-XmaPackageMetadataFromGitWorktree
 

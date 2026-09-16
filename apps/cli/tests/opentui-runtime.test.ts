@@ -233,8 +233,10 @@ test('Chinese comment gate keeps OpenTUI source files explicit without recursive
   assert.doesNotMatch(rootsLine, /apps\/cli\/opentui-runtime/)
 })
 
-test('OpenTUI live response uses a buffered typewriter and visible thinking state', () => {
+test('OpenTUI live response projects the first Provider event immediately, then keeps the buffered typewriter', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(source, /let hasProjectedRunEvent = false/)
+  assert.match(source, /if \(!hasProjectedRunEvent\)[\s\S]{0,900}projectRunEvent\(\{ \.\.\.event, text: immediate \}\)/)
   assert.match(source, /const streamPump = setInterval\(pumpRunEvents, 30\)/)
   assert.match(source, /event => enqueueRunEvent\(event\)/)
   assert.match(source, /await waitForEventDrain\(\)/)
@@ -243,17 +245,31 @@ test('OpenTUI live response uses a buffered typewriter and visible thinking stat
   assert.match(source, /正在生成回复…/)
 })
 
-test('OpenTUI transcript owns scrollback so long replies stay readable and mouse wheel can browse history', () => {
+test('OpenTUI transcript is bottom anchored, keeps user messages right aligned, and preserves manual scrollback', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const transcriptStart = source.indexOf('<Show when={transcript().length > 0}>')
+  const dockStart = source.indexOf('<box width={dockWidth()} flexDirection="column"', transcriptStart)
+  const transcriptSource = source.slice(transcriptStart, dockStart)
   assert.match(source, /type ScrollBoxRenderable/)
-  assert.match(source, /<scrollbox/)
-  assert.match(source, /stickyScroll=\{true\}/)
-  assert.match(source, /stickyStart="bottom"/)
-  assert.match(source, /scrollbarOptions=\{\{ visible: false \}\}/)
-  assert.match(source, /<For each=\{transcript\(\)\}>/)
+  assert.match(transcriptSource, /<scrollbox/)
+  assert.match(transcriptSource, /stickyScroll=\{true\}/)
+  assert.match(transcriptSource, /stickyStart="bottom"/)
+  assert.match(transcriptSource, /contentOptions=\{\{ flexGrow: 1, justifyContent: 'flex-end' \}\}/)
+  assert.match(transcriptSource, /when=\{item\.role === 'user'\}/)
+  assert.match(transcriptSource, /justifyContent="flex-end"/)
+  assert.match(source, /Xiaoyu · 思考/)
+  assert.match(transcriptSource, /scrollbarOptions=\{\{ visible: false \}\}/)
+  assert.match(transcriptSource, /<For each=\{transcript\(\)\}>/)
   assert.doesNotMatch(source, /transcript\(\)\.slice\(-18\)/)
   assert.match(source, /transcriptScroll\.scrollBy\(-8\)/)
   assert.match(source, /transcriptScroll\.scrollTo\(1_000_000\)/)
+})
+
+test('Windows prepare labels pnpm native English prompts without piping or rewriting pnpm output', () => {
+  const source = readFileSync('scripts/windows/xma-prepare.ps1', 'utf8')
+  assert.match(source, /\[提示\] pnpm 自身的 Scope \/ Progress \/ 确认提示属于第三方 CLI 原生输出，可能显示英文/)
+  assert.match(source, /Invoke-XmaExternal -FilePath 'pnpm\.cmd' -ArgumentList @\('install'\)/)
+  assert.doesNotMatch(source, /pnpm\.cmd.*\|/)
 })
 
 test('OpenTUI model setup centers dialogs, releases the workbench cursor, and keeps Esc active during first-run setup', () => {

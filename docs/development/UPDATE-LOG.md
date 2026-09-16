@@ -776,3 +776,14 @@
 - 启动性能：Native 指纹/构建缓存逻辑下沉到 `xma-common.ps1` 共享；`[1]` / `[9]` 在 crates offline 复检后预构建 `xma-native-runtime` 并写 `cli-native.sha256`，`[4]` 只在 Rust/Cargo 输入变化或产物缺失时离线重建，因此完成 `[1]` 后首次 `[4]` 也应直接进入 Trust/TUI。
 - 模型状态：产品 Ready 仍严格等于活动 Provider/Profile/Model 已保存且 Credential Reference 当前可读取；Prompt Dock Provider 行与底部提示显式显示“模型已就绪”，连接测试继续只作为可选诊断，不参与 Ready gating。
 - 回归：OpenTUI/Distribution/Windows Gate 改为锁定 Textarea cursor ownership、Trust cursor handoff、direct-PowerShell UTF-8 shim + 实际 shim 自检、`[1]` Native build cache 与模型 Ready 文案。版本保持 `0.1.0`。
+
+##72 · Source Sync 运行入口一致性修复
+
+- 日期：2026-09-16
+- 目的：修复维护者把新源码包同步到长期 Git checkout 后，磁盘源码已经更新但全局开发态 `xiaoyu/xma` 仍可能指向旧 checkout，导致 TUI 看起来“还是老版本”的假同步问题。
+- Source Manifest：复制/删除完成后新增全量 SHA-256 源/目标复核；Manifest 任一受管文件内容不一致、或应删除的上一版文件仍残留时直接失败，不再输出“同步完成”。
+- Dev Shim：`Install-XmaDevelopmentCommands` 从 `xma-prepare.ps1` 收口到 `xma-common.ps1`，`[1]` 与 `XMA-Sync.bat` 复用同一 UTF-8 `source-root.txt`、ASCII `.cmd` 跳板和 User PATH 清理逻辑，禁止维护两套实现。
+- Checkout 切换：Source Sync 仅在用户此前已经注册开发态 `xiaoyu/xma` 时自动重绑到本次明确选择的目标 checkout，并在完成前验证 User PATH 只保留目标 dev-bin 且 `source-root.txt` 指向目标；从未注册过开发 shim 时不擅自新增 PATH。
+- 职责边界：Sync 仍不运行 `pnpm install`、Cargo fetch/build、winget 或其他环境准备；已有运行中的旧 TUI 进程不会热替换，完成提示明确要求退出后重新启动。
+- Gate：Windows Gate 锁定 Source Sync 全量哈希复核、共享 shim helper、自动 checkout 重绑与不新增未注册 PATH 的合同。
+

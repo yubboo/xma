@@ -217,7 +217,7 @@ XMA 文件/目录命名必须让开发者只看路径就能判断领域和职责
 - `xma-dev` → `scripts/unix/xma-console.sh`
 - `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1`
 - `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1`
-- 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。同步结果必须区分本次“新增 / 更新 / 删除 / 未变化”，Manifest 总文件数不得冒充本次实际变更数；完整变更清单保存到目标 checkout 本地 `xma-state/source-sync-last.txt`（普通 clone 为 `.git/xma-state/source-sync-last.txt`）。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。
+- 正式源码包必须携带 `.xma-package/source-manifest.json`；Sync 按 Manifest 精确管理源码，新增目录自动同步，删除/重命名自动清理。同步结果必须区分本次“新增 / 更新 / 删除 / 未变化”，Manifest 总文件数不得冒充本次实际变更数；完整变更清单保存到目标 checkout 本地 `xma-state/source-sync-last.txt`（普通 clone 为 `.git/xma-state/source-sync-last.txt`）。禁止用全局目录名排除规则误伤 `scripts/release/` 等正式源码目录。 Source Sync 在复制/删除完成后必须对 Manifest 全部受管文件再次做 SHA-256 源/目标复核，复核失败不得显示“完成”。如果当前用户此前已经注册开发态 `xiaoyu/xma` shim，Sync 必须把这条 checkout 控制路由与 User PATH 自动切换到本次明确选择的目标仓库，并做 `source-root.txt` 自检；从未注册过开发 shim 时不得擅自新增 PATH。Sync 仍不得安装依赖或调用 `[1]`，已运行中的旧 TUI 进程必须提示退出后重启。
 
 BAT/PS1 必须在成功和失败后保留窗口，并有明显颜色状态提示。
 

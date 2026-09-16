@@ -348,7 +348,7 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - 公共 Git clone 必须可以位于任意本地目录；Windows `xma-dev.bat` 与 Linux/macOS `xma-dev` 都不得依赖维护者机器绝对路径。
 - Windows `xma-dev.bat` 只做稳定入口，环境准备实现归属 `scripts/windows/xma-prepare.ps1`；Linux/macOS `xma-dev` 委托 `scripts/unix/xma-console.sh`。
 - 正式安装后的产品命令是 `xiaoyu`（主）与 `xma`（兼容别名）；源码入口必须始终包含 `-dev`，不得产生根 `xma.bat` / `xma` 开发启动器与产品命令撞名。
-- 维护者 Source Manifest 工作流不得绑定 `H:`/`D:`/`C:` 等固定盘符；`XMA-Sync.bat` 只能复用已存在、origin 正确的 XMA Git 工作目录。唯一候选可自动使用，多候选必须交给维护者选择，无候选时必须要求输入已 clone 仓库路径；禁止自动创建 `xma/xma-worktree-*`、禁止 `git init`、禁止改写其他仓库 origin。`XMA_TARGET_ROOT` 仅用于显式指定一个已存在的正确仓库，不能反向污染产品/源码启动逻辑。
+- 维护者 Source Manifest 工作流不得绑定 `H:`/`D:`/`C:` 等固定盘符；`XMA-Sync.bat` 只能复用已存在、origin 正确的 XMA Git 工作目录。唯一候选可自动使用，多候选必须交给维护者选择，无候选时必须要求输入已 clone 仓库路径；禁止自动创建 `xma/xma-worktree-*`、禁止 `git init`、禁止改写其他仓库 origin。`XMA_TARGET_ROOT` 仅用于显式指定一个已存在的正确仓库，不能反向污染产品/源码启动逻辑。 Source Sync 写入后必须全量复核 Manifest 受管文件 SHA-256；若用户已注册开发态 `xiaoyu/xma`，同步到明确目标 checkout 后必须复用共享 shim helper 把 User PATH 路由切到该目标并验证 `source-root.txt`，避免继续启动旧 checkout。该重绑不属于依赖准备，禁止因此调用 pnpm/Cargo/winget；用户未注册开发 shim 时不得新增 PATH。
 
 
 ## JavaScript Runtime Bootstrap 补充规则（0.1.0）

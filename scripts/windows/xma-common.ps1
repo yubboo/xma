@@ -1,8 +1,8 @@
 ﻿<#
 文件作用：XMA Windows 脚本公共基础函数，统一依赖根目录、Rust/Cargo 环境恢复、版本读取与外部命令执行。
-关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1。
-当前实现：Rust/Cargo 使用项目本地 `runtime/rust/{cargo,rustup}`，与根 `node_modules` 同属 checkout 本地依赖；XMA 通过 `CARGO_HOME/RUSTUP_HOME` 让 rustup、cargo、crates 与 toolchain 跟随项目目录，不写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`。Bun/OpenTUI 统一由根 pnpm Workspace `node_modules` 管理。
-职责边界：这里只提供跨 Windows 入口共享的项目本地 Rust 路径、环境与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，Resolve-XmaRustRuntime 只解析当前项目 `runtime/rust` 中已真实可运行的 Rust/Cargo，不负责联网安装；联网安装由 xma-prepare.ps1 的 [1]/[9] 负责。
+关联模块：xma-prepare.ps1、xma-console.ps1、xma-build-release.ps1、xma-sync.ps1、xma-github.ps1、开发态 xiaoyu/xma shim。
+当前实现：Rust/Cargo 使用项目本地 `runtime/rust/{cargo,rustup}`，与根 `node_modules` 同属 checkout 本地依赖；XMA 通过 `CARGO_HOME/RUSTUP_HOME` 让 rustup、cargo、crates 与 toolchain 跟随项目目录，不写入 `%USERPROFILE%\.cargo/.rustup`，也不再维护旧 `xma-path/rust`。Bun/OpenTUI 统一由根 pnpm Workspace `node_modules` 管理；开发态 `xiaoyu/xma` shim 的生成、UTF-8 自检与单 checkout User PATH 路由也统一在此共享，供 `[1]` 与 Source Sync 复用。
+职责边界：这里只提供跨 Windows 入口共享的项目本地 Rust 路径、开发 shim 与命令基础能力；Invoke-XmaProbe 仅做短命令静默探测，Resolve-XmaRustRuntime 只解析当前项目 `runtime/rust` 中已真实可运行的 Rust/Cargo，不负责联网安装；开发 shim helper 只写 checkout 控制状态与 User PATH，不安装依赖；联网安装仍只由 xma-prepare.ps1 的 [1]/[9] 负责。
 #>
 
 function Get-XmaProjectVersion {
@@ -91,6 +91,156 @@ function Get-XmaPathEntries {
     [void]$entries.Add($candidate)
   }
   return $entries.ToArray()
+}
+
+function Test-XmaDevelopmentCommandPath {
+  param([string]$Path)
+  $normalized = Get-XmaNormalizedPath $Path
+  if ([string]::IsNullOrWhiteSpace($normalized)) { return $false }
+  if ($normalized -match '(?i)[\\/]\.xma[\\/]dev-bin$') { return $true }
+  return ($normalized -match '(?i)[\\/]xma-state[\\/]dev-bin$')
+}
+
+function Get-XmaRegisteredDevelopmentCommandEntries {
+  $entries = New-Object System.Collections.Generic.List[string]
+  foreach ($entry in @(Get-XmaPathEntries ([Environment]::GetEnvironmentVariable('Path','User')))) {
+    if (Test-XmaDevelopmentCommandPath -Path $entry) { [void]$entries.Add($entry) }
+  }
+  return $entries.ToArray()
+}
+
+function Get-XmaDevelopmentCommandSourceRoot {
+  param([Parameter(Mandatory = $true)][string]$DevBin)
+  $rootFile = Join-Path $DevBin 'source-root.txt'
+  if (-not (Test-Path -LiteralPath $rootFile -PathType Leaf)) { return '' }
+  try {
+    return ([IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8).Trim())
+  } catch {
+    return ''
+  }
+}
+
+function Assert-XmaDevelopmentCommandTarget {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  $expectedRoot = Get-XmaNormalizedPath $ProjectRoot
+  $expectedDevBin = Get-XmaNormalizedPath (Join-Path (Get-XmaStateRoot -ProjectRoot $ProjectRoot) 'dev-bin')
+  $registered = @(Get-XmaRegisteredDevelopmentCommandEntries)
+  if ($registered.Count -ne 1) {
+    throw "开发态 xiaoyu/xma User PATH 应只保留 1 个 XMA dev-bin，当前检测到 $($registered.Count) 个。请在目标 checkout 运行 xma-dev.bat → [1] 修复。"
+  }
+  $actualDevBin = Get-XmaNormalizedPath $registered[0]
+  if ($actualDevBin -ine $expectedDevBin) {
+    throw "开发态 xiaoyu/xma 仍指向其他 checkout：$actualDevBin；期望：$expectedDevBin。"
+  }
+  $actualRoot = Get-XmaNormalizedPath (Get-XmaDevelopmentCommandSourceRoot -DevBin $registered[0])
+  if ($actualRoot -ine $expectedRoot) {
+    throw "开发态 xiaoyu/xma source-root.txt 指向错误：$actualRoot；期望：$expectedRoot。"
+  }
+}
+
+function Install-XmaDevelopmentCommands {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [switch]$OnlyIfAlreadyRegistered,
+    [string]$Reason = '开发环境准备'
+  )
+
+  $registeredBefore = @(Get-XmaRegisteredDevelopmentCommandEntries)
+  if ($OnlyIfAlreadyRegistered -and $registeredBefore.Count -eq 0) {
+    Write-Host '[开发命令] 当前用户尚未注册开发态 xiaoyu/xma；Source Sync 不主动新增 User PATH。需要全局开发命令时，在目标 checkout 运行 xma-dev.bat → [1]。' -ForegroundColor DarkGray
+    return
+  }
+
+  $root = [IO.Path]::GetFullPath($ProjectRoot)
+  $console = Join-Path $root 'scripts\windows\xma-console.ps1'
+  if (-not (Test-Path -LiteralPath $console -PathType Leaf)) {
+    throw "无法注册开发态 xiaoyu/xma：目标 checkout 缺少 scripts\\windows\\xma-console.ps1：$root"
+  }
+
+  # 开发 shim 属于 checkout 控制状态，不属于 JavaScript/Rust 依赖实体。放到 `.git/xma-state/dev-bin`（非 Git 树回退 `.cache/xma-state/dev-bin`）。
+  $devBin = Join-Path (Get-XmaStateRoot -ProjectRoot $root) 'dev-bin'
+  New-Item -ItemType Directory -Force -Path $devBin | Out-Null
+  # `.cmd` 只做纯 ASCII 跳板；中文 checkout 路径始终由 PowerShell/.NET UTF-8 读取并直接进入 PowerShell 控制台。
+  $launcher = @'
+@echo off
+setlocal EnableExtensions DisableDelayedExpansion
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0xiaoyu-dev.ps1"
+exit /b %ERRORLEVEL%
+'@
+  $powershellLauncher = @'
+$ErrorActionPreference = 'Stop'
+$rootFile = Join-Path $PSScriptRoot 'source-root.txt'
+if (-not (Test-Path -LiteralPath $rootFile -PathType Leaf)) { Write-Error 'XMA development shim lost source-root.txt. Run xma-dev.bat -> [1] again.'; exit 1 }
+$root = [IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8).Trim()
+$console = Join-Path $root 'scripts\windows\xma-console.ps1'
+if (-not (Test-Path -LiteralPath $console -PathType Leaf)) { Write-Error "XMA source checkout no longer exists or is incomplete: $root. Run [1] in the active checkout to refresh the shim."; exit 1 }
+if ($env:XMA_DEV_SHIM_VERIFY -eq '1') { Write-Output $root; exit 0 }
+& $console -Command cli -Workspace (Get-Location).Path
+exit $LASTEXITCODE
+'@
+
+  $shimChanged = $false
+  foreach ($name in @('xiaoyu.cmd','xma.cmd')) {
+    if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin $name) -Content $launcher) { $shimChanged = $true }
+  }
+  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'xiaoyu-dev.ps1') -Content $powershellLauncher) { $shimChanged = $true }
+  if (Set-XmaTextFileIfChanged -Path (Join-Path $devBin 'source-root.txt') -Content "$root`r`n") { $shimChanged = $true }
+
+  $normalizedDevBin = Get-XmaNormalizedPath $devBin
+  $currentUserPath = [Environment]::GetEnvironmentVariable('Path','User')
+  $userEntries = @(Get-XmaPathEntries $currentUserPath)
+  $nextUserEntries = @($devBin)
+  foreach ($entry in $userEntries) {
+    $normalized = Get-XmaNormalizedPath $entry
+    if ($normalized -ieq $normalizedDevBin) { continue }
+    # 同一用户只激活一个 XMA checkout；清掉旧 `.xma/dev-bin` 以及其他 checkout/git-worktree 的 `xma-state/dev-bin`。
+    if (Test-XmaDevelopmentCommandPath -Path $entry) { continue }
+    $nextUserEntries += $entry
+  }
+  $nextUserPath = ($nextUserEntries -join ';')
+  $pathChanged = $currentUserPath -ne $nextUserPath
+  if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }
+
+  $processEntries = @(Get-XmaPathEntries $env:Path)
+  $nextProcessEntries = @($devBin)
+  foreach ($entry in $processEntries) {
+    $normalized = Get-XmaNormalizedPath $entry
+    if ($normalized -ieq $normalizedDevBin) { continue }
+    if (Test-XmaDevelopmentCommandPath -Path $entry) { continue }
+    $nextProcessEntries += $entry
+  }
+  $env:Path = ($nextProcessEntries -join ';')
+
+  # 用刚生成的真实 `.cmd -> PowerShell UTF-8 shim` 链路做一次自检，但不启动 TUI。
+  $previousShimVerify = $env:XMA_DEV_SHIM_VERIFY
+  try {
+    $env:XMA_DEV_SHIM_VERIFY = '1'
+    Invoke-XmaExternal -FilePath (Join-Path $devBin 'xiaoyu.cmd') -ArgumentList @() -QuietCommand
+  } finally {
+    if ($null -eq $previousShimVerify) { Remove-Item Env:XMA_DEV_SHIM_VERIFY -ErrorAction SilentlyContinue }
+    else { $env:XMA_DEV_SHIM_VERIFY = $previousShimVerify }
+  }
+  Assert-XmaDevelopmentCommandTarget -ProjectRoot $root
+  Write-Host '[验证] 开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检。' -ForegroundColor Green
+  Write-Host "[验证] 开发态 xiaoyu / xma shim 已绑定当前 checkout：$root" -ForegroundColor Green
+
+  if ($pathChanged -or $shimChanged) { Write-Host "[更新] ${Reason}：开发态 xiaoyu / xma shim 与 User PATH 已同步。" -ForegroundColor Green }
+  else { Write-Host '[缓存] 开发态 xiaoyu / xma shim 与 User PATH 已匹配，跳过重复写入。' -ForegroundColor DarkCyan }
+  Write-Host "[位置] $devBin" -ForegroundColor DarkGray
+}
+
+function Set-XmaTextFileIfChanged {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Content
+  )
+  $normalized = ($Content -replace "`r?`n", "`r`n")
+  if (Test-Path -LiteralPath $Path -PathType Leaf) {
+    $current = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    if ($current -eq $normalized) { return $false }
+  }
+  [IO.File]::WriteAllText($Path, $normalized, ([Text.UTF8Encoding]::new($false)))
+  return $true
 }
 
 function Test-XmaWritableDirectory {

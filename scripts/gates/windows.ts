@@ -238,15 +238,10 @@ for (const marker of [
   "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('fetch','--locked')",
   "@('exec','tsx','-e'",
   'Electron Chromium Runtime',
-  'function Install-XmaDevelopmentCommands',
-  "Get-XmaStateRoot -ProjectRoot $Root) 'dev-bin'",
-  "@('xiaoyu.cmd','xma.cmd')",
-  "if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }",
   '[8/8] 开发态 Xiaoyu 命令',
   'Cargo 指纹未变化；仍验证实际 crate 缓存',
   'cargo fetch 完成后 offline 复检通过',
   'Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $rustRuntime',
-  '开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -256,8 +251,8 @@ if (prepareSource.includes('function Select-XmaDependencyRoot') || prepareSource
 if (prepareSource.includes('Import-XmaRustEnvironment') || prepareSource.includes('Save-XmaRustEnvironmentState')) throw new Error('Active Rust preparation must not use checkout Rust state round-trips.')
 if (prepareSource.includes('https://rsproxy.cn')) throw new Error('Project-local Rust bootstrap must use the official rustup distribution endpoint.')
 if (prepareSource.includes('Rustlang.Rustup') || prepareSource.includes("Join-Path $env:USERPROFILE '.cargo")) throw new Error('Windows Rust must not fall back to user-profile Rust installation.')
-if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) throw new Error('dev shim belongs to checkout-local state, not xma-path')
-if (!prepareSource.includes("xiaoyu-dev.ps1") || !prepareSource.includes("[IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8)")) {
+if (discoveryCommonSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) throw new Error('dev shim belongs to checkout-local state, not xma-path')
+if (!discoveryCommonSource.includes("xiaoyu-dev.ps1") || !discoveryCommonSource.includes("[IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8)")) {
   throw new Error('Windows dev shim must read source-root.txt through PowerShell/.NET UTF-8, not cmd set /p, so Chinese checkout paths remain valid.')
 }
 for (const marker of [
@@ -267,14 +262,14 @@ for (const marker of [
   "Invoke-XmaExternal -FilePath (Join-Path $devBin 'xiaoyu.cmd') -ArgumentList @() -QuietCommand",
   '开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检',
 ]) {
-  if (!prepareSource.includes(marker)) throw new Error(`Windows dev shim direct-PowerShell/UTF-8 self-check contract missing: ${marker}`)
+  if (!discoveryCommonSource.includes(marker)) throw new Error(`Windows dev shim direct-PowerShell/UTF-8 self-check contract missing: ${marker}`)
 }
-if (prepareSource.includes("$entry = Join-Path $root 'xma-dev.bat'") || prepareSource.includes('& $entry cli')) {
+if (discoveryCommonSource.includes("$entry = Join-Path $root 'xma-dev.bat'") || discoveryCommonSource.includes('& $entry cli')) {
   throw new Error('Windows dev shim must not bounce back through xma-dev.bat/cmd.exe; Chinese checkout paths must stay in the PowerShell UTF-8 chain.')
 }
-if (prepareSource.includes('set /p "XMA_DEV_ROOT="')) throw new Error('Windows dev shim must not parse UTF-8 source-root.txt through cmd.exe set /p.')
-if (!prepareSource.includes(String.raw`(?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$`)) {
-  throw new Error('Windows [1] must remove stale dev-bin PATH entries from other XMA checkouts.')
+if (discoveryCommonSource.includes('set /p "XMA_DEV_ROOT="')) throw new Error('Windows dev shim must not parse UTF-8 source-root.txt through cmd.exe set /p.')
+if (!discoveryCommonSource.includes(String.raw`[\\/]xma-state[\\/]dev-bin$`)) {
+  throw new Error('Windows dev shim routing must remove stale dev-bin PATH entries from normal clones and Git worktrees.')
 }
 if (prepareSource.includes("@('exec','esbuild','--version')")) throw new Error('XMA preparation must not validate transitive esbuild via pnpm exec esbuild')
 if (prepareSource.includes("@('--dir','apps/desktop','rebuild','electron')")) throw new Error('XMA preparation must never download Electron Chromium Runtime')
@@ -295,6 +290,15 @@ for (const marker of [
   "Invoke-XmaProbe -FilePath $cargoExe -ArgumentList @('--version')",
   "Invoke-XmaProbe -FilePath $rustcExe -ArgumentList @('--version')",
   'function Get-XmaNativeRuntimeInputFingerprint',
+  'function Test-XmaDevelopmentCommandPath',
+  'function Get-XmaRegisteredDevelopmentCommandEntries',
+  'function Get-XmaDevelopmentCommandSourceRoot',
+  'function Assert-XmaDevelopmentCommandTarget',
+  'function Install-XmaDevelopmentCommands',
+  "Get-XmaStateRoot -ProjectRoot $root) 'dev-bin'",
+  "@('xiaoyu.cmd','xma.cmd')",
+  "if ($pathChanged) { [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User') }",
+  '开发态 xiaoyu / xma shim 已绑定当前 checkout',
   'function Ensure-XmaNativeRuntimeBuildCache',
   String.raw`Join-Path $ProjectRoot '.cache\cargo-target\debug\xma-native-runtime.exe'`,
   "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('build','--package','xma-native-runtime','--offline')",
@@ -492,6 +496,12 @@ for (const marker of [
   "Join-Path $CheckoutStateRoot 'source-sync.json'",
   "Join-Path $CheckoutStateRoot 'source-sync-last.txt'",
   'Test-XmaFileContentEqual',
+  'Assert-XmaSourceManifestApplied',
+  'Source Manifest 写入后 SHA-256 复核通过',
+  'Get-XmaRegisteredDevelopmentCommandEntries',
+  "Install-XmaDevelopmentCommands -ProjectRoot $Target -OnlyIfAlreadyRegistered",
+  'Assert-XmaDevelopmentCommandTarget -ProjectRoot $Target',
+  '新打开的 xiaoyu / xma 将使用本次同步后的目标 checkout',
   '[变更摘要]',
   '[本次同步]',
   '[完整清单]',
@@ -760,6 +770,12 @@ for (const marker of [
   "Join-Path $CheckoutStateRoot 'source-sync.json'",
   "Join-Path $CheckoutStateRoot 'source-sync-last.txt'",
   'Test-XmaFileContentEqual',
+  'Assert-XmaSourceManifestApplied',
+  'Source Manifest 写入后 SHA-256 复核通过',
+  'Get-XmaRegisteredDevelopmentCommandEntries',
+  "Install-XmaDevelopmentCommands -ProjectRoot $Target -OnlyIfAlreadyRegistered",
+  'Assert-XmaDevelopmentCommandTarget -ProjectRoot $Target',
+  '新打开的 xiaoyu / xma 将使用本次同步后的目标 checkout',
   '[变更摘要]',
   '[本次同步]',
   '[完整清单]',

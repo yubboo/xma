@@ -51,7 +51,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 ## Windows 入口的职责边界
 
-- `XMA-Sync.bat`：只负责把源码包同步到**已经存在且 origin 正确**的 Git 工作目录；不 `git init`、不改 origin、不创建替代 worktree。正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 checkout 本地 `.git/xma-state/source-sync-last.txt`（Git worktree 使用其真实 gitdir）。源码包专用 `.xma-package` 不属于长期 Git 工作目录，旧版遗留会在确认目标身份后清理。
+- `XMA-Sync.bat`：负责把源码包同步到**已经存在且 origin 正确**的 Git 工作目录；不 `git init`、不改 origin、不创建替代 worktree，也不安装/刷新任何依赖。正式源码包使用 `.xma-package/source-manifest.json` 精确描述受管源码，新文件/新目录自动同步，删除/重命名自动清理。同步时必须按文件内容区分“新增 / 更新 / 删除 / 未变化”，只复制真实变化文件，并把完整清单写入目标目录 checkout 本地 `.git/xma-state/source-sync-last.txt`（Git worktree 使用其真实 gitdir）；复制/删除结束后再对 Manifest 全量受管文件做 SHA-256 源/目标复核，复核失败直接报错，禁止假成功。若当前用户已经注册过开发态 `xiaoyu/xma`，Sync 会只重绑开发 shim/User PATH 到本次目标 checkout 并做 `source-root.txt` 自检，不运行 `pnpm install`/Cargo/winget；从未注册过开发 shim 时不新增 PATH。源码包专用 `.xma-package` 不属于长期 Git 工作目录，旧版遗留会在确认目标身份后清理。
 - `XMA-GitHub.bat`：只负责长期 Git 工作目录的 Git 安全检查、fetch/pull、commit、push；绝不安装依赖。源码包目录包含 `.xma-package/source-manifest.json` 时必须直接拒绝 Git 初始化/推送，避免制造第二个仓库。由于 Windows 文件系统没有 Unix executable bit，暂存后必须用纯 Git `update-index --chmod=+x` 保证 `xma-dev`、`scripts/unix/xma-console.sh`、`scripts/install/xma-install.sh` 在 Linux/macOS clone 后可执行。
 - `xma-dev.bat`：负责本地基础环境、项目运行、检查和构建；主菜单 `[10] 更新项目` 可在正确 `yubboo/xma` clone 中执行安全更新（fetch + pull --rebase --autostash）或经明确确认后强制恢复 `origin/main`。源码包目录不会开放该更新入口。
 
@@ -79,7 +79,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
 - `[5]/[6] Desktop 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行桌面端专用测试/构建；Electron 只构建 Web + Electron Main + Setup/Portable，Tauri 只构建自身 Web/Rust bundle。**禁止顺带执行 `build:cli`、`build:server`、`scripts/release/cli.ts` 或 `cargo build --workspace`**；Xiaoyu Terminal portable 发行继续由 `scripts/release/` 与 Release Workflow 独立负责，因此 CLI 构建错误不能阻塞 Desktop 安装包。
 
-`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，由 ASCII `.cmd` 跳板进入 `xiaoyu-dev.ps1`，PowerShell/.NET 以 UTF-8 读取 checkout 后直接调用 `xma-console.ps1 -Command cli -Workspace <caller-cwd>`；不再回跳 `xma-dev.bat/cmd.exe`，因此中文 checkout 路径不会被代码页二次解析。`[1]` 会执行一次真实 shim 自检，不打开 TUI但验证该链路。一个用户只保留一个激活的 `.git\xma-state\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。切换 checkout 后重新运行 `[1]` 才会更新指向。
+`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，由 ASCII `.cmd` 跳板进入 `xiaoyu-dev.ps1`，PowerShell/.NET 以 UTF-8 读取 checkout 后直接调用 `xma-console.ps1 -Command cli -Workspace <caller-cwd>`；不再回跳 `xma-dev.bat/cmd.exe`，因此中文 checkout 路径不会被代码页二次解析。`[1]` 会执行一次真实 shim 自检，不打开 TUI但验证该链路。一个用户只保留一个激活的 `.git\xma-state\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。手工切换普通 checkout 时可重跑 `[1]`；维护者通过 `XMA-Sync.bat` 明确把源码同步到另一 checkout 且用户已经存在开发 shim 时，Sync 会自动把这条 shim 路由切到同步目标，避免“源码已更新但 `xiaoyu` 仍启动旧 checkout”。已运行的旧 TUI 不会被热替换，必须退出后重新启动。
 
 `esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
 

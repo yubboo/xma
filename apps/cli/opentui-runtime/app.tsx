@@ -1,7 +1,7 @@
 /**
  * 文件作用：实现 Xiaoyu Terminal 的 OpenTUI 主工作台，统一真实输入焦点、响应式布局、命令面板与模型配置交互。
  * 关联模块：main.ts、tui.ts 纯合同/Workspace Trust、brain.ts、xma-agent-loop Runtime 与 Provider/Tool 后端。
- * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供平滑星空/流星、思考状态、缓冲打字机流式对话、Build/Plan/Compose、命令搜索、Provider/Model/Reasoning 与 Tool Approval。
+ * 当前实现：使用 @opentui/core + @opentui/solid 的 CliRenderer/Textarea 原生输入，提供平滑星空/流星、首帧即时 + 缓冲打字机流式对话、底部锚定会话区、Build/Plan/Compose、命令搜索、Provider/Model/Reasoning 与 Tool Approval。
  * 职责边界：本文件只负责 Terminal Host 视觉与交互；不得复制 Agent Loop、Provider 协议、Session durable truth 或 Native 安全策略。
  */
 
@@ -338,11 +338,11 @@ function reasoningColor(effort: TerminalReasoningEffort): string {
 }
 
 function roleMeta(role: TerminalTranscriptItem['role']): { label: string; color: string } {
-  if (role === 'user') return { label: 'You', color: COLOR.orange }
+  if (role === 'user') return { label: '你', color: COLOR.orange }
   if (role === 'assistant') return { label: 'Xiaoyu', color: COLOR.orange }
-  if (role === 'reasoning') return { label: 'Think', color: COLOR.yellow }
-  if (role === 'tool') return { label: 'Tool', color: COLOR.blue }
-  return { label: 'System', color: COLOR.soft }
+  if (role === 'reasoning') return { label: 'Xiaoyu · 思考', color: COLOR.yellow }
+  if (role === 'tool') return { label: 'Xiaoyu · 工具', color: COLOR.blue }
+  return { label: '系统', color: COLOR.soft }
 }
 
 function Logo(props: { compact: boolean; frame: number; gradient: boolean }) {
@@ -715,6 +715,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   let controller: AbortController | undefined
   let bufferedEvents: TerminalRunEvent[] = []
   let bufferedCharacters = 0
+  let hasProjectedRunEvent = false
   let drainResolvers: Array<() => void> = []
 
   const contentWidth = createMemo(() => openTuiContentWidth(dimensions().width))
@@ -781,12 +782,44 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     drainResolvers = []
     for (const resolve of resolvers) resolve()
   }
-  const enqueueRunEvent = (event: TerminalRunEvent) => {
+  const projectRunEvent = (event: TerminalRunEvent) => {
+    setTranscript(current => {
+      const next = current.map(item => ({ ...item }))
+      applyTerminalRunEvent(next, event)
+      return next
+    })
+    renderer.requestRender()
+  }
+  const enqueueBufferedRunEvent = (event: TerminalRunEvent) => {
     bufferedEvents.push({ ...event })
-    if (event.type === 'text-delta' || event.type === 'reasoning-delta') bufferedCharacters += Array.from(event.text).length
+    if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
+      bufferedCharacters += Array.from(event.text).length
+    }
+  }
+  const enqueueRunEvent = (event: TerminalRunEvent) => {
+    if ((event.type === 'text-delta' || event.type === 'reasoning-delta') && event.text.length === 0) return
     if (event.type === 'reasoning-delta') setActivity('thinking')
     else if (event.type === 'text-delta') setActivity('streaming')
     else setActivity('tool')
+
+    // 中文说明：首个真实 Runtime 事件必须在 Provider 回调这一帧立即投影，不能等 30ms 打字机定时器。
+    // 只把首个 delta 的前几个字符立即上屏，余量仍交给缓冲泵，兼顾“马上有字”和后续平滑吐字。
+    if (!hasProjectedRunEvent) {
+      hasProjectedRunEvent = true
+      if (event.type === 'text-delta' || event.type === 'reasoning-delta') {
+        const characters = Array.from(event.text)
+        const immediateCount = Math.min(3, characters.length)
+        const immediate = characters.slice(0, immediateCount).join('')
+        const remaining = characters.slice(immediateCount).join('')
+        if (immediate) projectRunEvent({ ...event, text: immediate })
+        if (remaining) enqueueBufferedRunEvent({ ...event, text: remaining })
+      } else {
+        projectRunEvent(event)
+      }
+      return
+    }
+
+    enqueueBufferedRunEvent(event)
   }
   const pumpRunEvents = () => {
     const event = bufferedEvents[0]
@@ -808,12 +841,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     } else {
       bufferedEvents.shift()
     }
-    setTranscript(current => {
-      const next = current.map(item => ({ ...item }))
-      applyTerminalRunEvent(next, projected)
-      return next
-    })
-    renderer.requestRender()
+    projectRunEvent(projected)
     settleEventDrain()
   }
   const waitForEventDrain = () => bufferedEvents.length === 0
@@ -822,6 +850,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const clearEventBuffer = () => {
     bufferedEvents = []
     bufferedCharacters = 0
+    hasProjectedRunEvent = false
     settleEventDrain()
   }
 
@@ -1441,6 +1470,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
             scrollY={true}
             stickyScroll={true}
             stickyStart="bottom"
+            contentOptions={{ flexGrow: 1, justifyContent: 'flex-end' }}
             viewportCulling={true}
             scrollbarOptions={{ visible: false }}
           >
@@ -1448,11 +1478,30 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
               <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
                 <For each={transcript()}>{item => {
                   const meta = roleMeta(item.role)
+                  const itemText = item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text
                   return (
-                    <box flexDirection="row" gap={2}>
-                      <box width={8}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
-                      <box flexGrow={1}><text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{item.placeholder ? `${spinnerGlyph()} 正在思考…` : item.text}</text></box>
-                    </box>
+                    <Show
+                      when={item.role === 'user'}
+                      fallback={
+                        <box width="100%" flexDirection="row" gap={2}>
+                          <box width={14}><text fg={meta.color}><strong>{meta.label}</strong></text></box>
+                          <box flexGrow={1}>
+                            <text fg={item.role === 'reasoning' ? COLOR.faint : item.role === 'tool' ? COLOR.soft : COLOR.text}>{itemText}</text>
+                          </box>
+                        </box>
+                      }
+                    >
+                      <box width="100%" flexDirection="row" justifyContent="flex-end">
+                        <box
+                          maxWidth={Math.max(20, Math.floor(contentWidth() * 0.72))}
+                          backgroundColor={COLOR.panel}
+                          paddingLeft={2}
+                          paddingRight={1}
+                        >
+                          <text fg={COLOR.text}>{itemText}</text>
+                        </box>
+                      </box>
+                    </Show>
                   )
                 }}</For>
               </box>
