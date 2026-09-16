@@ -1017,3 +1017,11 @@
 - 修复：`COLOR.userMessage` 从 `#d7d7d7` 调整为更柔和的浅灰白 `#bdbdbd`；`TranscriptViewport` 的 user row 增加右对齐布局容器，保持 full-width band + padding 不变，只把文本与内部对齐切到右侧。
 - 状态：#13 进入**验证中**，等待用户 Windows Terminal 最终截图确认。PromptDock、Metrics 全量直显、Home 上移与滚动/caret ownership 未在本轮修改。
 
+##91 · Terminal 空会话状态栏精简与左右对齐
+
+- 日期：2026-09-16
+- 流程：按 `REPAIR-WORKFLOW.md` 先建立 `REPAIR-PROMPTS #14` 再实施；#14 继承 #12 的“对话后完整 metrics 不得按宽度隐藏”结论，只增加空会话展示例外。
+- 实机反馈：Home / `当前会话0轮` 时完整 detail 仍显示大量 `—` 占位，视觉过重；用户只希望保留 `API` 与 `权限 替我审批`，并一左一右。
+- 修复：新增 `sessionIdleStatusItems()` 统一格式化 billing/permission。`turnCount=0` 时 `SessionStatusBar` 使用单行 `justifyContent=space-between` 投影左 billing / 右 permission；`sessionStatusItems()` 同步只返回这两个字段。`turnCount>0` 后恢复 cache hit、精确 session/turn tokens、真实 compaction、轮次、真实费用和 permission 的完整 detail，窄屏继续只换行不裁字段。
+- 回归：新增“0轮只显示 billing/permission、1轮自动恢复完整 telemetry”的 formatter 测试，并在 OpenTUI 静态合同锁定 idle helper、`turnCount > 0` 边界与 `space-between` 左右布局。`node --experimental-strip-types --test apps/cli/tests/session-status.test.ts apps/cli/tests/opentui-runtime.test.ts` 43/43 PASS；Runtime updater 2/2 PASS；修改文件 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。
+- 状态：#14 进入**验证中**，等待 Windows Terminal Home 截图确认；Prompt headline、Provider/model 右对齐、PromptDock 高度、Transcript/scroll/caret 本轮未改。

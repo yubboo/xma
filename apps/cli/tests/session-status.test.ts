@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SessionRuntimeMetrics } from 'xma-session'
-import { sessionHeadlineItems, sessionStatusItems, sessionStatusRows, terminalTextColumns } from '../opentui-runtime/ui/session-status.ts'
+import { sessionHeadlineItems, sessionIdleStatusItems, sessionStatusItems, sessionStatusRows, terminalTextColumns } from '../opentui-runtime/ui/session-status.ts'
 
 function baseMetrics(): SessionRuntimeMetrics {
   return {
@@ -115,6 +115,37 @@ test('common-width API headline keeps real balance beside context', () => {
   }
   const text = sessionHeadlineItems(metrics, 100).join(' · ')
   assert.equal(text, '上下文 0.2% · 1,793/1.0m · 余额 ¥12.02')
+})
+
+test('idle session keeps only billing on the left and permission on the right until the first real turn', () => {
+  const metrics = baseMetrics()
+  metrics.billing = { kind: 'api', label: 'API' }
+  metrics.turnCount = 0
+  metrics.requestCount = 0
+  delete metrics.currentTurn
+  metrics.sessionUsage = { requestCount: 0 }
+  metrics.permission = { id: 'smart', label: '替我审批' }
+
+  assert.deepEqual(sessionIdleStatusItems(metrics), ['API', '权限 替我审批'])
+  assert.deepEqual(sessionStatusItems(metrics), ['API', '权限 替我审批'])
+  assert.equal(sessionStatusRows(metrics, 78).join(' · '), 'API · 权限 替我审批')
+  assert.doesNotMatch(sessionStatusItems(metrics).join(' · '), /本次命中|平均命中|tokens|压缩阈值|当前会话|会话费用/)
+
+  metrics.turnCount = 1
+  metrics.currentTurn = {
+    turnId: 'turn-1',
+    active: false,
+    usage: { requestCount: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheHitRatio: 0 },
+    cost: { status: 'unavailable', sources: [] },
+  }
+  metrics.sessionUsage = { requestCount: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, averageCacheHitRatio: 0 }
+  const active = sessionStatusItems(metrics).join(' · ')
+  assert.match(active, /本次命中0\.00%/)
+  assert.match(active, /平均命中0\.00%/)
+  assert.match(active, /会话 tokens15/)
+  assert.match(active, /本次 tokens15/)
+  assert.match(active, /当前会话1轮/)
+  assert.match(active, /权限 替我审批/)
 })
 
 

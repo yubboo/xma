@@ -144,16 +144,27 @@ export function sessionHeadlineItems(metrics: SessionRuntimeMetrics, width: numb
 }
 
 /**
- * Prompt 下方完整的 canonical Session detail 项目。
+ * 空会话只展示最小状态：左侧 billing label、右侧 permission。
+ * 这两个字段也供 SessionStatusBar 的左右对齐布局复用，避免组件自行拼业务文案。
+ */
+export function sessionIdleStatusItems(metrics: SessionRuntimeMetrics): readonly [string, string] {
+  const billing = billingLabel(metrics)
+  const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
+  return [billing, permission]
+}
+
+/**
+ * Prompt 下方 canonical Session detail 项目。
  *
- * #12 起 width 不再决定“显示哪些字段”；不同宽度只影响 sessionStatusRows() 如何分行。
- * 这样 Home 的窄 Dock 也不会把 cache/token/turn/cost/permission 悄悄裁掉。
+ * #14：0 轮时只保留 billing + permission，避免用一排 “—” 占位制造视觉噪声；
+ * 第 1 轮开始恢复 #12 的完整 telemetry，且 width 仍然只影响换行，不影响字段集合。
  */
 export function sessionStatusItems(metrics: SessionRuntimeMetrics, _width?: number): readonly string[] {
+  const [billing, permission] = sessionIdleStatusItems(metrics)
+  if (metrics.turnCount <= 0) return [billing, permission]
+
   const turnTokens = exactInteger(metrics.currentTurn?.usage.totalTokens)
   const sessionTokens = exactInteger(metrics.sessionUsage.totalTokens)
-  const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
-  const billing = billingLabel(metrics)
   const turnHit = percent(metrics.currentTurn?.usage.cacheHitRatio, 2)
   const averageHit = percent(metrics.sessionUsage.averageCacheHitRatio, 2)
   const compactionThreshold = metrics.compaction.available

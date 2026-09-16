@@ -1127,3 +1127,63 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 - `transcript-viewport.tsx`：user row 外层增加 `width="100%" + justifyContent="flex-end"`，band 内部再使用 `alignItems="flex-end"` 与一层 `justifyContent="flex-end"` 的内容容器，让整行 band 保持不变但文本靠右显示。
 - 当前环境未重新跑完整 `pnpm check`；本轮只触碰视觉微调文件，仍待用户 Windows Terminal 截图确认“色温更柔和 + 右对齐”达成。
 
+
+# 14 Terminal 空会话状态栏精简与左右对齐
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime/ui/session-status.ts`、`session-status-bar.tsx`、Terminal 状态栏回归测试
+- 关联历史：#05 统一 Session Metrics、#10 状态栏分层、#12 Metrics 全量直显、#13 用户消息视觉微调
+
+## 用户可见症状
+
+1. Home / 空会话（`当前会话0轮`）时，Prompt 下方仍完整展示 `本次命中— / 平均命中— / 会话 tokens— / 本次 tokens— / 压缩阈值— / 当前会话0轮` 等尚不存在的会话指标，视觉噪声过多。
+2. 用户只希望空会话保留真实计费类型（例如 `API`）和当前权限（例如 `权限 替我审批`），并分别左对齐 / 右对齐；只有真正发生对话后才展开 cache、tokens、compaction、turn、cost 等完整 Session detail。
+
+## 已确认事实与证据
+
+- #12 为避免“数据像被删掉”，把 `sessionStatusItems()` 改成所有宽度都直显完整 canonical metrics；这个结论对**已有会话**仍然成立。
+- 空会话的 `turnCount=0` 是明确的 canonical 状态，此时 cache/tokens/compaction 等显示 `—` 并没有增加信息量，反而让 Home Dock 显得拥挤。
+- `billingLabel()` 与 `metrics.permission.label` 都已经来自 canonical metrics，不需要 Provider 品牌特判，也不需要伪造值。
+
+## 已被证伪/禁止重复的修法
+
+- 禁止重新按终端宽度隐藏已有会话中的 metrics；#12 的“对话后全量直显、窄屏只换行”继续有效。
+- 禁止用 `requestCount`、tokens 或 UI 局部状态猜测是否已有对话；以 canonical `turnCount > 0` 作为唯一展示边界。
+- 禁止把 `API` / permission 硬编码成 DeepSeek 或某个 Provider 的品牌文案。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 源码和 #05/#10/#12 canonical Session Metrics 规则为第一事实源，优化 Terminal 空会话状态栏。先建立 Repair #14，再实施，不能改写旧 Repair 历史。
+>
+> 1. 当 `metrics.turnCount === 0` 时，Session detail 只显示两个真实字段：左侧 billing label（API/subscription/unknown 的 canonical label），右侧 `权限 <label>`；使用一行 `space-between` / 等价布局实现真正左右对齐。
+> 2. 空会话不得显示本次命中、平均命中、会话 tokens、本次 tokens、压缩阈值、当前会话0轮、会话费用等会话 telemetry 占位符。
+> 3. 当 `metrics.turnCount > 0` 后，恢复 #12 的完整 detail：cache hit、session/turn tokens、compaction threshold、turn count、真实 session cost、permission 等字段全部直显；窄屏仍然只允许换行，不允许隐藏/裁字段。
+> 4. Prompt headline（Build + context/balance + 右侧 model/reasoning）不在本轮重构，保持当前左右布局。
+> 5. 增加 formatter/static 回归，锁定“0轮精简、1轮起完整、Home 左右对齐、对话态不裁字段”，并更新 `PROJECT-STATUS.md` / `UPDATE-LOG.md`。
+
+## 不允许回归的行为
+
+- 对话开始后 #12 的完整 metrics 必须全部恢复，不能因为本轮 Home 精简而再次丢字段。
+- API / subscription / unknown 仍使用真实 canonical billing label；permission 仍使用当前真实权限 label。
+- PromptDock 高度、Textarea caret/IME、Transcript bounded slot、sticky scroll、Provider/model 右对齐不得改变。
+
+## 验收条件
+
+- Home / 0轮：状态区视觉形如 `API                                                权限 替我审批`，只占一行且一左一右。
+- 第一轮对话成立后：状态区自动切换回完整 Session detail，字段集合与 #12 一致。
+- 78/100/136/220 列对话态仍只换行、不隐藏；0轮不因为宽度重新出现 telemetry 占位符。
+
+## 最终根因
+
+#12 为解决“常见宽度下真实 metrics 被裁掉”的回归，把完整 canonical detail 无条件投影到 PromptDock；这个策略没有区分“已有真实会话”和“尚未发生任何 Turn 的 Home 状态”。因此 `turnCount=0` 时仍把 cache/tokens/compaction/turn 等未知字段以 `—` 形式完整铺开，数据没有错，但信息层级不合理。
+
+## 实际修改与验证证据
+
+- `session-status.ts` 新增 `sessionIdleStatusItems()`：统一从 canonical metrics 格式化 billing + permission；`sessionStatusItems()` 在 `turnCount<=0` 时只返回这两个字段，第 1 轮开始才组装 #12 全量 telemetry。
+- `session-status-bar.tsx`：空会话用一个 `width=100% / flexDirection=row / justifyContent=space-between` 行，billing 左对齐、permission 右对齐；已有会话继续使用 `sessionStatusRows()` 多行投影。
+- `session-status.test.ts`：新增 0轮 → 1轮边界测试，锁定空会话不出现命中率/tokens/compaction/轮次/cost，占用第一轮后完整指标自动恢复。
+- `opentui-runtime.test.ts`：静态合同新增 `sessionIdleStatusItems()`、`turnCount > 0` 与 `space-between` 左右布局断言。
+- 自动验证：`node --experimental-strip-types --test apps/cli/tests/session-status.test.ts apps/cli/tests/opentui-runtime.test.ts` 共 43/43 PASS；Runtime updater 2/2 PASS；修改文件 TS/TSX 语法转译 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。
+- 待验收：Windows Terminal Home 实机确认 `API` 左 / `权限 替我审批` 右的视觉间距；发生第一轮对话后确认完整 metrics 自动出现。
+
