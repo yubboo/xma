@@ -453,19 +453,22 @@ test('Windows [1] installs one stable per-user xiaoyu/xma PATH entry independent
   assert.match(prepare, /Install-XmaDevelopmentCommands -ProjectRoot \$Root -Reason '\[1\] 一键准备开发环境'/)
 })
 
-test('OpenTUI prompt status keeps Build left aligned and provider truth right aligned', () => {
+test('OpenTUI prompt status keeps Mode left, session headline before Provider truth, and Provider identity protected on the right', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   const promptDock = readFileSync('apps/cli/opentui-runtime/ui/prompt-dock.tsx', 'utf8')
   assert.match(source, /const providerStatus = createMemo/)
   assert.match(source, /label: '模型未配置 · Ctrl\+P \/provider'/)
   assert.match(source, /<PromptDock/)
-  assert.match(promptDock, /flexGrow=\{1\} flexDirection="row" justifyContent="space-between" paddingLeft=\{1\}/)
+  assert.match(promptDock, /<SessionStatusHeadline width=\{props\.width\} metrics=\{props\.metrics\} \/>/)
+  assert.ok(promptDock.indexOf('<SessionStatusHeadline') < promptDock.indexOf('props.providerStatus.dotColor'))
+  assert.match(promptDock, /flexGrow=\{1\} flexShrink=\{1\} minWidth=\{0\} flexDirection="row" justifyContent="flex-end" overflow="hidden"/)
+  assert.match(promptDock, /<box flexDirection="row" flexShrink=\{0\}>/)
   assert.match(promptDock, /<text fg=\{MODE_META\[props\.mode\]\.color\}><strong>\{MODE_META\[props\.mode\]\.label\}<\/strong><\/text>/)
   assert.match(promptDock, /<text fg=\{props\.providerStatus\.dotColor\}>\{props\.providerStatus\.dot\}<\/text>/)
   assert.match(promptDock, /<Show when=\{props\.providerConfigured\}>/)
 })
 
-test('Terminal session status bar consumes canonical runtime metrics without Provider-brand or fake metric constants', () => {
+test('Terminal session status projection consumes canonical metrics, splits headline/detail, and never hardcodes Provider truth', () => {
   const app = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
   const promptDock = readFileSync('apps/cli/opentui-runtime/ui/prompt-dock.tsx', 'utf8')
   const statusBar = readFileSync('apps/cli/opentui-runtime/ui/session-status-bar.tsx', 'utf8')
@@ -473,13 +476,27 @@ test('Terminal session status bar consumes canonical runtime metrics without Pro
 
   assert.match(app, /const sessionMetrics = createMemo\(\(\) => \{ clock\(\); return props\.backend\.sessionMetrics \}\)/)
   assert.match(app, /metrics=\{sessionMetrics\(\)\}/)
-  assert.match(promptDock, /import \{ SessionStatusBar \} from '\.\/session-status-bar\.tsx'/)
+  assert.match(promptDock, /import \{ SessionStatusBar, SessionStatusHeadline \} from '\.\/session-status-bar\.tsx'/)
+  assert.match(promptDock, /<SessionStatusHeadline width=\{props\.width\} metrics=\{props\.metrics\} \/>/)
   assert.match(promptDock, /<SessionStatusBar width=\{props\.width\} metrics=\{props\.metrics\} \/>/)
+  assert.match(statusModel, /export function sessionHeadlineItems/)
+  assert.match(statusModel, /export function sessionStatusItems/)
   assert.match(statusModel, /metrics\.billing\.kind === 'api'/)
   assert.match(statusModel, /metrics\.billing\.kind !== 'subscription'/)
-  assert.match(statusModel, /metrics\.compaction\.available/)
   assert.doesNotMatch(statusBar + statusModel, /deepseek|openai|claude|gemini|astra/i)
   assert.doesNotMatch(statusBar + statusModel, /80%|¥0\.0000|12\.93/)
+})
+
+test('Permanent OpenTUI shortcut row omits Ctrl+C and Ctrl+C feedback is emitted only when the user actually presses it', () => {
+  const app = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  const start = app.indexOf('  const hintItems = createMemo')
+  const end = app.indexOf('  const currentDialog', start)
+  const hints = app.slice(start, end)
+  assert.doesNotMatch(hints, /ctrl\+c/i)
+  assert.match(app, /tell\('已请求中止当前任务', 2200\)/)
+  assert.match(app, /tell\('No · 当前操作未执行', 2600\)/)
+  assert.match(app, /tell\('已取消当前操作', 2200\)/)
+  assert.match(app, /tell\('再按一次 Ctrl\+C 退出 Xiaoyu · 有文本选区时 Ctrl\+C 复制', 1800\)/)
 })
 
 test('Provider setup dialog owns paste hooks locally and a modal render failure cannot poison the TUI root', () => {

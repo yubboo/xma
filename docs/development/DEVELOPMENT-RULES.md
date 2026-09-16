@@ -80,7 +80,7 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 
 所有非纯文案 Bug/回归都必须遵守 `REPAIR-WORKFLOW.md`，并在主要代码修改前先写入 `REPAIR-PROMPTS.md`：
 
-1. 新增连续编号 `# 01 / # 02 / # 03 ...`，标题必须说明修复的真实问题；
+1. 新增连续编号 `# 01 / # 02 / # 03 ...`，标题必须说明修复的真实问题；Repair ID 永不复用。若用户/任务指定的编号已存在，自动使用下一个未占用编号并在条目中注明映射，禁止覆盖历史；已有业务模块的后续 UI/Host 优化要引用来源编号但仍创建新 ID；
 2. 先记录症状、证据、排除项、上游参考、修复 Prompt、禁止回归行为和验收条件，再实施；
 3. 实施时优先修根因与 ownership，不允许为了赶快通过而继续扩张巨型文件；
 4. 回归测试必须覆盖故障路径。静态源码字符串断言可以保护架构合同，但不能取代真正的行为/E2E；
@@ -250,6 +250,8 @@ TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/proce
 
 CLI、Desktop、Web、Server 是同一个 Core 的 Shell，禁止复制 Agent Runtime。
 - Terminal 的 `Ctrl+C` 必须按 `真实选区复制 → busy 中止 Turn → modal 取消/deny → idle 二次确认退出` 的顺序路由；有选区时禁止退出。复制优先使用 OpenTUI/Renderer 官方 clipboard 能力，不以 shell `clip.exe` 作为唯一实现。
+- `Ctrl+C` 不进入 Terminal 永久快捷栏；它的含义依赖当前 Selection/busy/modal/idle 状态，只有实际触发时才显示短时反馈。永久快捷栏必须优先保持单行，不能为了描述上下文动作产生换行。
+- Terminal 会话指标必须做层级投影而不是把 canonical metrics 全塞一行：主 Mode/Provider 行右侧优先显示真实 context used/window + API balance 或 subscription quota，再与 Provider/Model/Ready/Reasoning 保持稳定间距；第二 detail 行禁止重复 model/context/account，只保留少量 billing/tokens/cost/permission。任何 Host 布局调整都不得改变 `session/metrics` 真值或写死 Provider 品牌。
 
 当前 0.1.x **底层优先**：在 Agent Runtime、真实 Provider、Tool/Permission、Workspace、App Protocol 没达到计划出口前，不继续大规模堆 Desktop UI。
 

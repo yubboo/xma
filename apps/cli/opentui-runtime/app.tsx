@@ -930,10 +930,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         })
         return
       }
-      if (action === 'cancel-turn') { cancel(); return }
+      if (action === 'cancel-turn') {
+        if (cancel()) tell('已请求中止当前任务', 2200)
+        return
+      }
       if (action === 'cancel-modal') {
-        if (modal?.kind === 'approval') modal.resolve('deny')
-        else if (modal?.allowCancel) modal.resolve(undefined)
+        if (modal?.kind === 'approval') {
+          modal.resolve('deny')
+          tell('No · 当前操作未执行', 2600)
+        } else if (modal?.allowCancel) {
+          modal.resolve(undefined)
+          tell('已取消当前操作', 2200)
+        }
         return
       }
       if (action === 'exit') { props.onExit(); return }
@@ -1012,7 +1020,6 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       'ctrl+p  命令',
       'ctrl+k  搜索',
       ...(wide ? ['/  快捷命令'] : []),
-      busy() ? 'ctrl+c  中止' : 'ctrl+c  复制 / 再按一次退出',
       ...(transcript().length > 0 ? ['esc  返回'] : []),
     ]
   })

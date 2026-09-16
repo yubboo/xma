@@ -77,58 +77,75 @@ function subscriptionQuota(metrics: SessionRuntimeMetrics): string | undefined {
 }
 
 /**
- * 根据 Terminal 宽度选择真实指标。窄屏只裁展示字段，不改变 canonical metrics。
+ * Prompt 主状态行中的首要 Session 指标。
+ *
+ * 这里刻意只放用户需要持续关注的“会话健康”信息；Provider/Model/Ready
+ * 由 PromptDock 的 Provider truth 独立展示，避免模型身份在两行重复。
+ */
+export function sessionHeadlineItems(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
+  if (width < 82) return []
+
+  const context = contextLabel(metrics)
+  const quota = subscriptionQuota(metrics)
+  const account = metrics.billing.kind === 'api' ? `余额 ${balance(metrics)}` : quota
+
+  // 窄屏只保留 context；常见宽度增加账户真值。
+  // Provider group 自己 flexShrink=0，因此 headline 即使空间不足也只能被裁，不能挤掉 Provider truth。
+  if (width < 100) return [context]
+  return account ? [context, account] : [context]
+}
+
+/**
+ * Prompt 下方的次要 Session 指标。
+ *
+ * 详细 telemetry 仍完整保存在 SessionRuntimeMetrics；这里不再把 model/context/balance
+ * 全部重复绘制成一条超长状态栏，只保留与当前操作直接相关的少量辅助信息。
  */
 export function sessionStatusItems(metrics: SessionRuntimeMetrics, width: number): readonly string[] {
-  const model = metrics.identity?.model ?? '模型—'
   const turnTokens = compactInteger(metrics.currentTurn?.usage.totalTokens)
   const sessionTokens = compactInteger(metrics.sessionUsage.totalTokens)
-  const context = contextLabel(metrics)
   const permission = metrics.permission?.label ? `权限 ${metrics.permission.label}` : '权限—'
-  const quota = subscriptionQuota(metrics)
-  const account = metrics.billing.kind === 'api' ? `余额 ${balance(metrics)}` : undefined
+  const billing = billingLabel(metrics)
 
-  // Terminal 窄屏优先保证“当前模型 / 上下文 / 账户 / 权限”可见；
-  // token/cost/request 等完整指标仍保留在 canonical metrics，宽屏再逐步展开。
-  const compact = [
-    model,
-    context,
-    ...(account ? [account] : []),
-    ...(quota ? [quota] : []),
-    permission,
-  ]
-  if (width < 92) return compact
+  if (width < 82) return [permission]
+
+  const sessionCost = metrics.billing.kind === 'api' ? money(metrics.sessionCost) : '—'
+  const turnCost = metrics.billing.kind === 'api'
+    ? money(metrics.currentTurn?.cost ?? { status: 'unavailable', sources: [] })
+    : '—'
 
   const medium = [
-    model,
-    billingLabel(metrics),
+    billing,
     `本轮 ${turnTokens}`,
-    context,
-    ...(account ? [account] : []),
-    ...(quota ? [quota] : []),
+    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
     permission,
   ]
   if (width < 132) return medium
 
-  const apiCosts = metrics.billing.kind === 'api'
-    ? [`本轮费用 ${money(metrics.currentTurn?.cost ?? { status: 'unavailable', sources: [] })}`, `会话费用 ${money(metrics.sessionCost)}`, `余额 ${balance(metrics)}`]
-    : []
+  const wide = [
+    billing,
+    `本轮 ${turnTokens}`,
+    `会话 ${sessionTokens}`,
+    `会话 ${metrics.turnCount}轮`,
+    ...(turnCost !== '—' ? [`本轮费用 ${turnCost}`] : []),
+    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
+    permission,
+  ]
+  if (width < 170) return wide
 
   return [
-    model,
-    billingLabel(metrics),
+    billing,
     `本轮命中 ${percent(metrics.currentTurn?.usage.cacheHitRatio)}`,
     `平均命中 ${percent(metrics.sessionUsage.averageCacheHitRatio)}`,
-    `会话 ${sessionTokens} tokens`,
     `本轮 ${turnTokens}`,
+    `会话 ${sessionTokens}`,
     `请求 ${metrics.requestCount}`,
     `会话 ${metrics.turnCount}轮`,
-    context,
     metrics.compaction.available
       ? `压缩 ${metrics.compaction.active ? '进行中' : percent(metrics.compaction.thresholdRatio)}`
       : '压缩—',
-    ...apiCosts,
-    ...(quota ? [quota] : []),
+    ...(turnCost !== '—' ? [`本轮费用 ${turnCost}`] : []),
+    ...(sessionCost !== '—' ? [`会话费用 ${sessionCost}`] : []),
     permission,
   ]
 }

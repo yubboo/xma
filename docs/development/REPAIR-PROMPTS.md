@@ -678,7 +678,7 @@
 
 # 08 Ctrl+C 文本复制与中止/退出冲突
 
-- 状态：验证中
+- 状态：已完成
 - 日期：2026-09-16
 - 类型：Terminal 输入/选择/生命周期 Bug
 - 影响范围：OpenTUI renderer selection、keyboard routing、clipboard、busy cancel、process exit
@@ -747,7 +747,7 @@
 - OpenTUI Root 先读取真实 Selection；非空选区使用 `renderer.copyToClipboardOSC52()`，终端能力不可用时回退 `createHostClipboard().writeText()`。成功后清 Selection；失败保留 Selection，不退出。
 - 无选区时：busy 中止当前 Turn；modal 只 cancel/deny；idle 第一次 Ctrl+C 仅提示，1.5 秒内再次 Ctrl+C 才退出。`/exit` 仍是明确退出入口。
 - Esc 在有选区时只清 Selection。
-- 自动测试覆盖快捷键优先级与 OpenTUI 静态合同；本轮 #07/#08 相关回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS。Windows 实机 clipboard E2E 完成前 #08 保持“验证中”。
+- 自动测试覆盖快捷键优先级与 OpenTUI 静态合同；本轮 #07/#08 相关回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS。2026-09-16 用户 Windows 实机确认 Ctrl+C 复制/退出冲突已解决，#08 标记“已完成”；永久快捷栏过长属于后续独立 #10 UI 投影问题，不改写 #08 历史。
 
 # 09 正在思考实时活动体验与 GitHub 远程最新同步优化
 
@@ -825,3 +825,78 @@
 - 更新前后 commit 用于判断依赖清单是否变化；只有 `package.json/pnpm-lock.yaml/pnpm-workspace.yaml/Cargo.toml/Cargo.lock` 等依赖清单变化才提示重新运行 `[1]`，否则提示可直接重新启动 `[4]`。
 - 自动验证：`activity-view.test.ts` 2/2 PASS；`opentui-runtime.test.ts` 33/33 PASS（两者合计 35/35）；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 为 242 个受管源码文件；成品 ZIP 为 243 entries（242 source + manifest），独立解压后缺失 0、额外 0、内容哈希差异 0，并从解压成品再次跑过 35/35 + 2/2 + 9/9。当前环境没有 Windows PowerShell 5.1 和真实 Windows Terminal，因此 `[10]` Git 更新交互、鼠标点击 Activity 展开仍保留 Windows 实机 E2E，状态为“验证中”。
 
+
+# 10 Terminal 状态栏分区布局与 Ctrl+C 按需提示优化
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：Terminal Host UI 投影优化 / #05 Metrics 与 #08 Ctrl+C 后续收口
+- 影响范围：`PromptDock`、Session Metrics Terminal projection、快捷键提示栏
+- 关联历史：#05 统一 Session Runtime Metrics、#07 Permission/Context、#08 Ctrl+C Selection Copy、#09 Activity/Git Update
+- 编号说明：Repair 编号是不可变历史 ID。即使用户口头再次指定已占用编号，也必须自动使用下一个未占用编号并告知用户；不得覆盖、重写或复用历史条目。本轮下一个可用编号为 #10。
+
+## 用户可见症状
+
+1. #08 修复后永久快捷栏加入 `ctrl+c 复制 / 再按一次退出`，常见 Windows Terminal 宽度下快捷栏过长并发生换行，破坏 Prompt Dock 的稳定单行布局。
+2. #05 的 Session Status 把模型名、API、token、context、balance、permission 等长期堆在一整行；模型名又与上方 Provider 状态重复，常见窗口下过长、视觉层级不清晰。
+3. 当前 Provider 状态行左侧存在可利用的空白区域；用户希望把最关心的 `上下文 used/window + 真实余额/套餐额度` 放到 Provider 身份左侧，并继续保持 Provider/Model/Ready/Reasoning 在最右侧。
+4. 用户明确要求数据继续来自 #05 canonical `SessionRuntimeMetrics`，不得为了新布局写死 DeepSeek、1M、余额或费用。
+
+## 锁定目标
+
+建议的常见宽度视觉结构：
+
+```text
+Build                    上下文 0.2% · 1,793/1.0m · 余额 ¥12.02   ● DeepSeek · deepseek-v4-pro · 模型已就绪 · high
+
+aPI/套餐 · 本轮 1,859 · 会话费用 ≈¥... · 权限 替我审批
+
+tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命令   esc  返回
+```
+
+其中：
+
+- `上下文 / 余额 / 套餐额度` 是 #05 canonical metrics 的“首要会话健康指标”，进入 Provider 状态同一行、Provider 身份左侧；两组之间保留稳定空隙。
+- 第二指标行删除重复的 model/context/balance，只保留当前宽度下真正有价值的辅助统计（计费来源、本轮/会话 tokens、真实费用、permission 等）。
+- 窄屏优先保留 Provider 身份；空间不足时依次裁辅助统计、账户摘要、context 摘要，禁止自动换行破坏 PromptDock 高度。
+- `Ctrl+C` 不再长期占用快捷栏。只有用户实际按 Ctrl+C 时才通过现有 transient `tell()` 提示真实结果：复制成功/失败、已请求中止、已取消当前操作、再次按下退出。
+
+## 修复 / 优化 Prompt
+
+> 1. 保持 #05 `SessionRuntimeMetrics` 为唯一数据源，新增纯 Terminal formatter 区分 `headline metrics` 与 `detail metrics`；不得在 JSX 内按 Provider 品牌计算 context/cost/balance。
+> 2. `headline metrics` 的常见宽度目标是 `上下文 <ratio> · <used>/<window> · 余额 <real>`；subscription 使用真实 plan/quota 语义；unknown 不伪造 0。宽度不足时按可预测优先级裁剪。
+> 3. PromptDock 的 Mode/Status 行仍由单一子模块拥有：Build/Plan/Compose 保持左侧；右侧建立 `headline metrics` + gap + Provider/Model/Ready/Reasoning 两个相邻 group，并保持右对齐。不得让 metrics 挤掉 Provider truth。
+> 4. 原 `SessionStatusBar` 保留为短 detail row，但移除与 headline/provider 重复的 model/context/balance；常见宽度只显示 billing/本轮 tokens/真实会话费用/permission 等少量信息，超宽屏也避免重新堆满所有 telemetry。
+> 5. 从永久 `hintItems` 删除 Ctrl+C 文案；Ctrl+C 所有语义继续复用 #08 `resolveCtrlCAction()`，不得修改 Selection > cancel-turn > cancel-modal > arm-exit/exit 的优先级。
+> 6. Ctrl+C 实际执行时补齐 transient feedback：selection copy 已有成功/失败提示；busy cancel 提示“已请求中止当前任务”；modal cancel/deny 给出取消/拒绝提示；idle 第一次仍提示“再按一次 Ctrl+C 退出”。
+> 7. 补纯 formatter 测试：API/subscription/unknown、sub-percent context、真实余额、无余额、不同宽度；补 OpenTUI/静态合同锁定 status row 分区和永久快捷栏不含 Ctrl+C。
+> 8. 更新 AGENTS/DEVELOPMENT-RULES/REPAIR-WORKFLOW：Repair 编号永不复用；用户提出冲突编号时自动选择下一个空闲编号并显式记录；历史业务模块后续 UI 优化必须引用来源编号但建立新 Repair ID。
+> 9. 不修改 #03 scroll/sticky、#04 caret、#07 Plan/Permission、#09 Activity/Git Update；最终重新跑相关测试、Gate、Manifest、成品 ZIP 独立解压验证。
+
+## 不允许回归
+
+- Provider/Model/Ready/Reasoning 必须仍显示用户当前真实配置，不写死 DeepSeek。
+- API balance、subscription quota、context window、费用仍来自真实 Provider telemetry / durable usage；unknown 就是 `—`。
+- PromptDock 必须保持单一 `flexShrink=0` 原子；状态栏优化不能重新把 Transcript/Prompt 布局弄坏。
+- Ctrl+C 有选区时仍必须复制而不是退出；无选区 busy/modal/idle 的 #08 路由不变。
+- 快捷栏必须维持单行优先，不能为了展示低优先级说明产生显著换行。
+
+## 验收条件
+
+- 常见 Windows Terminal 宽度下，Prompt 主状态行可读为：`Build ... 上下文 ... 余额 ...   ● Provider · Model · 模型已就绪 · high`，且不换行。
+- 第二指标行不再重复 model/context/balance，明显短于 #05/#07 旧布局。
+- 永久快捷栏不显示 Ctrl+C；实际按 Ctrl+C 后才出现对应 transient 提示。
+- API/套餐/unknown 三种 billing source 不产生假余额或假费用。
+- #03/#04/#07/#08/#09 既有回归测试保持通过。
+
+
+## #10 实施结果
+
+- `session-status.ts` 新增 `sessionHeadlineItems()`，把真实 context used/window 与 API balance / subscription quota 投影为 Prompt 主状态摘要；常见宽度示例严格为 `上下文 0.2% · 1,793/1.0m · 余额 ¥12.02`，数据仍来自 #05 canonical metrics。
+- `PromptDock` 主 Mode 行改为三段 ownership：Mode 固定左侧；中间/右侧可缩 headline metrics；最右 Provider/Model/Ready/Reasoning 固定 `flexShrink=0`。headline 先被裁，禁止挤掉 Provider truth；两组通过 3 列 padding 保持稳定间距。
+- 原 `SessionStatusBar` 变成短 detail row：删除重复 model/context/balance；常见宽度只保留 billing、本轮 tokens、可用的真实会话费用、permission，宽屏才逐步增加会话 tokens/轮次/成本/命中率等。canonical telemetry 没有被删除。
+- 永久 `hintItems` 已完全删除 Ctrl+C。实际 Ctrl+C 才给 transient feedback：复制成功/失败沿用 #08；busy 立即提示 `已请求中止当前任务`；approval modal 提示 `No · 当前操作未执行`；可取消 modal 提示 `已取消当前操作`；idle 首次仍提示二次 Ctrl+C 退出。
+- Repair 编号规范已增强：冲突编号自动顺延为下一个未占用 ID；已有业务模块后续 UI/Host 优化引用来源编号但仍创建新 Repair ID。
+- 定向自动验证：`session-status.test.ts + opentui-runtime.test.ts + terminal-shortcuts.test.ts` 共 41/41 PASS；关键 TS/TSX 使用 TypeScript transpile syntax check 全部 PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 为 242 个受管源码文件。
+- 成品发行复核：242 source + manifest = 243 ZIP entries；独立解压后 missing 0 / extra 0 / content hash diff 0，并从解压成品再次跑过定向 41/41、Runtime updater 2/2、9/9 Gate。
+- Windows 实机仍需验证：常见/全屏宽度 headline 不挤 Provider、不换行；detail row 比旧版明显更短；Ctrl+C 不再长期出现在快捷栏且实际按键反馈正确。

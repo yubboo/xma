@@ -42,6 +42,7 @@
 | CLI / TUI | `apps/cli/src/`（Host 入口/Trust/Provider 状态/权限 UI）+ `apps/cli/opentui-runtime/`（Bun/OpenTUI Active Renderer；只投影 Runtime，不拥有 Agent 状态） |
 | Work Mode / Plan handoff | `packages/xma-agent-loop/src/work-mode.ts` + `plan-control.ts` + `packages/xma-session/src/contract.ts` | 模型可见 Build/Plan/Compose；`xma.plan.ready` → durable Plan → Host Yes/No → Build |
 | Terminal Ctrl+C shortcut contract | `apps/cli/src/terminal-shortcuts.ts` + `apps/cli/opentui-runtime/app.tsx` | selection copy → busy cancel → modal cancel → guarded exit |
+| Terminal Session Metrics projection | `apps/cli/opentui-runtime/ui/session-status.ts` + `session-status-bar.tsx` + `prompt-dock.tsx` | #05 canonical metrics → headline(context/account) + detail(billing/tokens/cost/permission)，不复制 Provider 业务逻辑 |
 | Terminal Activity presentation | `apps/cli/opentui-runtime/ui/activity-view.ts` + `transcript-viewport.tsx` | 真实 elapsed 的“已处理/正在思考/用时”投影；不暴露 raw reasoning |
 | Desktop | `apps/desktop/`（GUI Host；消费同一 Runtime/App Protocol，不复制 Agent/Permission） |
 | Web | `apps/web/`（Browser UI Host；云部署时 Native capability 默认作用于 Server Host） |

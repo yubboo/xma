@@ -7,7 +7,7 @@
 import type { KeyEvent, TextareaRenderable } from '@opentui/core'
 import { For, Show } from 'solid-js'
 import type { SessionRuntimeMetrics, TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts'
-import { SessionStatusBar } from './session-status-bar.tsx'
+import { SessionStatusBar, SessionStatusHeadline } from './session-status-bar.tsx'
 import { COLOR, MODE_META, reasoningColor } from './theme.ts'
 
 export interface PromptProviderStatus {
@@ -90,15 +90,18 @@ export function PromptDock(props: {
           </box>
           <box flexDirection="row">
             <text fg={MODE_META[props.mode].color}>▌</text>
-            <box flexGrow={1} flexDirection="row" justifyContent="space-between" paddingLeft={1}>
+            <box flexGrow={1} flexDirection="row" paddingLeft={1} overflow="hidden">
               <text fg={MODE_META[props.mode].color}><strong>{MODE_META[props.mode].label}</strong></text>
-              <box flexDirection="row">
-                <text fg={props.providerStatus.dotColor}>{props.providerStatus.dot}</text>
-                <text fg={COLOR.text}> {props.providerStatus.label}</text>
-                <Show when={props.providerConfigured}>
-                  <text fg={COLOR.soft}> · </text>
-                  <text fg={reasoningColor(props.reasoningEffort)}><strong>{props.reasoningEffort}</strong></text>
-                </Show>
+              <box flexGrow={1} flexShrink={1} minWidth={0} flexDirection="row" justifyContent="flex-end" overflow="hidden" paddingLeft={2}>
+                <SessionStatusHeadline width={props.width} metrics={props.metrics} />
+                <box flexDirection="row" flexShrink={0}>
+                  <text fg={props.providerStatus.dotColor}>{props.providerStatus.dot}</text>
+                  <text fg={COLOR.text}> {props.providerStatus.label}</text>
+                  <Show when={props.providerConfigured}>
+                    <text fg={COLOR.soft}> · </text>
+                    <text fg={reasoningColor(props.reasoningEffort)}><strong>{props.reasoningEffort}</strong></text>
+                  </Show>
+                </box>
               </box>
             </box>
           </box>

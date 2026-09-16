@@ -1,11 +1,20 @@
 # XMA Update Log
 
+## 89 · Terminal Session Metrics 分区布局与 Ctrl+C 按需提示
+
+- #05 Metrics 的 Terminal 投影改为两层：Prompt 主状态行在 Provider truth 左侧显示真实 `上下文 used/window + API 余额/套餐额度`，Provider/Model/Ready/Reasoning 保持最右固定；两组之间保留稳定间距。
+- 下方 detail row 删除重复 model/context/balance，常见宽度仅保留 billing、本轮 tokens、真实会话费用与 permission；canonical metrics 不删字段，宽屏再逐级增加次要统计。
+- 永久快捷栏删除 Ctrl+C，解决 #08 后文案过长导致的换行；实际 Ctrl+C 才通过 transient notice 显示复制、中止、取消/拒绝或二次退出提示，#08 路由优先级不变。
+- Repair 编号治理增强：已占用编号永不复用，用户/任务给出冲突编号时自动顺延到下一空闲 ID；既有业务模块的 Host/UI 优化建立新 Repair ID 并引用来源编号。
+- #08 已获用户 Windows 实机确认原始 Ctrl+C 退出冲突解决并标记完成；#10 当前验证中。定向 Node 回归 41/41 PASS、关键 TS/TSX transpile syntax PASS、Runtime updater 2/2 PASS、9 项 Gate PASS；Source Manifest 242 files。成品 ZIP 独立解压后 242 source + manifest 完整，missing/extra/hash diff 均为 0，并从成品再次通过 41/41 + 2/2 + 9/9。
+
 ## 87 · Ctrl+C 文本选择复制与中止/退出路由修复
 
+- 2026-09-16 用户 Windows 实机确认原始“选中文本后一按 Ctrl+C 直接退出”问题已解决，#08 状态转为已完成；后续永久快捷栏长度问题由独立 #10 处理。
 - 新增 `apps/cli/src/terminal-shortcuts.ts` 作为 Host-neutral 快捷键决策合同：真实 Selection → copy；busy → cancel Turn；modal → cancel/deny；idle 单次只 arm exit、二次才退出。
 - OpenTUI Root 现在先读取 `renderer.getSelection()?.getSelectedText()`；有真实选区时禁止退出，优先 OSC 52，失败时回退 OpenTUI Native Host Clipboard；复制失败也保留进程和选区。
 - Esc 有选区时只清 Selection；无选区才走原有返回/取消语义。Renderer 继续保持 `exitOnCtrlC: false`，避免 OpenTUI 默认 SIGINT 路径抢走产品级快捷键。
-- 当前状态：验证中；#07/#08 相关自动回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS；仍需 Windows Terminal 实机验证鼠标选择 → Ctrl+C → 系统剪贴板，以及 busy/modal/idle 三种分支。
+- 当前状态：已完成；#07/#08 相关自动回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS，且用户 Windows 实机已确认 selection copy 不再触发退出。
 
 ## 86 · Plan 模式模型可见 Context、显式 ready 与 Yes/No 执行交接
 
