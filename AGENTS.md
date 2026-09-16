@@ -47,6 +47,7 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - **产品模型就绪**与**连接验证**分层：活动 `Provider/Profile/Model` 已真实保存且所引用凭据当前可读取时，Terminal 必须显示“模型已就绪”；用户不需要额外执行连接测试。`Brain Ready Probe / 连接测试` 保留为可选诊断与外部 Provider 验收证据：它仍必须验证真实凭据、目标模型、最小文本请求；若声明 native tool calling，还必须完成最小真实 Tool Call → Tool Result → 同模型继续响应的 round trip，但 Probe 结果不得反向把已配置且凭据可用的模型 UI 标成“尚未就绪”。
 - Provider-specific thinking/reasoning/tool/usage 能力必须按真实 API Contract 透传和验证；XMA 不伪造模型没有提供的能力，也不得为了统一接口主动把顶级模型能力裁成最低公分母。若 thinking+tools 协议强制要求隐藏续传状态，必须用 Adapter-owned opaque continuation 保持真实协议语义，不得因为 XMA 的统一消息格式把该能力静默关掉。
 - **Canonical Tool Name ≠ Provider wire function name。** XMA Core/ToolPlan 可使用带 `.` / `:` / `/` 的稳定领域名；若目标 Provider 的 function/tool name 线协议更严格，必须只在 Provider Adapter 边界做稳定可逆映射，并在模型 Tool Call 回流时恢复 canonical 名。禁止为了迎合某一家 API 改坏 Core Tool identity，也禁止把不合法 canonical 名原样发送导致真实模型请求失败。
+- 拆分后的 Dialog/Prompt 子模块必须自己 import 自己使用的 OpenTUI hook/helper；ES module 不会继承父文件 import。Provider Setup / Approval 等 modal 必须有局部错误隔离：某个 Dialog hook/render 失败只能结束当前交互并恢复主 Prompt，禁止让整个 TUI root、动画、键盘或命令面板一起失活。
 - Provider/Profile/Model 配置属于可恢复的产品交互：凭据写入、Profile 保存、模型发现、Probe 任一步失败都必须在当前 Host 内明确提示并保持进程可用；禁止未处理 Promise/异常因为“Brain 未配置/模型目录失败”直接终止 CLI/TUI。Profile 一旦持久化成功，后续模型目录或 Probe 失败不得反向伪装成“Provider 保存失败”或清除已保存 Profile。
 - `xiaoyu / xma` 每次交互式启动都必须先解析调用者当前目录并显示 Workspace Trust；授权只对本次启动有效，不得因为普通项目、历史信任或已有 Brain 而静默跳过。Home/文件系统根/Windows 系统目录继续作为高风险 Workspace，默认选择退出。
 - Workspace Trust 通过后，只有当前没有已配置 Brain/Profile 时才自动进入**同一 Xiaoyu TUI 内的居中 Brain Setup**；Profile 已存在的后续启动不得重复强制弹出。`Ctrl+P → 模型 / 提供方` 是长期管理入口，始终保留，并与首次 Setup 复用同一 Provider/Model/Credential/Probe 能力。工作区信任选择“否，退出”是正常用户取消，必须干净退出，不能冒充运行失败。
@@ -391,3 +392,13 @@ XMA Agent Platform 采用 **Upstream-first Development Rule** 与 **No Blind Rei
 完整 Workbench 开工前至少应具备：Session/Turn/Step durable Runtime、两个不同协议族真实 Provider、ToolPlan/Approval/Native Capability、Workspace persistence、App Protocol/Event Stream、PTY/Process Native 能力和 Xiaoyu Code 最小真实闭环。UI 不得反向成为 Agent 状态源。
 
 - Windows `[4]/[7]` 的 JavaScript Runtime 只从 Workspace `node_modules` 读取；Rust/Cargo 只从当前 checkout 的 `runtime/rust/cargo/bin` 解析并真实探针，同时设置项目本地 `CARGO_HOME/RUSTUP_HOME`。任何 Windows 入口都不得回退 `%USERPROFILE%\.cargo`、扫描盘符或依赖 checkout Rust 状态文件。
+
+
+## 13. Session Runtime Metrics Truth Contract（锁死）
+
+- Session/Turn/Token/Cache/Latency/Context/Cost/Balance/Quota/Permission/Compaction 等运行指标属于 Runtime/App Protocol 业务事实，不属于 CLI/Desktop/Web Renderer 私有状态；Host 只能投影 canonical `SessionRuntimeMetrics`，禁止各自重新统计。
+- Provider/Model 名称必须来自当前真实 Profile/ModelIdentity；状态栏/面板禁止写死 DeepSeek/OpenAI/Claude/Gemini/Astra 等品牌判断。品牌特有价格、余额、套餐/配额只能由 Provider Telemetry Plugin 提供。
+- Billing 必须区分 `api | subscription | unknown`。API 费用只有真实 usage + 可验证 price source 时才允许 reported/estimated；subscription 不得拿 API 单价推算逐次费用；unknown 一律显示 unavailable/`—`，禁止假 0、假余额、假压缩阈值。
+- Context 占用使用当前/最近真实请求 input tokens 与对应模型 context window；Session 累计 token 不能冒充上下文占用。Compaction 未有 durable fact 时必须显示 unavailable。
+- Provider account/balance/quota 查询使用 TTL/显式 refresh，失败不能阻塞 Agent Turn；Secret 不得进入 metrics、日志、Transcript 或 App Protocol。
+- Terminal `SessionStatusBar`、未来 Desktop/Web 面板必须消费同一 App Protocol `session/metrics` 形状；增加新指标时先扩 canonical Contract，再扩 Host UI。

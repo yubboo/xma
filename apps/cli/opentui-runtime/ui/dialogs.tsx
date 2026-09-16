@@ -4,8 +4,8 @@
  * 职责边界：只负责 Dialog 展示与用户选择；不拥有 Provider/Agent/Tool 执行逻辑，不修改 Transcript 滚动。
  */
 
-import type { KeyEvent, TextareaRenderable } from '@opentui/core'
-import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/solid'
+import { decodePasteBytes, type KeyEvent, type PasteEvent, type TextareaRenderable } from '@opentui/core'
+import { useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
 import { For, Show, createMemo, createSignal, onMount } from 'solid-js'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import { filterTuiMenuItems, type TuiMenuItem } from '../contracts.ts'

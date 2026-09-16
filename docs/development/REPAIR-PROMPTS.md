@@ -359,3 +359,169 @@
 ## 验收结论
 
 本项不是 XMA 代码缺陷，而是 Windows 辅助功能对真实文本 caret 的系统级视觉装饰。XMA 当前正确行为是保持原生 caret 稳定；用户若要隐藏蓝色上下标记，在 Windows 系统设置中关闭“文本光标指示器”。若蓝色标记未来出现不跟随 caret、漂移到屏幕其他位置，则重新开新的 Repair 编号按实际 cursor ownership 回归处理。
+
+# 05 统一会话运行指标、真实计费来源与多 Host 状态栏
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：功能开发 + Host-neutral 业务模块
+- 影响范围：`xma-ai` Provider/Billing Contract、`xma-session` Metrics Projection、App Protocol、Terminal 状态栏；未来 Desktop/Web 直接复用同一数据合同
+- 关联记录：`# 01`～`# 04`
+
+## 用户目标
+
+把参考产品底部状态栏中“当前模型、缓存命中、会话/本轮 tokens、费用、会话轮次、上下文占用、压缩状态、账户余额、权限模式”等能力实现成 **一套真实、可复用、Host-neutral 的业务模块**。Terminal 只负责在输入 Dock 下方投影；未来 Desktop/Web/Server 必须消费同一 Runtime/App Protocol 数据，不得各自重新统计或写死 Provider。
+
+## 强制产品语义
+
+1. **绝不写死 DeepSeek / OpenAI / Astra 或任何模型名。** 当前显示必须来自用户当前真实 Provider Profile + ModelIdentity；用户切换 Provider/Model 后状态自动变化。
+2. **计费来源必须区分 API 与套餐/订阅。**
+   - `api`：token/usage 来自真实 Provider usage；费用只有在存在可验证价格来源时才显示，并标注 reported/estimated；余额只有 Provider 有真实账户接口并查询成功时才显示。
+   - `subscription`：不得拿 API token 单价计算“本次费用”；应显示套餐/配额语义（套餐内、额度、重置时间等 Provider 实际能提供的字段）。
+   - `unknown`：不知道就显示 `—` / `不可用`，严禁伪造 0、余额、费用或套餐额度。
+3. **真实数据优先，未知即未知。** 禁止为了“看起来完整”把 `¥0.0000`、`80%`、`100 万上下文`、`余额 12.93` 等作为 UI 常量。0 只有在数据源明确报告为 0 时才是 0。
+4. **Session 指标由 durable facts 投影。** turn count、usage、latency、provider/model、缓存命中等必须从 Session event / Provider report 派生，不让 Terminal 自己维护第二套业务账本。
+5. **上下文占用是当前请求事实，不是会话累计 tokens。** 使用最近一次真实 Step 的 input token 与模型 context window 计算；context window 不知道则不显示百分比。
+6. **费用必须可解释。** 每个 cost 值必须带 currency、precision（provider-reported / estimated）、price source；Provider usage 缺失或 price metadata 不可靠时不显示精确金额。
+7. **余额/套餐查询不得阻塞每一帧。** Provider Account Snapshot 使用显式 refresh/TTL；失败只把 account telemetry 标成 unavailable，不影响 Agent Turn。
+8. **Permission 只显示 Runtime 真实 Permission Profile。** 当前尚未完成的三档权限不可用 UI 常量伪装；若当前实际策略仍为 ask/standard，则显示“请求批准”。
+9. **Compaction 未实现就显示未启用/—。** 不允许先画“压缩阈值 80%”再假装功能存在。
+
+## 本次开发 Prompt
+
+> 以最新 `xma-0.1.0` 包为第一事实源，实现一个 Host-neutral 的 Session Runtime Metrics / Provider Billing Telemetry 模块，并让 Xiaoyu Terminal 在 PromptDock 下方显示真实状态栏。所有数字必须来自当前真实 Provider/Session/Runtime；不存在真实数据时显示 unavailable，而不是填充假数据。
+>
+> ### A. xma-ai：Provider Telemetry / Billing Contract
+> - 新增通用 `ProviderBillingSource`：`api | subscription | unknown`，可携带套餐名/label，但不得携带 Secret。
+> - 新增 `ProviderCostEstimate`、`ProviderAccountSnapshot`、`ProviderBalance`、可选 subscription quota 等纯数据 Contract。
+> - Provider 品牌插件可注册 `ProviderTelemetryProvider`：负责该 Provider 的 model descriptor/context、费用估算、账户余额/套餐查询；Transport Adapter 不得因为 OpenAI-compatible 就假定品牌价格。
+> - `ProviderRegistry` 增加 telemetry register/query seam；没有 provider telemetry 时仍可运行模型，只是 metrics 对应字段 unavailable。
+>
+> ### B. DeepSeek 当前真实 API telemetry
+> - 仅在当前 Profile 的 `providerId=deepseek` 且真实 API credential 可用时查询官方 `/user/balance`；不得对自定义 OpenAI-compatible endpoint 假装是 DeepSeek。
+> - 使用官方文档确认的 model context metadata；价格如果文档/路由存在歧义则宁可不显示 cost，也不得伪造精确值。
+> - 官方最新模型名应与当前文档一致；兼容旧 alias 时必须明确 alias/billing model 语义。
+> - Balance 查询失败、超时或 Provider 不支持时状态栏显示 `余额 —`，Agent 正常工作。
+>
+> ### C. xma-session：Durable Metrics Projection
+> - 新增纯函数从 `SessionSnapshot.events` 计算：turn count、最新/本轮 turn usage、会话 usage、cache hit、latency、最近 provider/model、最近 Step input tokens。
+> - 使用 step/start 关联每个 usage event 的真实 ModelIdentity；不得把不同模型切换后的 usage 全部按当前模型价格重算。
+> - cost aggregation 通过注入 Provider telemetry estimator 对每个 Step 单独计算；若只有部分 step 可估算，必须标 `partial` 或隐藏精确 session total。
+> - context ratio = latest step input tokens / 对应 model contextWindow；未知 contextWindow 时 ratio undefined。
+> - compaction 只反映 durable compaction/config 事实；当前未实现则 `available=false`。
+>
+> ### D. App Protocol
+> - 增加 `session/metrics` query/result Contract，使 CLI/Desktop/Web/Server 可拿到同一 `SessionRuntimeMetrics`，Renderer 不直接读 Session 内部事件。
+> - 当前 CLI 可先使用同一个 projection service 作为过渡，但类型和返回数据必须就是 App Protocol 将来复用的 canonical shape。
+>
+> ### E. Terminal Host
+> - 新增独立 `SessionStatusBar` 子组件放在 PromptDock 底部红框区域，不把业务计算写进 JSX。
+> - 响应终端宽度：窄屏优先保留 model / 本轮 tokens / session tokens / context / permission；宽屏再显示 cache、cost、balance、turn count 等。
+> - API 模式：显示真实 usage；cost/balance 只有 telemetry 可用才显示真实/估算值。
+> - subscription 模式：显示套餐/配额信息，不显示 API 单价推算费用。
+> - unknown 字段统一显示 `—`，不使用伪造 0。
+> - 模型/Provider 切换后状态栏立即使用新 identity；历史 session cost 必须仍按各历史 step 自己的 provider/model 归属统计。
+>
+> ### F. 测试与留痕
+> - xma-session 增加纯 projection 单测：多 Step、多 Turn、模型切换、usage 缺失、cache、context ratio、partial cost。
+> - xma-ai 增加 telemetry registry 单测：品牌隔离、API/subscription/unknown、account unavailable 不影响 Provider。
+> - DeepSeek account telemetry 使用本地 mock HTTP，验证 `/user/balance` 解析；不得用真实用户 API Key 作为自动测试条件。
+> - Terminal 测试锁定 `SessionStatusBar` 只消费 canonical metrics，不出现 `deepseek` 品牌硬编码、不出现假的 `80%/¥0.0000/余额` 常量。
+> - 更新 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`MODEL-PROVIDER.md`、`AGENT-RUNTIME.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`；重新生成 Source Manifest 和同名 `xma-0.1.0.zip`。
+
+## 验收条件
+
+- 切换真实模型后状态栏 model 字段同步变化，无品牌 if/else 写死在 UI。
+- DeepSeek API Profile：真实 usage 能进入本轮/会话 token；官方 balance 查询成功时显示真实币种余额，失败时显示 `—`。
+- 自定义 OpenAI-compatible：usage 有多少显示多少；没有价格/余额 metadata 时费用/余额必须 `—`。
+- 模拟 subscription telemetry：状态栏显示套餐/配额，不计算 API cost。
+- 同一 Session 中先后使用两个模型，历史 usage/cost 仍按各自 step identity 归属。
+- contextWindow 未知时不上百分比；已知时按最近 Step input usage 计算。
+- 当前没有 compaction durable fact 时明确显示“压缩 —/未启用”，不出现假 80%。
+- Terminal 之外可直接复用 `SessionRuntimeMetrics` / App Protocol 类型，不需要复制统计逻辑。
+
+## 当前开发进度
+
+- Host-neutral `SessionRuntimeMetrics` / Provider Telemetry / App Protocol `session/metrics` 已进入代码。
+- Terminal `SessionStatusBar` 已接入 PromptDock，只消费 canonical metrics；UI 无 Provider 品牌价格/余额硬编码。
+- API / subscription / unknown 三类 billing 语义均有测试；DeepSeek balance 使用本地 HTTP mock，不使用真实用户 Secret。
+- DeepSeek 官方价格/模型/余额文档已于 2026-09-16 重新核对；当前官方资料仍存在 V4 Pro 路由说明冲突，因此实现以当前模型价格表与更新日志中“V4 Pro 继续提供、计费方式不变”的可验证表格/更新事实为准，并保留价格 source 元数据；官方信息再次变化时必须更新 telemetry source。
+- 当前仍需完成完整 Gate / Source Manifest / 成品 ZIP 独立解压验证以及 Windows 实机状态栏验收，因此本条保持“验证中”。
+
+## 实际实现证据
+
+- `packages/xma-ai/src/provider/telemetry.ts`：统一 `api | subscription | unknown` Billing Source、模型 metadata、cost estimator、account snapshot registry。
+- `packages/xma-session/src/metrics.ts`：从 durable Session events 投影 Turn/Request/Token/Cache/Latency/Context/Cost/Permission/Compaction，不让 Terminal 自己统计。
+- `core/src/app-protocol.ts`：增加 Host-neutral `session/metrics` query/result Contract。
+- `plugins/deepseek/telemetry.ts`：DeepSeek 官方 API balance/model/pricing telemetry；仅官方 HTTPS Host 可读取余额，避免 Secret 发往第三方 endpoint。
+- `apps/cli/opentui-runtime/ui/session-status.ts` / `session-status-bar.tsx`：纯格式化/Renderable，unknown 显示 `—`；套餐不使用 API 单价计算。
+- 自动单测已验证：多 Turn/多模型历史归属、partial cost、context unknown、API/subscription/unknown status、DeepSeek balance mock。
+
+## Windows 实机待验收
+
+- 配置真实 API Provider 后，状态栏模型名必须随当前 Profile/Model 变化。
+- 完成至少一轮真实对话后，本轮/会话 token 与轮数必须增长；未知字段必须保持 `—`。
+- Provider 支持余额时只显示真实查询结果；失败不影响对话。
+- 套餐 Provider 接入后显示真实 Plan/Quota，不出现 API 单价推算费用。
+
+
+
+# 06 模型配置流程崩溃、usePaste 未定义与 TUI 存活性回归
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：阻断性 Bug 修复
+- 影响范围：`apps/cli/opentui-runtime/ui/dialogs.tsx`、Provider Setup/Manager、Modal focus/caret、TUI 错误隔离
+- 关联记录：`#05` 状态栏功能开发暴露；不允许为修 #06 回退 #02/#03/#04 已验收行为
+
+## 用户可见症状
+
+1. 首次 Brain Setup / `Ctrl+P → 模型 / 提供方` 无法顺利完成真实模型配置。
+2. 配置 API Key 等输入流程后出现：`模型配置操作失败 · usePaste is not defined`。
+3. 错误发生后星空/动画、Prompt、命令交互等 TUI 整体像“宕机”，用户无法继续正常配置或聊天。
+4. 已有 Profile 有时仍显示旧模型状态，但重新配置流程无法正常工作。
+
+## 已确认事实与直接证据
+
+- `SecretInput` 位于 `ui/dialogs.tsx`，直接调用 `usePaste(...)`，但该模块只 import 了 `useKeyboard/useRenderer/useTerminalDimensions`；`usePaste` 没有在本模块导入。ES module 作用域不会继承 `app.tsx` 的 import，因此运行到 SecretInput 时必然产生 `ReferenceError: usePaste is not defined`。
+- Provider Setup 把该异常包进 `providerManager` 的 catch 并显示 notice，但 modal promise/focus 生命周期可能已经被异常打断；当前缺少针对“Dialog render/hook 自身异常后 TUI 仍可用”的回归。
+- `app.tsx` 仍多余 import `usePaste` / `PasteEvent` / `decodePasteBytes`，真正使用者已经拆进 `dialogs.tsx`，说明 #01 模块化后 import ownership 没完全迁移。
+
+## 被禁止的错误修法
+
+- 不得只把错误文本改成“配置失败”而不修真正的 hook/import ownership。
+- 不得在 catch 后直接重启整个 TUI 或清空已保存 Provider Profile。
+- 不得把 API Key 改成普通 Textarea 明文回显来绕过 SecretInput。
+- 不得为了避免崩溃关闭全部动画、mouse、keyboard 或 Provider Setup。
+- 不得把 Provider/Model 写死成 DeepSeek；配置流程必须继续来自真实 Provider Catalog/Profile。
+
+## 本次修复 Prompt
+
+> 在 #05 完整收口后的最新源码上修复 Provider/Model 配置阻断。先修模块 import ownership，再修 Dialog/Setup 的错误隔离和恢复路径，并加入真实交互回归。
+>
+> 1. `ui/dialogs.tsx` 自己显式 import `usePaste`、`decodePasteBytes`、`PasteEvent`；删除 `app.tsx` 中不属于父级的这些 import，锁定模块 ownership。
+> 2. SecretInput 的 paste/keyboard 生命周期必须可独立测试：粘贴 Secret 不回显明文，回车提交，Esc 取消，Backspace 正常；不得泄露 Secret 到 notice/log/transcript。
+> 3. Provider Setup 每一步（catalog → API Key/env → profile save → real model list → model select → reasoning）失败时只结束/返回当前步骤，保持已成功持久化事实；Dialog 必须关闭或恢复到可操作上一级，Prompt/animation/commands 必须继续运行。
+> 4. 给 Provider Manager 增加单操作 guard：异常不能留下 unresolved modal Promise、stale `dialog()`、永久 `setupFlow.active` 或失焦 Prompt。
+> 5. 初次 Setup 与 Ctrl+P 后续管理必须复用同一能力；已配置 Profile 不应因为一次 UI 异常被删除或标成未配置。
+> 6. 新增 OpenTUI/纯合同回归：静态锁定每个拆分模块自己拥有 hook import；行为测试覆盖 SecretInput paste + submit/cancel；Provider operation throw 后 Dialog 关闭/恢复，TUI root 仍可接收 keyboard/timer/render。
+> 7. 保留 #02/#03/#04：PromptDock 固定、Transcript wheel/sticky、Textarea 原生 caret、Windows 文本光标指示器规则不得回归。
+> 8. 完成后更新本条最终根因、`UPDATE-LOG`、`PROJECT-STATUS`，重新生成 Source Manifest 与 `xma-0.1.0.zip`；Windows 实机完成“首次配置 + Ctrl+P 重配 + 发起真实对话 + 出错后继续操作”后才标已完成。
+
+## 实际修改与验证证据
+
+- `ui/dialogs.tsx` 已在自身模块显式 import `usePaste / decodePasteBytes / PasteEvent`；父级 `app.tsx` 删除这些不属于父级 ownership 的 import。
+- `askList / askInput` 的 `setDialog` 增加同步异常 rollback/reject；异常不会留下永久 pending Promise。
+- 当前 Dialog 树由 Solid `ErrorBoundary` 隔离；子 Dialog hook/render 失败时会 settle 当前 list/input 为 cancel、approval 为 deny，清除 modal，恢复主 Prompt 并请求重新渲染，而不是毒化整个 TUI root。
+- 新增 `opentui-runtime.test.ts` 回归，锁定 hook import ownership、ErrorBoundary、dialog settlement 与 setupFlow finally 恢复。
+- 相关静态/合同回归与 #05 metrics tests 在当前可运行环境合计 38 项 PASS；修改 TS/TSX 均通过 TypeScript `transpileModule` 语法检查。
+- 当前环境没有项目完整 OpenTUI native `node_modules`，无法冒充 Windows Terminal 的首次配置/粘贴/动画 E2E 已通过，因此本条保持“验证中”。
+
+## 验收条件
+
+- 首次 Setup 能从真实 Provider Catalog 进入 API Key/环境变量输入，并完成真实模型选择。
+- Ctrl+P 模型管理可以新增、切换 Profile/Model/Reasoning。
+- 不再出现 `usePaste is not defined`。
+- 任一配置步骤故意失败后，TUI 动画/键盘/Prompt/命令面板仍可操作，不需重启进程。
+- 已保存 Profile 不因后续模型目录/Probe/UI 失败而丢失。
+- Secret 不进入 Transcript/notice/log。

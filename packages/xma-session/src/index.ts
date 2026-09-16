@@ -7,3 +7,4 @@
 export * from './contract.ts'
 export * from './store.ts'
 export * from './export.ts'
+export * from './metrics.ts'

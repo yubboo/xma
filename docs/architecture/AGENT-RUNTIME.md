@@ -362,3 +362,10 @@ Agent Runtime 不能只靠“类和接口已经写出来”验收。最低出口
 
 JSONL Store 已支持单写者、正常 close、resume 和最后一行半写入恢复；Session export/redaction 与纯 migration registry 已有第一版，但 migration **尚未接入 JSONL Store generation 发布流程**。Context Assembly 已接入 Runtime，Stage D 已增加 Workspace-scoped Context authorization；不过 system-message reconciliation、compaction、Workspace instructions discovery 仍未完成。
 
+
+
+## Session Runtime Metrics Projection
+
+Runtime 把 Session durable events 投影为 `SessionRuntimeMetrics`，作为 CLI/Desktop/Web/Server 共用观测面：Turn/Request 数、usage/cache/latency、当前 ModelIdentity、context ratio、cost、account/quota、permission、compaction。Projection 只依赖 durable facts 与 Provider Telemetry 注入；Host UI 不维护第二套账本。
+
+每个 usage event 必须关联对应 `step/start` 的 ModelIdentity，支持同一 Session 中跨 Provider/Model 切换。Context ratio 使用最近真实 Step input token / 对应 context window；未知则 undefined。Cost 若部分 Step 无法估算必须标 partial 或 unavailable，禁止伪装精确总价。

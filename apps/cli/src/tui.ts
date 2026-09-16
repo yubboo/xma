@@ -11,6 +11,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 import type { JsonObject } from 'xma-ai'
+import type { SessionRuntimeMetrics } from 'xma-session'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import type { TerminalBrainProfileView } from './brain.ts'
 import { moveTuiMenuSelection, projectTuiMenu, type TuiMenuItem } from './tui-menu.ts'
@@ -280,6 +281,7 @@ export interface TerminalBackend {
   readonly providerReady: boolean
   readonly reasoningSupported: boolean
   readonly reasoningEffort: TerminalReasoningEffort
+  readonly sessionMetrics: SessionRuntimeMetrics
   listBrainProviderCatalog(): readonly BrainProviderCatalogItem[]
   listBrainProfiles(): readonly TerminalBrainProfileView[]
   saveBrainProfile(input: {

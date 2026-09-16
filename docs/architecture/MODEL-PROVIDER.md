@@ -240,3 +240,15 @@ Retry policy 由 Provider/Transport 提供建议，RunManager 决定是否执行
 ## 13. 当前 0.1.0 验证边界
 
 当前本地协议测试覆盖：Profile 不保存 Secret、Secret-bearing Header 拒绝、OS CredentialReference/Store 适配与 legacy env 配置迁移、品牌 `providerId` 与 Adapter 分离、DeepSeek Catalog preset、thinking/reasoning 参数映射、`reasoning_content` durable provider continuation、redacted export 移除 continuation、`/models` 目录读取、SSE 文本、分片 Tool Call、Usage、取消、错误归一化，以及 catalog → text → tool call → observation round trip 的真实 HTTP Probe 语义。这里的“真实 HTTP”指 Adapter 确实经过网络栈与 HTTP/SSE Parser，而不是 Fake Provider；测试 endpoint 是进程内测试服务器，因此**不能据此写“OpenAI/DeepSeek 等已支持”**。同样，本地 Fake Native 只能验证 Credentials Contract，不能替代 Windows Credential Manager、macOS Keychain、Linux Secret Service 的实机 E2E。发布某个品牌 Provider 支持前，必须补该品牌目标 endpoint 的真实 E2E 证据。
+
+
+## Provider Telemetry / Billing
+
+Provider Transport 与 Provider Telemetry 分层：OpenAI-compatible 只说明线协议，不代表价格、余额、套餐、context metadata 一样。XMA 通过 `ProviderTelemetryRegistry` 按品牌/Profile 注册可选 telemetry：
+
+- `billingSource`: `api | subscription | unknown`；
+- `modelDescriptor`: context window/max output 等可验证 metadata；
+- `estimateCost`: 使用真实 Provider usage + 可追溯价格来源；
+- `accountSnapshot`: 余额/套餐/Quota，使用 TTL/显式 refresh，失败不影响 Provider stream。
+
+未注册 telemetry 的 Provider 仍可正常作为 Brain 使用，只是 cost/balance/context 等字段保持 unavailable。Subscription Provider 不得使用 API token price 估算“本轮费用”。任何 account API 都必须验证 endpoint/Profile 身份，避免把 Secret 发送到第三方兼容端点。

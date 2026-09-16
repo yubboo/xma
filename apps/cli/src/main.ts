@@ -14,12 +14,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import { AgentRegistry, AgentRuntime, type RuntimeLiveEvent } from 'xma-agent-loop'
-import { CompositeCredentialResolver, EnvironmentCredentialResolver, OpenAiCompatibleAdapter, ProviderRegistry, type CredentialStoreStatus } from 'xma-ai'
+import { CompositeCredentialResolver, EnvironmentCredentialResolver, OpenAiCompatibleAdapter, ProviderRegistry, ProviderTelemetryRegistry, type CredentialStoreStatus, type ModelIdentity, type ProviderAccountSnapshot, type ProviderProfile } from 'xma-ai'
 import { ContextRegistry, WorkspaceRegistry } from 'xma-context'
 import { NativeCredentialStore, StdioNativeClient, type NativeRuntimeStatus } from 'xma-native'
 import type { Disposer } from 'xma-plugin'
-import { JsonlSessionStore } from 'xma-session'
-import { ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
+import { JsonlSessionStore, projectSessionRuntimeMetrics, type SessionRuntimeMetrics } from 'xma-session'
+import { PERMISSION_PROFILE_LABELS, ToolRegistry, type ToolApprovalProvider } from 'xma-tools'
 import { SkillLoader, SkillRegistry, createAgentSkillContextSource } from 'xma-core-compat'
 import {
   CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -29,6 +29,7 @@ import {
   builtinProviderCatalogEntry,
   listBuiltinProviderCatalog,
   providerCatalogDisplayName,
+  deepSeekTelemetryProvider,
 } from 'xma-plugin-deepseek'
 import { registerNativeTools } from 'xma-plugin-native-tools'
 import { codeAgent } from 'xma-agent-code'
@@ -275,17 +276,24 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   }
 
   const osCredentials = nativeClient ? new NativeCredentialStore(nativeClient) : undefined
-  const providerRegistry = new ProviderRegistry(new CompositeCredentialResolver([
+  const providerCredentials = new CompositeCredentialResolver([
     ...(osCredentials ? [osCredentials] : []),
     new EnvironmentCredentialResolver(),
-  ]))
+  ])
+  const providerRegistry = new ProviderRegistry(providerCredentials)
   providerRegistry.registerAdapter(new OpenAiCompatibleAdapter())
+  const providerTelemetry = new ProviderTelemetryRegistry(providerCredentials)
+  providerTelemetry.register(deepSeekTelemetryProvider)
 
   const osCredentialReadiness = new Map<string, boolean>()
   const brainProbeReadiness = new Map<string, boolean>()
   let credentialStatus: CredentialStoreStatus | undefined
   let activeProfile: TerminalBrainProfile | undefined
   let model: ReturnType<ProviderRegistry['createModel']> | undefined
+  let accountSnapshot: ProviderAccountSnapshot | undefined
+  let accountRefreshAt = 0
+  let accountRefreshPromise: Promise<void> | undefined
+  const permissionProfile = 'ask' as const
 
   const refreshCredentialState = async (): Promise<void> => {
     osCredentialReadiness.clear()
@@ -329,6 +337,49 @@ async function createBackend(workspace: string, currentVersion: string): Promise
 
   const activeView = () => brainStore.list(osCredentialReadiness).find(profile => profile.id === activeProfile?.id)
   const activeProbeKey = () => activeProfile ? `${activeProfile.id}\u0000${activeProfile.model}` : undefined
+  const providerProfileForIdentity = (identity: ModelIdentity): ProviderProfile | undefined => {
+    if (!identity.profile) return undefined
+    return providerRegistry.getProfile(identity.profile)
+  }
+  const sessionMetrics = (): SessionRuntimeMetrics => projectSessionRuntimeMetrics(session.snapshot(), {
+    ...(model ? { activeIdentity: model.identity } : {}),
+    billingSource(identity) {
+      const profile = providerProfileForIdentity(identity)
+      return profile ? providerTelemetry.billingSource(profile) : { kind: 'unknown' }
+    },
+    modelDescriptor(identity) {
+      const profile = providerProfileForIdentity(identity)
+      return profile ? providerTelemetry.modelDescriptor(profile, identity.model) : undefined
+    },
+    estimateCost(identity, usage, timestamp) {
+      const profile = providerProfileForIdentity(identity)
+      return profile ? providerTelemetry.estimateCost(profile, identity, usage, timestamp) : undefined
+    },
+    ...(accountSnapshot ? { account: accountSnapshot } : {}),
+    permission: { id: permissionProfile, label: PERMISSION_PROFILE_LABELS[permissionProfile] },
+  })
+  const refreshAccountSnapshot = async (force = false): Promise<void> => {
+    const profile = activeProfile ? providerRegistry.getProfile(activeProfile.id) : undefined
+    if (!profile) {
+      accountSnapshot = undefined
+      accountRefreshAt = Date.now()
+      return
+    }
+    const now = Date.now()
+    if (!force && accountSnapshot?.profileId === profile.id && now - accountRefreshAt < 60_000) return
+    if (accountRefreshPromise) return accountRefreshPromise
+    accountRefreshPromise = (async () => {
+      try {
+        accountSnapshot = await providerTelemetry.accountSnapshot(profile, AbortSignal.timeout(5_000))
+      } catch {
+        accountSnapshot = undefined
+      } finally {
+        accountRefreshAt = Date.now()
+        accountRefreshPromise = undefined
+      }
+    })()
+    return accountRefreshPromise
+  }
   const requireActiveProfile = (): TerminalBrainProfile => {
     if (!activeProfile) throw new Error('模型未配置。首次启动会自动引导；也可随时在 Ctrl+P → 模型 / 提供方 中添加提供方。')
     return activeProfile
@@ -367,6 +418,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
   }
 
   await refreshBrain()
+  void refreshAccountSnapshot(true)
 
   const doctor = async (): Promise<readonly DoctorItem[]> => {
     await refreshCredentialState()
@@ -388,6 +440,9 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       // 产品就绪 = 当前有真实 Provider/Profile/Model 配置，并且其凭据当前可读取。
       // Brain Probe 保留为“连接测试/doctor”诊断能力，不再要求用户手动 Probe 才能显示已就绪。
       return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)
+    },
+    get sessionMetrics() {
+      return sessionMetrics()
     },
     get reasoningSupported() {
       return activeProfile?.options?.reasoning === true
@@ -468,6 +523,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         throw error
       }
       await refreshBrain()
+      void refreshAccountSnapshot(true)
       const saved = brainStore.list(osCredentialReadiness).find(item => item.id === profile.id)
       if (!saved || !saved.active) throw new Error('提供方已写入但没有成为当前模型配置；配置状态不一致。')
       return saved
@@ -475,6 +531,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
     async selectBrain(profileId) {
       const profile = brainStore.select(profileId)
       await refreshBrain()
+      void refreshAccountSnapshot(true)
       return brainStore.list(osCredentialReadiness).find(item => item.id === profile.id)!
     },
     async listBrainModels() {
@@ -493,12 +550,14 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const profile = requireActiveProfile()
       const updated = brainStore.updateModel(profile.id, modelId)
       await refreshBrain()
+      void refreshAccountSnapshot(true)
       return brainStore.list(osCredentialReadiness).find(item => item.id === updated.id)!
     },
     async selectBrainReasoning(effort: TerminalReasoningEffort) {
       const profile = requireActiveProfile()
       const updated = brainStore.updateReasoningEffort(profile.id, effort)
       await refreshBrain()
+      void refreshAccountSnapshot(true)
       return brainStore.list(osCredentialReadiness).find(item => item.id === updated.id)!
     },
     async probeBrain(): Promise<BrainProbeView> {
@@ -550,6 +609,7 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals })
       } finally {
         dispose()
+        void refreshAccountSnapshot(true)
       }
     },
     doctor,

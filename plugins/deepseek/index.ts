@@ -6,3 +6,4 @@
  */
 export * from './catalog.ts'
 export * from './plugin.ts'
+export * from './telemetry.ts'

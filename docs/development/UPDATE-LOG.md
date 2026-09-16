@@ -1,5 +1,23 @@
 # XMA Update Log
 
+## 84 · Provider Setup usePaste 模块归属与 Modal 存活性修复
+
+- 修复 `ui/dialogs.tsx` SecretInput 在运行时调用未导入 `usePaste/decodePasteBytes` 导致模型配置失败的问题；hook/helper 现在由使用它们的子模块自己拥有。
+- `askList/askInput` 增加同步 setDialog 失败 rollback；Dialog 树增加局部 ErrorBoundary，modal render/hook 异常只取消/拒绝当前交互并恢复主 Prompt，不再让整个 TUI renderer 假死。
+- 新增回归合同锁定模块 import ownership、Dialog settlement、setupFlow finally 恢复；#02/#03/#04 的 PromptDock/scroll/caret 行为不改。
+- 当前状态：验证中，等待 Windows 首次配置、Ctrl+P 重配、API Key 粘贴及失败后 UI 存活性 E2E。
+
+
+## 83 · 统一 Session Runtime Metrics / Provider Telemetry 状态栏
+
+- 新增 `xma-ai` Provider Telemetry Contract：`api | subscription | unknown`、model metadata、cost estimator、account balance/quota。
+- 新增 `xma-session` durable metrics projection：Turn/Request/Usage/Cache/Latency/Context/Cost/Permission/Compaction，历史 Step 保留真实 ModelIdentity。
+- App Protocol 增加 `session/metrics`；Terminal 新增 `SessionStatusBar`，只消费 canonical metrics，未来 Desktop/Web 直接复用。
+- DeepSeek 官方 telemetry 仅对官方 HTTPS Profile 查询 `/user/balance`，测试使用本地 HTTP mock，不使用真实用户 API Key。
+- 未知数据统一 unavailable/`—`；套餐模式不使用 API 单价推算费用；当前 durable compaction 未实现时显示 `压缩—`。
+- 当前状态：验证中；完成全量 Gate/Manifest/Windows 实机状态栏验收后关闭 #05。
+
+
 > 作用：XMA 内部实时工程更新记录，主要给后续 AI / 开发者快速恢复上下文。每完成一批可独立说明的修改就追加一个编号；编号只增不改，格式固定为 `##01`、`##02`、`##03`……。
 >
 > 本文件不是用户发行说明，也不是 Git commit 替代品。它回答四件事：**这批在干什么、架构现在是什么、锁了什么规范、下一步从哪里继续。**

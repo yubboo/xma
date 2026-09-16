@@ -133,7 +133,16 @@ XMA 当前固定五条参考线：
 
 当前用户 Windows 已证明 Setup 能安装、Electron 能启动；但完整 Workbench 仍未实现，因此不得把“能安装启动”写成“Desktop 产品完成”。
 
+## 5.1 统一 Session Runtime Metrics（#05）
+
+- 状态：**验证中**。Host-neutral `SessionRuntimeMetrics`、Provider Telemetry Registry、App Protocol `session/metrics` 与 Terminal `SessionStatusBar` 已进入代码。
+- 已有真实语义：当前 Provider/Model、Turn/Request、会话/本轮 tokens、cache、latency、context、API cost/余额、subscription quota、permission、compaction unavailable。未知字段显示 `—`。
+- API/subscription/unknown、多模型历史归属、DeepSeek balance 本地 HTTP mock 已有自动测试；DeepSeek 外部真实余额/费用仍需用户真实 API E2E 才能作为 Product Ready 证据。
+- Desktop/Web 尚未做 UI，但后续必须直接消费同一 `session/metrics` Contract，禁止复制统计逻辑。
+- #05 完整 Gate / Manifest / Windows 状态栏实机验收完成后标记已完成。
+
 ## 6.1 当前阻断性修复状态（2026-09-16）
+- `REPAIR-PROMPTS #06` 当前**验证中**：模型配置 SecretInput 在模块拆分后调用 `usePaste` 但未在 `dialogs.tsx` 导入，触发 `ReferenceError`；已修正 hook/helper ownership，并用 Dialog ErrorBoundary + Promise settlement 防止单个弹窗异常拖死整个 TUI。等待 Windows 实机完成首次配置、Ctrl+P 重配、API Key 粘贴与失败后继续操作验收。
 
 - `REPAIR-PROMPTS #01` 仍处于**验证中**：用户 Windows 实机已确认稳定 User PATH 生效（任意目录 `xiaoyu/xma` 可启动）、Textarea caret 稳定、Prompt 可持续多轮聊天、历史鼠标滚轮与离底后 sticky follow 均已通过；#01 仅保留 `[4]` 二次启动耗时的独立验收项。
 - Transcript 使用单一受限高度 ScrollBox + 正向 spacer 处理短对话贴底；长内容不再使用 `justifyContent:flex-end`/负向 overflow。用户手动离底后的 sticky 行为继续交给 OpenTUI 原生 ScrollBox。

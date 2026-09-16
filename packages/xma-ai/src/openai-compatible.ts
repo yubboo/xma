@@ -301,7 +301,13 @@ function usageEvent(payload: JsonRecord): Extract<ModelEvent, { type: 'usage' }>
   const output = numberValue(usage.completion_tokens)
   const promptDetails = usage.prompt_tokens_details === undefined ? undefined : objectValue(usage.prompt_tokens_details, 'prompt_tokens_details')
   const completionDetails = usage.completion_tokens_details === undefined ? undefined : objectValue(usage.completion_tokens_details, 'completion_tokens_details')
-  const cached = promptDetails ? numberValue(promptDetails.cached_tokens) : undefined
+  // OpenAI-compatible Providers differ here. OpenAI exposes
+  // prompt_tokens_details.cached_tokens; DeepSeek additionally exposes the
+  // top-level prompt_cache_hit_tokens. Prefer the standard nested field and
+  // fall back to the Provider field so cache telemetry stays real instead of 0.
+  const cached = promptDetails
+    ? numberValue(promptDetails.cached_tokens) ?? numberValue(usage.prompt_cache_hit_tokens)
+    : numberValue(usage.prompt_cache_hit_tokens)
   const reasoning = completionDetails ? numberValue(completionDetails.reasoning_tokens) : undefined
   if (input !== undefined) event.inputTokens = input
   if (output !== undefined) event.outputTokens = output

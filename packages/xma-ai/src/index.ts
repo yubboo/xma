@@ -7,4 +7,5 @@
 export * from './protocol/json.ts'
 export * from './model/model.ts'
 export * from './provider/provider.ts'
+export * from './provider/telemetry.ts'
 export * from './openai-compatible.ts'

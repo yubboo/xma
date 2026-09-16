@@ -12,6 +12,14 @@ export type ToolEffect = 'read' | 'write' | 'execute' | 'network' | 'control'
 export type ToolExecutionMode = 'parallel-safe' | 'exclusive'
 export type ToolPolicyMode = 'standard' | 'paranoid' | 'auto'
 
+export type PermissionProfileId = 'ask' | 'smart' | 'full'
+
+export const PERMISSION_PROFILE_LABELS: Readonly<Record<PermissionProfileId, string>> = Object.freeze({
+  ask: '请求批准',
+  smart: '帮我批准',
+  full: '完全访问',
+})
+
 export interface ToolPolicyRequest {
   toolName: string
   effect: ToolEffect

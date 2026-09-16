@@ -7,14 +7,12 @@
 
 import {
   createCliRenderer,
-  decodePasteBytes,
   type KeyEvent,
-  type PasteEvent,
   type ScrollBoxRenderable,
   type TextareaRenderable,
 } from '@opentui/core'
-import { render, useKeyboard, usePaste, useRenderer, useTerminalDimensions } from '@opentui/solid'
-import { For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
+import { render, useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/solid'
+import { ErrorBoundary, For, Show, createMemo, createSignal, onCleanup, onMount } from 'solid-js'
 import type { ToolApprovalDecision, ToolApprovalRequest } from 'xma-tools'
 import {
   applyTerminalRunEvent,
@@ -111,6 +109,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const providerReady = createMemo(() => { clock(); return props.backend.providerReady })
   const providerLabel = createMemo(() => { clock(); return props.backend.providerLabel })
   const reasoningEffort = createMemo(() => { clock(); return props.backend.reasoningEffort })
+  // Runtime metrics are canonical Session/Provider facts. The 1s clock only asks the
+  // Host getter for a fresh projection; Terminal never recomputes usage/cost itself.
+  const sessionMetrics = createMemo(() => { clock(); return props.backend.sessionMetrics })
   const providerStatus = createMemo(() => providerConfigured()
     ? {
         dot: providerReady() ? '●' : '○',
@@ -320,30 +321,42 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     setDialog(undefined)
     refocusPrompt()
   }
-  const askList = (title: string, items: readonly TuiMenuItem[], options: { searchable?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>(resolve => {
+  const askList = (title: string, items: readonly TuiMenuItem[], options: { searchable?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>((resolve, reject) => {
     prompt?.blur()
     renderer.setCursorPosition(0, 0, false)
-    setDialog({
-      kind: 'list',
-      title,
-      items,
-      searchable: options.searchable === true,
-      allowCancel: options.allowCancel !== false,
-      resolve: value => { closeDialog(); resolve(value) },
-    })
+    try {
+      setDialog({
+        kind: 'list',
+        title,
+        items,
+        searchable: options.searchable === true,
+        allowCancel: options.allowCancel !== false,
+        resolve: value => { closeDialog(); resolve(value) },
+      })
+    } catch (error) {
+      setDialog(undefined)
+      refocusPrompt()
+      reject(error)
+    }
   })
-  const askInput = (title: string, description: string, initial = '', options: { secret?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>(resolve => {
+  const askInput = (title: string, description: string, initial = '', options: { secret?: boolean; allowCancel?: boolean } = {}) => new Promise<string | undefined>((resolve, reject) => {
     prompt?.blur()
     renderer.setCursorPosition(0, 0, false)
-    setDialog({
-      kind: 'input',
-      title,
-      description,
-      initial,
-      secret: options.secret === true,
-      allowCancel: options.allowCancel !== false,
-      resolve: value => { closeDialog(); resolve(value) },
-    })
+    try {
+      setDialog({
+        kind: 'input',
+        title,
+        description,
+        initial,
+        secret: options.secret === true,
+        allowCancel: options.allowCancel !== false,
+        resolve: value => { closeDialog(); resolve(value) },
+      })
+    } catch (error) {
+      setDialog(undefined)
+      refocusPrompt()
+      reject(error)
+    }
   })
   const askApproval = (request: ToolApprovalRequest, signal: AbortSignal) => new Promise<ToolApprovalDecision>(resolve => {
     if (signal.aborted) { resolve('deny'); return }
@@ -395,9 +408,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   const modelDescription = (providerId: string, model: string): string => {
     if (providerId !== 'deepseek') return ''
+    if (model === 'deepseek-flash') return 'V4.1 Flash · 正式版 · 多模态 / 高吞吐'
     if (model === 'deepseek-v4-pro') return 'V4 Pro 0813 · 正式版 · Agent / 复杂任务'
-    if (model === 'deepseek-v4-flash') return 'V4 Flash 0731 · 正式版 · 高吞吐'
-    if (model === 'deepseek-v4-flash-vision-exp') return 'V4 Flash Vision · 实验多模态 · 当前终端以文本为主'
     return 'DeepSeek API 动态发现模型'
   }
 
@@ -899,6 +911,24 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   })
 
   const currentDialog = createMemo(() => dialog())
+  const recoverBrokenDialog = (state: DialogState, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    queueMicrotask(() => {
+      // Modal render/hook failure must settle the awaiting operation and return
+      // ownership to the main Prompt instead of poisoning the whole Solid root.
+      setDialog(current => current === state ? undefined : current)
+      if (state.kind === 'approval') state.resolve('deny')
+      else state.resolve(undefined)
+      tell(`界面操作失败 · ${message}`, 7000)
+      refocusPrompt()
+      renderer.requestRender()
+    })
+    return (
+      <box width="100%" height="100%" alignItems="center" justifyContent="center" backgroundColor={COLOR.background}>
+        <text fg={COLOR.orange}>当前弹窗发生错误，正在恢复主工作台…</text>
+      </box>
+    )
+  }
   const homeDockWidth = createMemo(() => Math.min(contentWidth(), 78))
   const dockWidth = createMemo(() => transcript().length > 0 ? contentWidth() : homeDockWidth())
   const centerMode = createMemo(() => showLogo() && transcript().length === 0)
@@ -970,6 +1000,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           providerStatus={providerStatus()}
           providerConfigured={providerConfigured()}
           reasoningEffort={reasoningEffort()}
+          metrics={sessionMetrics()}
           focused={dialog() === undefined && !setupFlow().active}
           hintItems={hintItems()}
           tipsEnabled={settings().tips}
@@ -1019,15 +1050,15 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         </box>
       </Show>
 
-      <Show when={currentDialog()} keyed>{state => {
-        if (state.kind === 'list') {
-          return <ListDialog title={state.title} items={state.items} searchable={state.searchable} allowCancel={state.allowCancel} onDone={state.resolve} />
-        }
-        if (state.kind === 'input') {
-          return <InputDialog title={state.title} description={state.description} initial={state.initial} secret={state.secret} allowCancel={state.allowCancel} onDone={state.resolve} />
-        }
-        return <ApprovalDialog request={state.request} onDone={state.resolve} />
-      }}</Show>
+      <Show when={currentDialog()} keyed>{state => (
+        <ErrorBoundary fallback={error => recoverBrokenDialog(state, error)}>
+          {state.kind === 'list'
+            ? <ListDialog title={state.title} items={state.items} searchable={state.searchable} allowCancel={state.allowCancel} onDone={state.resolve} />
+            : state.kind === 'input'
+              ? <InputDialog title={state.title} description={state.description} initial={state.initial} secret={state.secret} allowCancel={state.allowCancel} onDone={state.resolve} />
+              : <ApprovalDialog request={state.request} onDone={state.resolve} />}
+        </ErrorBoundary>
+      )}</Show>
     </box>
   )
 }

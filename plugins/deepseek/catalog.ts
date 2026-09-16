@@ -13,15 +13,15 @@ export const CUSTOM_OPENAI_COMPATIBLE_PROVIDER_ID = 'custom-openai-compatible'
 
 
 export const DEEPSEEK_CURRENT_MODELS = Object.freeze([
+  'deepseek-flash',
   'deepseek-v4-pro',
-  'deepseek-v4-flash',
-  'deepseek-v4-flash-vision-exp',
 ] as const)
 
 export const DEEPSEEK_DEPRECATED_MODEL_IDS = Object.freeze(new Set<string>([
   'deepseek-chat',
   'deepseek-reasoner',
-  'deepseek-flash',
+  'deepseek-v4-flash',
+  'deepseek-v4-flash-vision-exp',
 ]))
 
 export interface ProviderCatalogEntry {

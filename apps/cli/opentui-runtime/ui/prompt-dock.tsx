@@ -6,7 +6,8 @@
 
 import type { KeyEvent, TextareaRenderable } from '@opentui/core'
 import { For, Show } from 'solid-js'
-import type { TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts'
+import type { SessionRuntimeMetrics, TerminalAgentMode, TerminalReasoningEffort } from '../contracts.ts'
+import { SessionStatusBar } from './session-status-bar.tsx'
 import { COLOR, MODE_META, reasoningColor } from './theme.ts'
 
 export interface PromptProviderStatus {
@@ -22,6 +23,7 @@ export function PromptDock(props: {
   providerStatus: PromptProviderStatus
   providerConfigured: boolean
   reasoningEffort: TerminalReasoningEffort
+  metrics: SessionRuntimeMetrics
   focused: boolean
   hintItems: readonly string[]
   tipsEnabled: boolean
@@ -40,7 +42,7 @@ export function PromptDock(props: {
       flexShrink={0}
       flexDirection="column"
     >
-      <box width="100%" flexShrink={0} flexDirection="column" paddingBottom={1} onMouseDown={props.onPromptFocus}>
+      <box width="100%" flexShrink={0} flexDirection="column" onMouseDown={props.onPromptFocus}>
         <box
           flexDirection="column"
           backgroundColor={props.panel ? COLOR.panel : COLOR.background}
@@ -101,6 +103,7 @@ export function PromptDock(props: {
             </box>
           </box>
         </box>
+        <SessionStatusBar width={props.width} metrics={props.metrics} />
       </box>
 
       <box width="100%" flexDirection="row" justifyContent="space-between" paddingTop={1} paddingBottom={1} flexShrink={0}>

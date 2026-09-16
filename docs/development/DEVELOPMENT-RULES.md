@@ -385,3 +385,19 @@ Windows Git 不存在时只能提示用户先运行 `xma-dev.bat → [1]`；GitH
 - `[8]` updater 必须事务保存并在失败时恢复根 `package.json`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`；OpenTUI/Solid/@types-bun 已归入根 manifest，`apps/cli/opentui-runtime/package.json` 不再拥有依赖。
 - pnpm lifecycle policy 必须显式：`bun/esbuild=true`，`electron/electron-winstaller/koffi=false`，并启用 `strictDepBuilds: true`；发现新的 lifecycle package 必须打印包名并失败，禁止自动批准。
 - Runtime updater 必须透传真实 pnpm stdout/stderr；禁止重新退化成只显示“pnpm failed with exit code 1”的黑盒错误。
+
+
+## 统一会话运行指标与计费规则
+
+- 新增 token、cache、latency、context、cost、balance、quota、turn/request count、permission、compaction 等产品指标时，先在 `xma-session/xma-ai + App Protocol` 建立 Host-neutral Contract，再接 Terminal/Desktop/Web。
+- Renderer 不得读取 durable event 后自行算账，也不得写 Provider 品牌 if/else 计算价格。Provider 专属 metadata/price/account API 必须放 Provider Telemetry seam。
+- API、套餐/订阅、未知计费来源必须分开；没有真实来源就显示 unavailable，不允许为了 UI 完整填示例数字。
+- 同一 Session 允许切 Provider/Model；历史 usage/cost 必须按每个 Step 当时的 identity 归属，禁止按当前模型重算历史。
+- Provider account telemetry 失败属于观测缺失，不是模型配置失败；不得因此停止 Agent Turn。
+
+
+### Modal / Hook Ownership 与 TUI 存活性
+
+- OpenTUI/Solid 子模块必须显式 import 自己调用的 hooks/helpers；模块拆分后必须删除父级遗留 import，并用测试锁定 ownership，防止 `usePaste is not defined` 一类运行时错误。
+- Provider Setup、Tool Approval、命令面板等 modal 必须被局部 ErrorBoundary/等价边界保护。子 modal 异常只能 settle 当前操作并恢复 Prompt；不得让整个 renderer root 停止响应。
+- 异常恢复必须清除 stale dialog/setup state、settle awaiting Promise、恢复 focus/caret；不得删除已经成功持久化的 Provider Profile 或 Secret reference。
