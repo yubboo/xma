@@ -836,3 +836,10 @@
 - Multi-Host：Terminal、Desktop、Web、Server 的 Agent/Session/Provider/Tool/Permission/Approval 只允许实现一次，通过 App Protocol/Runtime Event 消费。Host 只负责输入、渲染、交互与部署环境 capability bridge。Web 连接云 Server 时 Native 副作用作用于服务器；未来控制用户本机必须使用显式 Remote Node/Device capability，浏览器不能绕过 OS 安全边界。
 - 文档：同步更新 `AGENTS.md`、`PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`CODEMAP.md` 与 `README.md`；大路线不变，下一步仍正式进入 Pi-first 的 Agent Engine 行为级开发，但实现必须从第一天保持 Host-neutral 与用户权限续跑语义。
 
+##78 · Terminal 鼠标滚轮历史回看修复
+
+- 日期：2026-09-16
+- 实机现象：对话内容超过 viewport 后，`PageUp/PageDown` 可以直接驱动 Transcript `ScrollBox`，但 Windows Terminal 鼠标滚轮在部分会话空白/装饰单元上没有进入 Transcript scroll path，导致用户无法用滚轮查看更早历史；现有 OpenTUI 回归只检查键盘 `scrollBy`，没有覆盖 mouse wheel。
+- 根因边界：固定 `@opentui/core@0.5.11` 的 `ScrollBoxRenderable` 自身支持 wheel + sticky/manual scroll，且手动离开 bottom 后会暂停 sticky；XMA Host 此前完全依赖 OpenTUI hit-test 把 wheel 命中 ScrollBox，没有 Host 级兜底。星空/流星与透明布局使真实终端中某些单元可能由其它 Renderable 成为 hit target，因此 wheel 不一定经过 Transcript。
+- 修复：OpenTUI 根 Host 新增 Transcript wheel fallback。只有 wheel 没有从 `transcriptScroll` 子树冒泡、且鼠标 Y 坐标确实位于 Transcript viewport 时才直接调用同一 `ScrollBox.scrollBy()`；正常命中 ScrollBox 时不重复滚动。这样仍复用 OpenTUI 原生 sticky/manual state：向上滚暂停自动贴底，滚回 bottom 后恢复 follow。
+- 回归：OpenTUI 静态合同新增 root `onMouseScroll`、Transcript descendant 去重、viewport 坐标限制和真实 `scrollBy` 兜底；`AGENTS.md` 新增 Terminal 历史滚动硬规则。版本保持 `0.1.0`。

@@ -299,6 +299,11 @@ test('OpenTUI transcript is bottom anchored, keeps user messages right aligned, 
   assert.doesNotMatch(source, /transcript\(\)\.slice\(-18\)/)
   assert.match(source, /transcriptScroll\.scrollBy\(-8\)/)
   assert.match(source, /transcriptScroll\.scrollTo\(1_000_000\)/)
+  assert.match(source, /const fallbackTranscriptWheel = \(event:/)
+  assert.match(source, /target === transcriptScroll/)
+  assert.match(source, /transcriptScroll\.viewport\.screenY/)
+  assert.match(source, /transcriptScroll\.scrollBy\(\(direction === 'up' \? -1 : 1\) \* wheelSteps \* 3\)/)
+  assert.match(source, /onMouseScroll=\{fallbackTranscriptWheel\}/)
 })
 
 test('Windows prepare labels pnpm native English prompts without piping or rewriting pnpm output', () => {

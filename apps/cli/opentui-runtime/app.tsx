@@ -1550,6 +1550,38 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     return false
   }
 
+  // 中文说明：OpenTUI ScrollBox 自身支持鼠标滚轮，但真实终端的 hit-test 可能把会话区空白/装饰单元命中到
+  // 其它 Renderable。键盘 PageUp/PageDown 直接调用 ScrollBox，因此不会暴露这个问题；根容器这里提供坐标级兜底，
+  // 只在事件没有从 transcriptScroll 子树冒泡时接管滚轮，避免与 ScrollBox 原生滚动重复执行。
+  const fallbackTranscriptWheel = (event: {
+    y: number
+    target: { parent: unknown } | null
+    scroll?: { direction: 'up' | 'down' | 'left' | 'right'; delta: number }
+    preventDefault(): void
+    stopPropagation(): void
+  }) => {
+    if (!transcriptScroll || transcript().length === 0 || dialog() !== undefined) return
+
+    let target: unknown = event.target
+    while (target && typeof target === 'object') {
+      if (target === transcriptScroll) return
+      target = 'parent' in target ? (target as { parent: unknown }).parent : null
+    }
+
+    const viewportTop = transcriptScroll.viewport.screenY
+    const viewportBottom = viewportTop + transcriptScroll.viewport.height
+    if (event.y < viewportTop || event.y >= viewportBottom) return
+
+    const direction = event.scroll?.direction
+    if (direction !== 'up' && direction !== 'down') return
+    const rawDelta = Math.abs(event.scroll?.delta ?? 1)
+    const wheelSteps = Math.max(1, Math.min(12, Math.round(rawDelta)))
+    transcriptScroll.scrollBy((direction === 'up' ? -1 : 1) * wheelSteps * 3)
+    event.preventDefault()
+    event.stopPropagation()
+    renderer.requestRender()
+  }
+
   useKeyboard(event => {
     if (event.defaultPrevented) return
     const modal = dialog()
@@ -1649,7 +1681,13 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const centerMode = createMemo(() => showLogo() && transcript().length === 0)
 
   return (
-    <box width={dimensions().width} height={dimensions().height} flexDirection="column" backgroundColor={COLOR.background}>
+    <box
+      width={dimensions().width}
+      height={dimensions().height}
+      flexDirection="column"
+      backgroundColor={COLOR.background}
+      onMouseScroll={fallbackTranscriptWheel}
+    >
       <BackgroundSky
         width={dimensions().width}
         height={dimensions().height}
