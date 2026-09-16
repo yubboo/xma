@@ -44,6 +44,17 @@ export function ListDialog(props: {
       finish(undefined)
       return true
     }
+    if (!event.ctrl && !event.meta) {
+      const direct = (event.sequence || event.name || '').toLowerCase()
+      if (direct === 'y') {
+        const yes = filtered().find(item => item.value === 'yes')
+        if (yes) { event.preventDefault(); event.stopPropagation(); finish(yes.value); return true }
+      }
+      if (direct === 'n') {
+        const no = filtered().find(item => item.value === 'no')
+        if (no) { event.preventDefault(); event.stopPropagation(); finish(no.value); return true }
+      }
+    }
     if (event.name === 'up') {
       event.preventDefault()
       event.stopPropagation()
@@ -293,14 +304,15 @@ export function ApprovalDialog(props: { request: ToolApprovalRequest; onDone: (v
   const [selected, setSelected] = createSignal(0)
   onMount(() => renderer.setCursorPosition(0, 0, false))
   const choices: readonly { label: string; value: ToolApprovalDecision }[] = [
-    { label: '拒绝', value: 'deny' },
-    { label: '仅允许本次', value: 'allow-once' },
-    { label: '本会话允许', value: 'allow-session' },
+    { label: 'No · 不执行', value: 'deny' },
+    { label: 'Yes · 仅执行本次', value: 'allow-once' },
   ]
   useKeyboard(event => {
     if (event.name === 'escape') {
       event.preventDefault(); event.stopPropagation(); props.onDone('deny'); return
     }
+    if (!event.ctrl && !event.meta && (event.name === 'y' || event.sequence?.toLowerCase() === 'y')) { event.preventDefault(); event.stopPropagation(); props.onDone('allow-once'); return }
+    if (!event.ctrl && !event.meta && (event.name === 'n' || event.sequence?.toLowerCase() === 'n')) { event.preventDefault(); event.stopPropagation(); props.onDone('deny'); return }
     if (event.name === 'up') { event.preventDefault(); setSelected(v => (v + choices.length - 1) % choices.length); return }
     if (event.name === 'down' || event.name === 'tab') { event.preventDefault(); setSelected(v => (v + 1) % choices.length); return }
     if (event.name === 'return' || event.name === 'enter') {
@@ -319,7 +331,7 @@ export function ApprovalDialog(props: { request: ToolApprovalRequest; onDone: (v
             <text fg={selected() === index() ? COLOR.orange : COLOR.text}>{choice.label}</text>
           </box>
         )}</For>
-        <text fg={COLOR.faint}>↑↓ 选择 · Enter 确认 · Esc 拒绝</text>
+        <text fg={COLOR.faint}>Y Yes · N No · ↑↓ 选择 · Enter 确认 · Esc = No</text>
       </box>
     </box>
   )

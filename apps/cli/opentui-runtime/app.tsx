@@ -7,6 +7,8 @@
 
 import {
   createCliRenderer,
+  createHostClipboard,
+  type HostClipboardService,
   type KeyEvent,
   type ScrollBoxRenderable,
   type TextareaRenderable,
@@ -36,6 +38,7 @@ import {
 } from '../src/tui.ts'
 import type { TuiMenuItem } from '../src/tui-menu.ts'
 import { openTuiContentWidth } from '../src/opentui-layout.ts'
+import { resolveCtrlCAction } from '../src/terminal-shortcuts.ts'
 import { BackgroundSky } from './ui/background-sky.tsx'
 import { TranscriptViewport } from './ui/transcript-viewport.tsx'
 import { PromptDock } from './ui/prompt-dock.tsx'
@@ -78,6 +81,9 @@ type DialogState =
 function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
+  let hostClipboard: HostClipboardService | undefined
+  try { hostClipboard = createHostClipboard() } catch { hostClipboard = undefined }
+  onCleanup(() => { void hostClipboard?.dispose() })
   const [settings, setSettings] = createSignal<TerminalUiSettings>(loadTerminalUiSettings())
   const [mode, setMode] = createSignal<TerminalAgentMode>('build')
   const [transcript, setTranscript] = createSignal<TerminalTranscriptItem[]>([])
@@ -101,6 +107,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   let activeRunReasoningLogged = false
   let activeRunAnswerLogged = false
   let drainResolvers: Array<() => void> = []
+  let lastIdleCtrlCAt = 0
 
   const contentWidth = createMemo(() => openTuiContentWidth(dimensions().width))
   const compactLogo = createMemo(() => settings().logo === 'compact' || dimensions().width < 82 || transcript().length > 0)
@@ -818,9 +825,10 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     controller = new AbortController()
     refresh()
     try {
-      await props.backend.sendMessage(
+      const runMode = mode()
+      const turnResult = await props.backend.sendMessage(
         line,
-        mode(),
+        runMode,
         event => enqueueRunEvent(event),
         controller.signal,
         (request, signal) => askApproval(request, signal),
@@ -832,6 +840,21 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         ? { role: 'assistant' as const, text: '(没有文本输出)', placeholder: false }
         : item))
       tell('完成', 2600)
+      if (runMode === 'plan' && turnResult.plan?.content.trim()) {
+        const decision = await askList('Plan 已完成 · 是否按当前计划开始执行？', [
+          { value: 'no', label: 'No', description: '暂不执行，保留当前 Plan 供后续继续' },
+          { value: 'yes', label: 'Yes', description: '确认计划，自动切换到 Build 并开始执行' },
+        ], { allowCancel: false })
+        if (decision === 'yes') {
+          await props.backend.decideLatestPlan('yes')
+          setMode('build')
+          tell('Plan 已确认 · 已切换 Build · 正在开始执行', 4200)
+          queueMicrotask(() => { void submit('Yes') })
+        } else {
+          await props.backend.decideLatestPlan('no')
+          tell('No · 当前 Plan 已保留，未执行；后续可切换 Build 后继续。', 5200)
+        }
+      }
     } catch (error) {
       const aborted = controller.signal.aborted
       const endedAtMs = Date.now()
@@ -853,6 +876,18 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     }
   }
 
+  const copySelectedText = async (text: string): Promise<boolean> => {
+    // 远程/支持 OSC52 的终端优先让终端自己写本地剪贴板；本机能力未知时回退 OpenTUI Native Host Clipboard。
+    if (renderer.copyToClipboardOSC52(text)) return true
+    if (!hostClipboard) return false
+    try {
+      const result = await hostClipboard.writeText(text)
+      return result.status === 'written'
+    } catch {
+      return false
+    }
+  }
+
   const cancel = () => {
     if (busy() && controller) {
       controller.abort()
@@ -863,13 +898,42 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   useKeyboard(event => {
     if (event.defaultPrevented) return
+    if (!(event.ctrl && event.name === 'c')) lastIdleCtrlCAt = 0
+    const selectedText = renderer.getSelection()?.getSelectedText() ?? ''
     const modal = dialog()
-    if (modal) {
-      if (event.ctrl && event.name === 'c') {
-        event.preventDefault(); event.stopPropagation(); props.onExit()
+    if (event.ctrl && event.name === 'c') {
+      const now = Date.now()
+      const action = resolveCtrlCAction({
+        hasSelection: selectedText.length > 0,
+        busy: busy(),
+        modal: modal !== undefined,
+        exitArmed: now - lastIdleCtrlCAt <= 1500,
+      })
+      event.preventDefault(); event.stopPropagation()
+      if (action === 'copy-selection') {
+        void copySelectedText(selectedText).then(copied => {
+          if (copied) {
+            renderer.clearSelection()
+            tell(`已复制 ${selectedText.length} 个字符`, 2200)
+          } else {
+            tell('复制失败 · 当前终端与 Host Clipboard 均不可用；已保留选区', 4200)
+          }
+          refresh()
+        })
+        return
       }
+      if (action === 'cancel-turn') { cancel(); return }
+      if (action === 'cancel-modal') {
+        if (modal?.kind === 'approval') modal.resolve('deny')
+        else if (modal?.allowCancel) modal.resolve(undefined)
+        return
+      }
+      if (action === 'exit') { props.onExit(); return }
+      lastIdleCtrlCAt = now
+      tell('再按一次 Ctrl+C 退出 Xiaoyu · 有文本选区时 Ctrl+C 复制', 1800)
       return
     }
+    if (modal) return
     if ((event.ctrl && event.name === 'p') || (event.ctrl && event.name === 'k')) {
       event.preventDefault(); event.stopPropagation(); void commandPalette(); return
     }
@@ -887,12 +951,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         event.preventDefault(); event.stopPropagation(); transcriptScroll.scrollTo(1_000_000); return
       }
     }
-    if (event.ctrl && event.name === 'c') {
-      event.preventDefault(); event.stopPropagation()
-      if (!cancel()) props.onExit()
-      return
-    }
     if (event.name === 'escape') {
+      const selection = renderer.getSelection()?.getSelectedText() ?? ''
+      if (selection.length > 0) {
+        event.preventDefault(); event.stopPropagation(); renderer.clearSelection(); tell('已取消文本选择', 1600); return
+      }
       event.preventDefault(); event.stopPropagation()
       if (cancel()) return
       if (transcript().length > 0) {
@@ -941,7 +1004,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       'ctrl+p  命令',
       'ctrl+k  搜索',
       ...(wide ? ['/  快捷命令'] : []),
-      'ctrl+c  中止',
+      busy() ? 'ctrl+c  中止' : 'ctrl+c  复制 / 再按一次退出',
       ...(transcript().length > 0 ? ['esc  返回'] : []),
     ]
   })

@@ -646,3 +646,105 @@
 - 修改过的 14 个 TS/TSX 文件已通过 TypeScript transpile syntax diagnostics。
 - Source Manifest 已重新生成：235 个正式受管源码文件。
 - 仍需 Windows 实机验证真实 Provider 余额、权限切换/重启持久化与 Plan+full 行为后才能把 #07 标为已完成。
+
+## #07 补充实施：显式 Yes/No Approval 与 Plan → Build 可恢复交接
+
+> 本补充在用户 Windows 实机验证 #07 基础权限/上下文/余额后建立，属于同一 #07 根因簇，必须先于 #08 完成。
+
+### 新增用户证据
+
+1. `请求批准`模式触发真实 Tool Approval 时，用户要求只有两个最终决定：`Yes` / `No`。`Yes` 仅允许当前调用继续；`No` 必须 fail-closed，当前调用无论模型如何要求都不得执行。
+2. Plan 模式虽然 TUI 显示 `Plan` 且 ToolPlan 已只读，但真实模型回答“当前没有明确的模式参数”，证明工作模式没有进入模型可见 Context。
+3. Plan 完成后需要正式的“计划交接”语义：询问用户是否按当前 Plan 执行。`Yes` 才切换 Build 并继续；`No` 保留 Plan，不删除历史计划，后续用户切 Build 或明确要求执行最近 Plan 时仍可继续。
+
+### 补充修复 Prompt
+
+> 1. 把 Work Mode 提升为 Host-neutral Runtime Contract，禁止只存在于 TUI label。Build/Plan/Compose 必须把当前模式及能力边界作为 system context 发送给当前真实 Provider/Model。
+> 2. Plan context 必须明确：当前就是 Plan；只允许读取/分析/规划，不得声称自己不知道模式，不得执行写入/进程/网络副作用；应根据用户目标生成可执行计划，并在计划足够明确时准备交给 Host 做执行确认。
+> 3. Build context 必须明确当前为执行模式，可使用当前 ToolPlan 在用户 Permission Profile 和 Guard 允许范围内自主工作直到验证完成；不得因为 Xiaoyu 产品身份而替换用户真实模型。
+> 4. Compose 保留独立语义，但不得假装成 Build/Plan。
+> 5. `ask` Permission 下的 Approval UI 改成显式 `Yes / No`：Yes => `allow-once`；No/Esc/Abort => `deny`。UI 不再提供“本会话允许”，防止一次确认扩大成持久授权。底层兼容类型可暂保留 `allow-session`，但产品 ask 路径不得生成它。
+> 6. No 必须先 durable 记录 Approval deny，再返回 `TOOL_APPROVAL_DENIED` 给同一个模型；Router 后续绝不可执行真实 Tool。模型可以收到 Observation 后寻找不需要该权限的替代方案，但不得重放同一个已拒绝副作用并绕过用户决定。
+> 7. Plan 最终回答完成后，Host 显式询问：`是否按当前 Plan 开始执行？ Yes / No`。Yes => 记录用户确认、自动切到 Build，并以最近 Plan 为执行依据启动后续 Turn；No => 保留最近 Plan，不清除，不自动执行。
+> 8. 最近 Plan 必须成为 durable Session fact，而不是只存在于 TUI signal；后续 Build Turn 可读取最近 Plan/decision。用户切换 Build 后说“按刚才计划执行”时，真实模型能从同一 Session history + durable Plan fact 继续。
+> 9. 增加回归：Plan 模式 Provider 请求首个 system context 包含 Plan/read-only；Build 包含 Build/execute；ask Approval 的 Yes 执行一次、No 零副作用；Plan No 后 plan snapshot 仍存在；Plan Yes 进入 Build handoff。
+
+### 本补充验收
+
+- 在 Plan 问“当前是什么模式”，真实模型应明确知道自己处于 Plan，并解释只读规划边界。
+- Plan 内不存在 write/execute Tool；即使权限=完全权限也保持只读。
+- ask Approval 只显示 Yes/No，No 后对应 Tool 零执行。
+- Plan 完成后出现独立 Yes/No 执行确认；No 后计划仍可继续引用；Yes 自动切 Build 并开始执行。
+
+# 08 Ctrl+C 文本复制与中止/退出冲突
+
+- 状态：验证中
+- 日期：2026-09-16
+- 类型：Terminal 输入/选择/生命周期 Bug
+- 影响范围：OpenTUI renderer selection、keyboard routing、clipboard、busy cancel、process exit
+- 关联记录：#01 caret/scroll、#03 transcript viewport、#07 work mode/approval
+
+## 用户可见症状
+
+1. 在 Xiaoyu/xma Terminal 中用鼠标选择模型回复文本后按 `Ctrl+C`，程序直接退出，无法像正常终端聊天工具一样复制选中文字。
+2. 当前 `Ctrl+C` 同时承担“中止当前模型工作”和“退出 Xiaoyu”，但没有优先判断 OpenTUI 是否存在真实文本选区。
+3. Windows Terminal 用户自然预期：有选区时 `Ctrl+C` 是复制；没有选区且 Agent 正忙时才是中止；空闲且无选区时才允许退出。
+
+## 已确认事实与上游证据
+
+- XMA 已创建 OpenTUI renderer 时使用 `exitOnCtrlC: false`，因此当前退出不是 OpenTUI 默认行为，而是 `app.tsx` 全局 keyboard handler 主动 `props.onExit()`。
+- 当前 handler 在 modal/non-modal 下都直接把 Ctrl+C 当退出/中止，没有检查 `renderer.getSelection()?.getSelectedText()`。
+- OpenTUI Renderer 提供真实 `getSelection()` / `getSelectedText()`；OpenCode/OpenTUI 相关修复也采用“只有真实 selected text 才拦截快捷键”的模式，避免空 Selection 对象误判。
+- OpenTUI 0.5.11 提供 clipboard service/selection API；实现必须优先使用官方公开能力，不能 shell 出 `clip.exe` 作为唯一方案。
+
+## 禁止的错误修法
+
+- 不得简单禁用 Ctrl+C；用户仍需要中止当前 Agent 工作。
+- 不得只依赖 Windows Terminal 自己的复制行为，因为 Desktop/SSH/未来 Host 的 terminal capability 不同。
+- 不得在有选区时退出进程。
+- 不得因为复制失败就退出或清空 Transcript。
+- 不得破坏鼠标滚轮、sticky follow、Textarea caret、IME。
+
+## 本次修复 Prompt
+
+> 1. 在 OpenTUI Root keyboard routing 最前面读取 `renderer.getSelection()?.getSelectedText()`；只有非空文本才视为真实选区。
+> 2. Ctrl+C 优先级固定：`真实选区 → 复制并保持进程`；`无选区 + busy → Abort 当前 Turn`；`无选区 + modal → 按 modal 自身取消/deny，不退出`；`无选区 + idle → 二次 Ctrl+C 或明确 /exit 才退出`，避免误触单次退出。
+> 3. 复制使用 OpenTUI Clipboard/renderer 官方能力，成功后清理 selection 并给短 notice；失败时保留进程并提示失败。
+> 4. Esc 有选区时只清 Selection；没有选区再执行原有返回/取消语义。
+> 5. 更新底部提示：有选区时 `Ctrl+C 复制`；busy 时 `Ctrl+C 中止`；idle 时不再误导成单击退出。
+> 6. Dialog 内同样遵守 selection-first；API Key SecretInput 自己的 Ctrl+C 不得泄露 Secret。
+> 7. 增加行为测试：选中文字 + Ctrl+C 不触发 onExit；busy + 无选区触发 Abort；idle 首次 Ctrl+C 不退出、明确二次或 /exit 才退出；复制后 Transcript/Prompt 仍可继续操作。
+> 8. 保留 Windows 文本光标指示器、原生 caret、mouse wheel 与 PromptDock 已验收行为。
+
+## 验收条件
+
+- 鼠标选中 Xiaoyu 回复，Ctrl+C 后可以粘贴出真实选中文字，Xiaoyu 不退出。
+- 模型工作中无选区 Ctrl+C 能中止当前 Turn，但进程保持。
+- 空闲无选区误按一次 Ctrl+C 不退出；明确再次 Ctrl+C 或 `/exit` 才退出。
+- 复制操作不导致焦点、caret、滚动和动画失活。
+
+## #07 实施补记：Plan ready 必须由真实模型显式声明
+
+- 普通 Plan 问答、询问“当前是什么模式”、尚未完成的分析都不能自动弹出执行确认。
+- Plan ToolPlan 新增纯 `control` Tool：`xma.plan.ready`。只有当前真实 Provider/Model 判断计划已经足够完整、确实准备交接执行时，才调用该 Tool，并传入完整可执行 Plan。
+- `xma.plan.ready` **不执行任何任务、不切换权限、不代表用户同意**；它只产生“计划已就绪”的 Host-neutral 信号。
+- Host 收到 ready 后才显示 `是否按当前 Plan 开始执行？ Yes / No`。No 保留 durable Plan；Yes 记录决定并切换 Build。
+- 这避免 UI 用字符串/启发式猜“计划是否完成”，也避免用户只问 Plan 模式说明时被错误询问执行。
+
+## #07 补充实施结果
+
+- 新增 `packages/xma-agent-loop/src/work-mode.ts`：Build/Plan/Compose 作为 Context Source 进入真实 Provider 请求；Plan 明确 read-only，Build 明确执行语义。
+- 新增 `packages/xma-agent-loop/src/plan-control.ts`：Plan ToolPlan 暴露纯 control `xma.plan.ready`；普通 Plan 回复不再自动保存为 executable Plan。
+- `AgentSession` 增加 `retainPlan()` / `latestPlan()` / `decideLatestPlan()`；`plan/snapshot` 与 `plan/decision` 是 durable Session fact，但不伪装成普通用户消息。
+- `ask` Approval UI 只保留 `No` / `Yes`，默认 No；Yes 仅 allow-once。
+- Plan ready 后 Host 默认选择 No。Yes 时先 durable 记录 decision，再切 Build；下一轮用户可见确认只记录真实的 `Yes`，Build Context 会读取已批准 retained Plan 并开始执行。
+- 自动测试覆盖：Work Mode Context、Plan ready control Tool、普通 Plan 问答不会自动 retained、No 后 Plan 仍存在、Permission Tool Policy、OpenTUI Yes/No 合同。
+- 状态仍为“验证中”：需要 Windows 实机证明当前真实 Provider 在 Plan 能正确说出模式、Plan ready 才出现 handoff、Yes/No 行为符合预期。
+
+## #08 实施结果
+
+- 新增 `apps/cli/src/terminal-shortcuts.ts`，把 Ctrl+C 优先级从 Renderer 组件中提取成纯合同。
+- OpenTUI Root 先读取真实 Selection；非空选区使用 `renderer.copyToClipboardOSC52()`，终端能力不可用时回退 `createHostClipboard().writeText()`。成功后清 Selection；失败保留 Selection，不退出。
+- 无选区时：busy 中止当前 Turn；modal 只 cancel/deny；idle 第一次 Ctrl+C 仅提示，1.5 秒内再次 Ctrl+C 才退出。`/exit` 仍是明确退出入口。
+- Esc 在有选区时只清 Selection。
+- 自动测试覆盖快捷键优先级与 OpenTUI 静态合同；本轮 #07/#08 相关回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS。Windows 实机 clipboard E2E 完成前 #08 保持“验证中”。

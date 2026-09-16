@@ -13,7 +13,7 @@ import { homedir, platform } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
-import { AgentRegistry, AgentRuntime, type RuntimeLiveEvent } from 'xma-agent-loop'
+import { AgentRegistry, AgentRuntime, AgentWorkModeController, createPlanStateContextSource, registerPlanReadyTool, type PlanReadyProposal, type RuntimeLiveEvent } from 'xma-agent-loop'
 import { CompositeCredentialResolver, EnvironmentCredentialResolver, OpenAiCompatibleAdapter, ProviderRegistry, ProviderTelemetryRegistry, type CredentialStoreStatus, type ModelIdentity, type ProviderAccountSnapshot, type ProviderProfile } from 'xma-ai'
 import { ContextRegistry, WorkspaceRegistry } from 'xma-context'
 import { NativeCredentialStore, StdioNativeClient, type NativeRuntimeStatus } from 'xma-native'
@@ -132,7 +132,7 @@ function skillsRoot(): string {
   return path.resolve(moduleDir, '../../../skills')
 }
 
-async function createProductContext(): Promise<ContextRegistry> {
+async function createProductContext(workModes: AgentWorkModeController): Promise<ContextRegistry> {
   const agents = new AgentRegistry()
   agents.register(xiaoyuAgent)
   agents.register(codeAgent)
@@ -145,6 +145,8 @@ async function createProductContext(): Promise<ContextRegistry> {
 
   const context = new ContextRegistry()
   context.register(createAgentSkillContextSource(agents, skills))
+  context.register(workModes.createContextSource())
+  context.register(createPlanStateContextSource())
   return context
 }
 
@@ -216,12 +218,15 @@ async function createBackend(workspace: string, currentVersion: string): Promise
 
   const sessions = path.join(stateRoot(), 'sessions')
   await mkdir(sessions, { recursive: true })
-  const context = await createProductContext()
+  const workModes = new AgentWorkModeController('build')
+  const context = await createProductContext(workModes)
   const runtime = new AgentRuntime(new JsonlSessionStore(sessions), { context, workspaces, requireWorkspace: true })
   const session = await runtime.createSession({ agentId: AGENT_ID, workspaceId: id })
   const buildTools = new ToolRegistry()
   const planTools = new ToolRegistry()
   const composeTools = new ToolRegistry()
+  let pendingPlanReady: PlanReadyProposal | undefined
+  const disposePlanReadyTool = registerPlanReadyTool(planTools, proposal => { pendingPlanReady = proposal })
   const brainStore = new TerminalBrainStore()
   const nativePath = nativeExecutable()
   let nativeClient: StdioNativeClient | undefined
@@ -611,16 +616,28 @@ async function createBackend(workspace: string, currentVersion: string): Promise
       const approvals: ToolApprovalProvider = { request: approve }
       const dispose = runtime.subscribe(listener)
       try {
+        workModes.set(mode)
+        pendingPlanReady = undefined
         const modeTools = mode === 'build' ? buildTools : mode === 'plan' ? planTools : composeTools
         const policy = permissions.createPolicy()
-        await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals, policy })
+        const result = await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals, policy, workMode: mode })
+        if (mode === 'plan' && result.status === 'completed' && pendingPlanReady) {
+          await session.retainPlan(result.turnId, pendingPlanReady.plan)
+        }
+        const retainedPlan = mode === 'plan' && pendingPlanReady ? session.latestPlan() : undefined
+        return { text: result.text, mode, ...(retainedPlan ? { plan: retainedPlan } : {}) }
       } finally {
+        pendingPlanReady = undefined
         dispose()
         void refreshAccountSnapshot(true)
       }
     },
+    async decideLatestPlan(decision: 'yes' | 'no') {
+      return session.decideLatestPlan(decision)
+    },
     doctor,
     async close() {
+      await disposePlanReadyTool()
       await disposeNativeTools?.()
       await nativeClient?.close()
       await runtime.closeAll()

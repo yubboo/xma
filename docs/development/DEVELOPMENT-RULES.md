@@ -108,6 +108,9 @@ Terminal OpenTUI 额外遵循模块化 ownership：父 `app.tsx` 只负责协调
 - Work Mode 与 Permission Profile 必须分离：Build/Plan/Compose 只改变冻结 ToolPlan，权限只改变已暴露 Tool 的 Approval Policy。Plan 是 read-only ceiling，`full` 不能把 write/execute Tool 重新加回 Plan。
 - Xiaoyu 只代表 Agent/Product identity；模型请求必须使用用户真实配置的 Provider/Profile/Model。任何隐藏 reroute、降级模型、内部 Xiaoyu Model 都视为架构违规。
 - Approval 请求必须挂起当前 Tool Call；允许后自动恢复同一 Turn，不得把批准动作变成一次任务终止。拒绝必须作为结构化 Observation 回同一个模型，让模型尝试替代方案；不要直接把问题甩回用户。
+- `ask` 的产品 Approval UI 只能产生显式 `Yes / No`：Yes 只批准当前调用（allow-once），No/Esc/Abort 必须 deny 并保证当前调用零副作用；不得把一次 Yes 自动升级成 Session 级授权。
+- Work Mode 必须通过 Context Assembly 进入真实 Provider 请求。Plan 不能只是 UI 标签；模型必须知道自己处于 Plan、只读、当前不能执行副作用。
+- Plan 是否“已经足够完整”不得由 UI 字符串启发式猜测；使用 Host-neutral `xma.plan.ready` control Tool 让当前真实模型显式声明。该 Tool 不执行任务、不授予权限。Host 随后用 Yes/No 收集执行确认：Yes 才切 Build；No 保留 durable Plan 且不执行。
 - `full` 只表示对当前 Host 已暴露、用户已明确授权的能力自动批准，不表示绕过 OS 权限、Secret 边界、Rust hard invariant 或平台不存在的 capability。
 
 ### 4.3 Model-visible 必须可重建
@@ -245,6 +248,7 @@ TypeScript Tool 只请求 Native Capability；Rust 必须独立验证 path/proce
 ## 9. UI / Desktop 规则
 
 CLI、Desktop、Web、Server 是同一个 Core 的 Shell，禁止复制 Agent Runtime。
+- Terminal 的 `Ctrl+C` 必须按 `真实选区复制 → busy 中止 Turn → modal 取消/deny → idle 二次确认退出` 的顺序路由；有选区时禁止退出。复制优先使用 OpenTUI/Renderer 官方 clipboard 能力，不以 shell `clip.exe` 作为唯一实现。
 
 当前 0.1.x **底层优先**：在 Agent Runtime、真实 Provider、Tool/Permission、Workspace、App Protocol 没达到计划出口前，不继续大规模堆 Desktop UI。
 

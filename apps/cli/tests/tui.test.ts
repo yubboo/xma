@@ -138,10 +138,12 @@ test('TUI home falls back to a compact identity on narrow terminals', () => {
   assert.match(output, /模型就绪/)
 })
 
-test('TUI Tool Approval maps only explicit choices to allow decisions', () => {
-  assert.equal(approvalDecision('1'), 'deny')
+test('TUI Tool Approval maps only explicit Yes to one-shot allow', () => {
+  assert.equal(approvalDecision('Y'), 'allow-once')
+  assert.equal(approvalDecision('yes'), 'allow-once')
   assert.equal(approvalDecision('2'), 'allow-once')
-  assert.equal(approvalDecision('3'), 'allow-session')
+  assert.equal(approvalDecision('N'), 'deny')
+  assert.equal(approvalDecision('3'), 'deny')
   assert.equal(approvalDecision('anything-else'), 'deny')
 })
 

@@ -5,6 +5,7 @@
  * 职责边界：不得把本文件的 Pi TUI/手写 ANSI 光标与 mouse-reporting 重新接回 Active 工作台；Agent Loop、Provider、Session 与 Native 安全仍由各自 ownership 实现。
  */
 
+import type { AgentWorkModeId } from 'xma-agent-loop'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -172,7 +173,7 @@ export interface BrainProbeView {
 }
 
 
-export type TerminalAgentMode = 'build' | 'plan' | 'compose'
+export type TerminalAgentMode = AgentWorkModeId
 export type TerminalReasoningEffort = 'default' | 'low' | 'high' | 'max'
 
 export type TerminalRunEvent =
@@ -277,6 +278,12 @@ export interface BrainProviderCatalogItem {
   customEndpoint: boolean
 }
 
+export interface TerminalTurnResult {
+  text: string
+  mode: TerminalAgentMode
+  plan?: { turnId: string; content: string; decision?: 'yes' | 'no' }
+}
+
 export interface TerminalBackend {
   version: string
   workspace: string
@@ -310,7 +317,8 @@ export interface TerminalBackend {
     onEvent: (event: TerminalRunEvent) => void,
     signal: AbortSignal,
     approve: (request: ToolApprovalRequest, signal: AbortSignal) => Promise<ToolApprovalDecision>,
-  ): Promise<void>
+  ): Promise<TerminalTurnResult>
+  decideLatestPlan(decision: 'yes' | 'no'): Promise<{ turnId: string; content: string; decision: 'yes' | 'no' } | undefined>
   doctor(): Promise<readonly DoctorItem[]>
   close(): Promise<void>
 }
@@ -812,8 +820,8 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
 }
 
 export function approvalDecision(answer: string): ToolApprovalDecision {
-  if (answer.trim() === '2') return 'allow-once'
-  if (answer.trim() === '3') return 'allow-session'
+  const normalized = answer.trim().toLowerCase()
+  if (normalized === 'y' || normalized === 'yes' || normalized === '2') return 'allow-once'
   return 'deny'
 }
 
@@ -1250,7 +1258,8 @@ class XiaoyuSurface {
 
   handleInput(data: string): void {
     if (this.approval) {
-      const decision = data === '2' ? 'allow-once' : data === '3' ? 'allow-session' : data === '1' || data === '\u001b' ? 'deny' : undefined
+      const normalized = data.toLowerCase()
+      const decision = normalized === 'y' || data === '2' ? 'allow-once' : normalized === 'n' || data === '1' || data === '\u001b' ? 'deny' : undefined
       if (decision) this.resolveApproval(decision)
       return
     }
@@ -1379,7 +1388,7 @@ class XiaoyuSurface {
         `${yellow}${bold}◆ Tool Approval${reset}`,
         `${text}${this.approval.request.toolName}${reset}${textFaint} · ${this.approval.request.effect}${reset}`,
         ...this.approval.request.summary.slice(0, 2).map(line => `${textSoft}${line}${reset}`),
-        `${textFaint}[1] 拒绝   ${text}[2] 仅本次允许${reset}${textFaint}   ${text}[3] 当前 Session 允许${reset}`,
+        `${textFaint}[N] No · 不执行   ${text}[Y] Yes · 仅执行本次${reset}`,
       ]
       const top = Math.max(2, Math.floor((rows - summary.length) / 2))
       summary.forEach((line, index) => {

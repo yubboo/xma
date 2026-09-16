@@ -63,6 +63,8 @@ export type SessionEventData =
     }
   | { type: 'turn/start'; turnId: string }
   | { type: 'user/message'; turnId: string; content: string }
+  | { type: 'plan/snapshot'; turnId: string; content: string }
+  | { type: 'plan/decision'; turnId: string; planTurnId: string; decision: 'yes' | 'no' }
   | {
       type: 'context/snapshot'
       turnId: string
@@ -188,6 +190,24 @@ export function deriveModelMessages(events: readonly SessionEvent[]): ModelMessa
     }
   }
   return messages
+}
+
+
+export function latestPlanSnapshot(events: readonly SessionEvent[]): Extract<SessionEvent, { type: 'plan/snapshot' }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'plan/snapshot') return event
+  }
+  return undefined
+}
+
+export function latestPlanDecision(events: readonly SessionEvent[], planTurnId?: string): Extract<SessionEvent, { type: 'plan/decision' }> | undefined {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'plan/decision') continue
+    if (planTurnId === undefined || event.planTurnId === planTurnId) return event
+  }
+  return undefined
 }
 
 /** 用 Step Start 之前的 durable 事实重建该 Step 当时发给 Provider 的消息历史。 */

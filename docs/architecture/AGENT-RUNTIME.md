@@ -244,7 +244,14 @@ Permission Profile 是 Runtime/App Protocol Contract。Terminal 可以在设置/
 
 Work Mode 与 Permission Profile 不互相替代：Build 暴露当前完整 Tool Surface；Plan 只暴露只读 Tool；Compose legacy 不暴露 Workspace Tool。Permission Profile 只在这个 ToolPlan 内决定是否需要 Approval，所以 Plan + full 仍然只能读，不能写/执行。每个 Turn 开始时冻结 Permission Policy 快照，后续 UI 修改只影响下一 Turn。
 
+Work Mode 同时是 **model-visible Context**：它必须通过 Context Assembly 进入每个真实 Provider Step，而不是只由 Host 绘制标签。Plan Context 明确只读规划边界；Build Context 明确允许在冻结 ToolPlan + Permission/Guard 边界内执行。
+
+Plan 的执行交接采用两阶段协议：真实模型只有在计划足够完整时调用纯 `control` Tool `xma.plan.ready(plan, summary?)`；Runtime/Host 将该 Plan 保存为 durable fact，但此时仍没有任何执行授权。随后 Host 询问用户 `Yes / No`：Yes 写入 `plan/decision=yes`、切换 Build 并以上一个 retained Plan 继续；No 写入 `plan/decision=no`，计划保留但不得执行，直到用户以后明确要求。普通 Plan 对话不会自动生成 executable Plan snapshot。
+
 ### 7.2 Approval 续跑语义
+
+产品 `ask` 路径只提供显式 **Yes / No**。Yes 映射为当前 Tool Call 的 `allow-once`；No、Esc、Abort 都映射为 durable deny。`allow-session` 只保留为底层兼容能力，不得成为默认 ask UI，避免一次确认扩权。
+
 
 ```text
 Model Tool Call

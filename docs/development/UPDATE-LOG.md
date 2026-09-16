@@ -1,5 +1,20 @@
 # XMA Update Log
 
+## 87 · Ctrl+C 文本选择复制与中止/退出路由修复
+
+- 新增 `apps/cli/src/terminal-shortcuts.ts` 作为 Host-neutral 快捷键决策合同：真实 Selection → copy；busy → cancel Turn；modal → cancel/deny；idle 单次只 arm exit、二次才退出。
+- OpenTUI Root 现在先读取 `renderer.getSelection()?.getSelectedText()`；有真实选区时禁止退出，优先 OSC 52，失败时回退 OpenTUI Native Host Clipboard；复制失败也保留进程和选区。
+- Esc 有选区时只清 Selection；无选区才走原有返回/取消语义。Renderer 继续保持 `exitOnCtrlC: false`，避免 OpenTUI 默认 SIGINT 路径抢走产品级快捷键。
+- 当前状态：验证中；#07/#08 相关自动回归合计 92/92 PASS、Runtime updater 2/2 PASS、9 项 Gate PASS；仍需 Windows Terminal 实机验证鼠标选择 → Ctrl+C → 系统剪贴板，以及 busy/modal/idle 三种分支。
+
+## 86 · Plan 模式模型可见 Context、显式 ready 与 Yes/No 执行交接
+
+- Work Mode 从 TUI 标签提升为 model-visible Context：Build/Plan/Compose 会进入真实用户 Provider/Model 的 system context；Xiaoyu 继续只是 Agent identity。
+- Plan 保持 read-only ToolPlan，并新增纯 control `xma.plan.ready`。只有真实模型判断计划已足够完整并显式调用 ready，Host 才弹出执行确认；普通 Plan 问答不会误触发 handoff。
+- Plan ready 的完整计划保存为 durable `plan/snapshot`；Host `Yes` 才写 `plan/decision=yes`、切 Build 并以 retained Plan 继续；`No` 写 durable deny、保留计划但不执行。
+- `ask` Permission 的产品 Approval 收口为 Yes/No：Yes = allow-once，No/Esc/Abort = deny；不再在 ask UI 暴露“本会话允许”。
+- 当前状态：验证中；Work Mode / Plan ready / Tool Policy / OpenTUI 合同已纳入 92/92 自动回归；仍需 Windows 实机验证 Plan 对话、ready handoff 与真实 Tool Approval。
+
 ## 85 · 真实模型身份 / Work Mode / 三档 Permission / Context 与账户指标一致性
 
 - 修复 Terminal Permission 长期硬编码 `ask`：新增 Host-neutral `PermissionProfileController`，`ask / smart / full` 进入真实 ToolRouter Policy；每个 Turn 冻结 Policy 快照。

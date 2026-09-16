@@ -8,12 +8,13 @@
 import { randomUUID } from 'node:crypto'
 import { ContextRegistry, type WorkspaceAccessGrant, type WorkspaceAccessRequest, type WorkspacePermission, type WorkspaceRegistry } from 'xma-context'
 import type { ModelEvent, ModelMessage, ModelProvider, ModelToolCall, ModelToolSpec } from 'xma-ai'
-import { activeWorkspaceGrants, deriveModelMessages, SESSION_FORMAT_VERSION, type SessionEvent, type SessionEventInput, type SessionHeader, type SessionSnapshot } from 'xma-session'
+import { activeWorkspaceGrants, deriveModelMessages, latestPlanDecision, latestPlanSnapshot, SESSION_FORMAT_VERSION, type SessionEvent, type SessionEventInput, type SessionHeader, type SessionSnapshot } from 'xma-session'
 import type { SessionHandle, SessionStore } from 'xma-session'
 import { ToolApprovalSessionCache, ToolRegistry, type ToolApprovalProvider, type ToolPolicy, type ToolResult, type ToolSecurityGuard } from 'xma-tools'
 import type { JsonObject, JsonValue } from 'xma-ai'
 type Disposer = () => void | Promise<void>
 import { WorkspaceToolSecurityGuard } from 'xma-tools'
+import type { AgentWorkModeId } from './work-mode.ts'
 
 export type RuntimeLiveEvent =
   | { type: 'session/event'; event: SessionEvent }
@@ -40,6 +41,8 @@ export interface RunTurnOptions {
   approvals?: ToolApprovalProvider
   /** 额外单调 Security Guard；任一 deny 都不可被后续层恢复。 */
   guards?: readonly ToolSecurityGuard[]
+  /** 当前真实工作模式；用于 durable Plan 事实与审计，模型可见指令由 WorkMode Context Source 注入。 */
+  workMode?: AgentWorkModeId
 }
 
 export interface TurnRunResult {
@@ -155,6 +158,32 @@ export class AgentSession {
 
   workspaceGrants(): WorkspaceAccessGrant[] {
     return activeWorkspaceGrants(this.handle.snapshot().events, this.header.agentId)
+  }
+
+  latestPlan(): { turnId: string; content: string; decision?: 'yes' | 'no' } | undefined {
+    const snapshot = this.handle.snapshot()
+    const plan = latestPlanSnapshot(snapshot.events)
+    if (!plan) return undefined
+    const decision = latestPlanDecision(snapshot.events, plan.turnId)?.decision
+    return { turnId: plan.turnId, content: plan.content, ...(decision ? { decision } : {}) }
+  }
+
+  /** 只有真实模型显式声明 Plan ready 后才由 Host 调用；普通 Plan 对话不得自动变成可执行计划。 */
+  async retainPlan(turnId: string, content: string): Promise<{ turnId: string; content: string }> {
+    const normalized = content.trim()
+    if (!normalized) throw new Error('Cannot retain an empty Plan.')
+    await this.#append([{ type: 'plan/snapshot', turnId, content: normalized }])
+    await this.handle.flush()
+    return { turnId, content: normalized }
+  }
+
+  async decideLatestPlan(decision: 'yes' | 'no'): Promise<{ turnId: string; content: string; decision: 'yes' | 'no' } | undefined> {
+    this.#assertOpen()
+    const plan = latestPlanSnapshot(this.handle.snapshot().events)
+    if (!plan) return undefined
+    await this.#append([{ type: 'plan/decision', turnId: plan.turnId, planTurnId: plan.turnId, decision }])
+    await this.handle.flush()
+    return { turnId: plan.turnId, content: plan.content, decision }
   }
 
   authorizeWorkspaceAccess(request: WorkspaceAccessRequest) {
@@ -420,10 +449,11 @@ export class AgentSession {
         await this.#append([usageEvent])
 
         if (pendingToolCalls.length === 0) {
-          await this.#append([
+          const finalEvents: SessionEventInput[] = [
             { type: 'step/end', turnId, stepId, outcome: 'completed' },
             { type: 'turn/end', turnId, outcome: 'completed', text: assistantText },
-          ])
+          ]
+          await this.#append(finalEvents)
           await this.handle.flush()
           return { sessionId: this.id, turnId, status: 'completed', text: assistantText, toolCalls, steps }
         }
