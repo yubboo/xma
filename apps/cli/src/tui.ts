@@ -43,7 +43,7 @@ const SPINNER = ['✦', '✧', '·', '✧'] as const
 const HOME_TIPS = [
   'Ctrl+P 打开命令面板',
   'Ctrl+K 直接搜索命令',
-  '输入 / 查看快捷命令',
+  '输入 /+首字母筛选快捷命令',
   'Tab / Shift+Tab 切换工作模式',
   '↑↓ 浏览输入历史',
 ] as const
@@ -824,10 +824,23 @@ export function approvalDecision(answer: string): ToolApprovalDecision {
 
 export function slashCommandSuggestions(prefix: string): readonly TuiMenuItem[] {
   const normalized = prefix.trimStart().toLowerCase()
-  if (!normalized.startsWith('/') || normalized.includes(' ')) return []
+  if (!normalized.startsWith('/') || normalized.includes(' ') || normalized.length <= 1) return []
   return TERMINAL_COMMAND_CATALOG
     .filter(command => (command.shortcut ?? `/${command.value}`).toLowerCase().startsWith(normalized))
     .map(command => ({ ...command }))
+}
+
+/**
+ * 中文说明：返回 inline slash completion 尚未输入的后缀。
+ * 这里只做 canonical shortcut 的纯字符串投影；候选选择、Caret 与键盘 ownership 仍属于 PromptDock。
+ */
+export function slashCommandCompletionSuffix(prefix: string, item: Pick<TuiMenuItem, 'value' | 'shortcut'> | undefined): string {
+  if (!item) return ''
+  const normalized = prefix.trimStart().toLowerCase()
+  if (!normalized.startsWith('/') || normalized.length <= 1 || normalized.includes(' ')) return ''
+  const shortcut = (item.shortcut ?? `/${item.value}`).toLowerCase()
+  if (!shortcut.startsWith(normalized)) return ''
+  return (item.shortcut ?? `/${item.value}`).slice(normalized.length)
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })

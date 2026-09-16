@@ -16,6 +16,7 @@ import {
   needsInitialBrainSetup,
   renderWorkspaceTrustPrompt,
   SafePromptInput,
+  slashCommandCompletionSuffix,
   slashCommandSuggestions,
   toggleTerminalVisual,
   terminalHomeLayout,
@@ -152,12 +153,19 @@ test('TUI Tool Approval maps only explicit Yes to one-shot allow', () => {
 })
 
 
-test('TUI slash command suggestions expose only implemented terminal commands', () => {
-  const all = slashCommandSuggestions('/')
-  assert.deepEqual(all.map(item => item.value), ['help', 'settings', 'vivid', 'doctor', 'workspace', 'provider', 'model', 'permission', 'agent', 'clear', 'exit'])
+test('TUI slash command discovery starts after the first letter and exposes canonical ghost suffixes', () => {
+  assert.equal(slashCommandSuggestions('/').length, 0)
+  assert.deepEqual(slashCommandSuggestions('/h').map(item => item.value), ['help'])
+  assert.deepEqual(slashCommandSuggestions('/he').map(item => item.value), ['help'])
   assert.deepEqual(slashCommandSuggestions('/pro').map(item => item.value), ['provider'])
   assert.deepEqual(slashCommandSuggestions('/mod').map(item => item.value), ['model'])
   assert.equal(slashCommandSuggestions('/missing').length, 0)
+
+  const help = slashCommandSuggestions('/he')[0]
+  assert.equal(slashCommandCompletionSuffix('/he', help), 'lp')
+  assert.equal(slashCommandCompletionSuffix('/hel', help), 'p')
+  assert.equal(slashCommandCompletionSuffix('/help', help), '')
+  assert.equal(slashCommandCompletionSuffix('/', help), '')
 })
 
 test('TUI command palette exposes only functional terminal actions with Chinese product labels', () => {

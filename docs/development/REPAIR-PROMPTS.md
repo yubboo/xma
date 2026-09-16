@@ -1434,3 +1434,77 @@ Prompt placeholder 明确写着“输入 / 唤起命令”，底部也长期显�
 - Source Manifest 已重新生成：244 个受管源码文件；候选 ZIP 为 244 source + manifest = 245 entries，独立解压文件数 245，并从解压树复跑上述 41/41、Runtime 2/2 与 9/9 Gate。
 - Windows Terminal 的 inline suggestion、Ctrl+Space 键值、完整命令 Enter 执行与视觉高度仍需用户实机最终验收，因此 #19 保持“验证中”，不冒充已完成。
 
+# 20 Terminal slash ghost completion、按首字母发现与 caret 视觉降噪
+
+- 状态：实施中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/src/tui.ts`、`apps/cli/opentui-runtime/ui/prompt-dock.tsx`、Terminal slash 命令回归测试与长期交互规则
+- 关联历史：#18 Active OpenTUI `/` 快捷命令未唤起命令面板；#19 Terminal slash 命令发现/补全、Help 与 Assistant Markdown 符号清理
+
+## 用户可见症状
+
+1. #19 输入单独 `/` 后立即展开全部命令，视觉占用过大；用户明确要求单独 `/` 只进入 slash 输入态，不展开整张命令表。
+2. 用户希望输入 `/h` 后才显示 `/h...` 同首字母候选；继续输入 `/he` 时，已输入 `/he` 需要变为强调色，并直接在 caret 后以偏黑灰色 ghost text 预览唯一/当前候选剩余的 `lp`；输入 `/hel` 时只剩 ghost `p`。未来若存在 `/help /href /hxxx`，输入 `/h` 应显示这组 `/h...`，其它首字母命令不得出现。
+3. 当前 slash 候选行只把整条命令作为单一颜色文本，没有“已输入前缀 / 未输入后缀”的视觉分层。
+4. Prompt 的原生白色 block caret 在 Windows Terminal 中闪烁感过强。用户希望更慢/更克制；但当前固定 `@opentui/core@0.5.11` 的 `CursorStyleOptions` 只有 cursor shape 与 `blinking:boolean`，没有应用级 blink interval。项目规则又禁止恢复 `showCursor` 定时器或自绘假 caret。
+
+## 已确认事实与证据
+
+- #19 的 `slashCommandSuggestions('/')` 会返回整个 `TERMINAL_COMMAND_CATALOG`，因此单独 `/` 必然展开全部候选；这是当前实现，不是用户误操作。
+- `TERMINAL_COMMAND_CATALOG` 已是 Ctrl+P/Ctrl+K、inline slash 与 `/help` 的唯一命令真值源，本轮不得新建第二份命令列表。
+- OpenTUI 原生 Textarea 当前使用 `cursorStyle={{ style: 'block', blinking: true }}`。上游 `CursorStyleOptions` 暴露 shape + blink on/off，不暴露 blink 周期；通过 Host timer 反复改 `showCursor` 会违反 #01/#04 已锁定的 caret ownership。
+- Tab / Shift+Tab 已固定用于 Build / Plan / Compose，不能拿来做 slash completion。#19 已选择 `Ctrl+Space` 作为补全键，该键位可继续保留。
+
+## 已被证伪 / 禁止重复的修法
+
+- 禁止单独 `/` 展开全部 canonical 命令；发现流程必须从首个命令字母开始。
+- 禁止为了 ghost completion 维护第二份 slash-only 命令数组；候选仍只能从 `TERMINAL_COMMAND_CATALOG` 派生。
+- 禁止抢占 Tab / Shift+Tab。
+- 禁止恢复应用层 `setInterval` / `showCursor` 软件闪烁，也禁止写系统级 Windows caret blink 设置。
+- 禁止用 modal 代替 inline slash discovery；Ctrl+P/Ctrl+K 仍是独立的完整命令面板入口。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 最新源码为第一事实源，继续修复 #19 未通过的 slash discovery UX，并在不破坏原生 caret ownership 的前提下降低 Prompt caret 的闪烁干扰。先保留 canonical command catalog 单一真值源，再调整发现/补全投影。
+>
+> 1. **单独 `/` 不展开候选**：`slashCommandSuggestions('/')` 必须返回空；只有 `/` 后至少出现一个命令字母时才进入候选发现。
+> 2. **按真实前缀过滤**：输入 `/h` 只显示 canonical shortcut 以 `/h` 开头的候选；输入 `/he` 再收窄为 `/he...`。未来新增 `/href`、`/hxxx` 时应自然进入 `/h` 候选组，无需改 PromptDock 业务代码。
+> 3. **ghost completion**：Prompt 当前选中候选的未输入 suffix 作为 dim/faint ghost text 紧贴 caret 后投影；已输入 slash prefix 使用强调色。`/he` → 强调 `/he` + dim `lp`；`/hel` → 强调 `/hel` + dim `p`；完整 `/help` 不再显示 suffix。
+> 4. **候选列表也分层**：每条候选把已匹配 prefix 与剩余 suffix 分开着色；说明文本继续来自 canonical catalog。候选区只在 slash 长度 > 1 时出现。
+> 5. **补全键**：保留 `↑/↓` 选择与 `Ctrl+Space` 补全；Tab / Shift+Tab 永远只切换 Work Mode。部分命令 Enter 仍先补全，完整命令 Enter 执行。
+> 6. **caret 降噪**：不得模拟慢速闪烁。因为 OpenTUI/terminal 不暴露 per-app blink interval，改用原生、非闪烁且更细的 line cursor（`style='line', blinking=false`）与较柔和 cursor color，达到“不再高速白块闪烁”的产品效果，同时继续让 Textarea 原生拥有 hardware cursor。
+> 7. 补纯函数/行为回归：锁定 `/` 无候选、`/h` 只返回 h 组、`/he` 前缀过滤、ghost suffix 计算、完整命令 suffix 为空；Host 合同锁定 Tab 未被 slash completion 抢占且不存在软件 caret timer。
+> 8. 更新 `AGENTS.md`、`DEVELOPMENT-RULES.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`；重新生成 Source Manifest 与正式 `xma-0.1.0.zip`。Windows Terminal 的真实 caret 外观与 ghost overlay 位置必须保留为实机验收，不能用静态 Gate 冒充。
+
+## 不允许回归的行为
+
+- Ctrl+P/Ctrl+K 继续打开完整可搜索命令面板。
+- `/help`、`/settings` 等完整 slash command 继续进入同一个真实 `runCommand()`。
+- `/help` 继续说明全部 canonical 命令用途。
+- Tab/Shift+Tab 继续只负责 Build/Plan/Compose。
+- Textarea 继续拥有真实 cursor/IME；背景动画、父 Host 不得碰 Prompt cursor。
+- PromptDock 继续是单一 `flexShrink=0` 原子；Transcript bounded slot、scroll/sticky 不变。
+
+## 验收条件
+
+- 输入 `/`：不显示全命令表。
+- 输入 `/h`：只显示 `/h...` 候选；其它首字母命令不显示。
+- 输入 `/he`：输入前缀为强调色，caret 后显示 dim `lp`；候选行同样能看出已输入/未输入部分。
+- 输入 `/hel`：ghost 只剩 `p`；输入完整 `/help` 后 ghost 消失，Enter 执行 help。
+- `Ctrl+Space` 能补齐当前候选；↑/↓ 能切候选；Tab/Shift+Tab 不被占用。
+- Prompt 不再出现高速闪烁的白色 block cursor，且没有任何应用层 cursor blink timer。
+
+## 最终根因
+
+#20 的根因不是命令缺失，而是 #19 的 discovery 触发粒度仍过粗：`slashCommandSuggestions('/')` 把空 prefix 当作“匹配全部”，因此单独 `/` 就展开整张 catalog；PromptDock 也只会把完整 command 作为一段文本渲染，没有区分“用户已输入 prefix”和“尚未输入 suffix”，因此无法形成 shell/IDE 式 ghost completion。Caret 方面则不是 XMA timer 过快，而是原生 OpenTUI/terminal blinking block 的宿主闪烁节奏；OpenTUI 0.5.11 没有 per-app interval，若为“慢一点”恢复应用层 timer 会重新破坏已经通过实机的 caret ownership。
+
+## 实际修改与验证证据
+
+- `apps/cli/src/tui.ts`：`slashCommandSuggestions('/')` 改为空；至少有一个命令字母后才按 canonical shortcut prefix 过滤。新增纯函数 `slashCommandCompletionSuffix()`，`/he + /help -> lp`、`/hel -> p`、完整 `/help -> ''`。Home tip 同步改为“`/+首字母`筛选快捷命令”。
+- `apps/cli/opentui-runtime/contracts.ts`：向 PromptDock 转发 canonical completion suffix helper，不复制命令表。
+- `apps/cli/opentui-runtime/ui/prompt-dock.tsx`：新增 `slashDiscoveryActive()`；单独 `/` 不渲染候选区。slash prefix 输入态把 Textarea 文字切为 orange；当前选中候选的 suffix 用 absolute dim text 紧贴 caret 后投影；候选行自身也拆成 prefix/suffix 两段。`↑/↓`、`Ctrl+Space`、部分命令 Enter 先补全、完整命令 Enter 执行、Tab/Shift+Tab 模式切换均保留。Prompt cursor 改为原生 `line + blinking=false`、`COLOR.soft`，没有新增任何 cursor timer。
+- `apps/cli/tests/tui.test.ts`：新增 `/` 无候选、`/h`/`/he` prefix、`lp/p/空` ghost suffix 行为断言；`apps/cli/tests/opentui-runtime.test.ts` 锁定 first-letter discovery、ghost overlay、prefix/suffix 分色、Ctrl+Space 与 Tab ownership；Distribution Gate 同步锁定 native steady line cursor。
+- `AGENTS.md` / `DEVELOPMENT-RULES.md`：长期规则更新为“单独 `/` 安静、首字母后 prefix discovery + ghost completion”，并明确不能为 blink interval 恢复应用层 `showCursor` timer。
+- 当前环境通过：修改 TS/TSX `transpileModule` 语法检查；OpenTUI 可执行静态合同 39/39；Runtime updater 2/2；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate。当前沙箱没有 Workspace `node_modules/tsx`，所以包含完整 `tui.ts` 依赖图的 `tui.test.ts` 未在这里冒充执行；行为测试已经写入源码，需在 `[1]` 已准备开发环境中执行完整 `pnpm test`。
+- Windows Terminal 仍需用户实机确认：ghost suffix 与 caret 在实际字体/缩放下是否正好贴合、steady line cursor 视觉是否达到“不要高速白块闪烁”的体验目标。#20 因此保持**验证中**。
+

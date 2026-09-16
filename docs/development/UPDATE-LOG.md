@@ -1045,3 +1045,14 @@
 - `/help`：升级为真实 command action，在 Transcript 持久列出 `/help /settings /vivid /doctor /workspace /provider /model /permission /agent /clear /exit` 与用途说明，用户无需猜命令。
 - Assistant 文本：新增 Host-only `transcript-text.ts` formatter，把 `- **代码开发**` 等常见 Markdown marker 转成干净终端文本，同时保留 fenced code body。
 - 自动证据：OpenTUI 静态合同 + Transcript formatter 在候选 ZIP 独立解压树合并复跑 41/41 PASS；Runtime updater 2/2 PASS；修改 TS/TSX 逐文件 `transpileModule` 语法检查 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 244 files，ZIP 245 entries，独立解压文件数 245。Windows Terminal inline suggestion / Ctrl+Space / exact Enter 仍待最终实机验收。
+
+##94 · Slash prefix discovery / ghost completion 与 Prompt caret 降噪
+
+- 日期：2026-09-16
+- 实机反馈：#19 的 inline slash 已证明命令系统真实可用，但单独 `/` 立即展开全部命令过重；用户要求只有输入首个命令字母后才显示同前缀候选，并把当前候选未输入部分作为灰色 ghost suffix 紧贴 caret 后预览。
+- Slash 行为：`slashCommandSuggestions('/')` 现在返回空；`/h` 只返回 `/h...`，`/he` 继续按完整 prefix 收窄。Prompt 输入 prefix 使用强调色，选中候选通过 `slashCommandCompletionSuffix()` 生成 dim ghost suffix；候选列表本身也拆成“匹配 prefix + 未输入 suffix”两段着色。`↑/↓`、`Ctrl+Space`、完整命令 Enter 与 Tab/Shift+Tab 模式切换合同保持不变。
+- Caret：OpenTUI 0.5.11 的 cursor contract 只有 shape + blink on/off，没有 per-app blink interval。为遵守 #01/#04 的 native caret ownership，未恢复任何 `setInterval/showCursor` 软件闪烁；主 Prompt 改为原生 `line + blinking=false`、soft cursor color，消除高速白色 block 闪烁。
+- 规则：AGENTS/DEVELOPMENT-RULES 已从“`/` 显示全部命令”更新为“单独 `/` 安静、首字母后 prefix discovery + ghost completion”；Ctrl+P/Ctrl+K 仍承担完整命令总览。
+- 自动证据：修改 TS/TSX 逐文件 `transpileModule` 语法检查 PASS；OpenTUI 静态合同 39/39 PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。`tui.test.ts` 已增加 `/` 无候选、`/h`/`/he` prefix 与 `lp/p` ghost suffix 的行为回归；当前沙箱无 Workspace node_modules/tsx，完整行为测试留待已准备开发环境执行。
+- 状态：#20 进入**验证中**。Windows Terminal 仍需实机确认 ghost text 与真实 caret 在不同字体/缩放下没有错位；若 overlay 位置有 1-cell 偏差只继续修 PromptDock 布局，不得回退 modal 或软件假 cursor。
+

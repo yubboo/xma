@@ -86,7 +86,7 @@ for (const marker of [
 ]) {
   if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI parent marker missing: ${marker}`)
 }
-for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（输入 / 查看命令）"']) {
+for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.soft}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（/ + 字母 查找命令）"']) {
   if (!openTuiPrompt.includes(marker)) throw new Error(`XMA PromptDock marker missing: ${marker}`)
 }
 for (const marker of ['Tool Approval', "event.name === 'escape'"]) {
@@ -105,7 +105,7 @@ for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'termi
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
 }
 if (!openTui.includes('focused={dialog() === undefined && !setupFlow().active}') ||
-    !openTuiPrompt.includes("cursorStyle={{ style: 'block', blinking: true }}") ||
+    !openTuiPrompt.includes("cursorStyle={{ style: 'line', blinking: false }}") ||
     !openTuiPrompt.includes('showCursor={true}')) {
   throw new Error('XMA active OpenTUI must let the focused PromptDock Textarea own the native terminal cursor.')
 }

@@ -145,7 +145,8 @@ XMA 当前固定五条参考线：
 - #10 建立 Terminal 对 #05 canonical metrics 的 headline/detail 分层；#11 在不改变 Contract 的前提下继续收口主状态；#12 根据 Windows 实机视觉反馈把 detail 改为**完整 canonical items + 按终端列宽多行打包**：窄宽度只换行、不再隐藏 cache/token/compaction/turn/cost/permission。Desktop/Web 后续仍直接消费同一 `session/metrics` Contract。
 
 ## 6.1 当前阻断性修复状态（2026-09-16）
-- `REPAIR-PROMPTS #19` 当前**验证中**：#18 的 slash→modal 方案已被 Windows 实机否决；Active Prompt 现在改为原位 inline slash discovery（`/` 全量候选、prefix 过滤、↑↓选择、Ctrl+Space 补全、完整命令 Enter 执行），Tab/Shift+Tab 继续专用于 Build/Plan/Compose。命令元数据收口为单一 canonical catalog，`/help` 持久列出全部命令及用途；Assistant 常见 Markdown marker 通过独立 Host formatter 清理，`- **xxx**` 不再原样显示。OpenTUI 静态合同 + formatter 独立解压复跑 41/41、Runtime updater 2/2、修改文件 TS/TSX 语法转译与 9/9 Gate PASS；Source Manifest 244 files、候选 ZIP 245 entries。等待 Windows Terminal 实机验收 inline suggestion/补全/Enter 与最终视觉。
+- `REPAIR-PROMPTS #20` 当前**验证中**：#19 的“单独 `/` 展开全部命令”被用户 Windows 实机否决；Active Prompt 现在改为 slash **prefix discovery + ghost completion**：单独 `/` 不展开命令，输入首字母后才显示同前缀候选，`/he` 会把已输入 prefix 以强调色显示并在 caret 后用 dim ghost text 预览 `lp`，`/hel` 只预览 `p`。`↑/↓` 与 `Ctrl+Space` 继续补全，Tab/Shift+Tab 只切模式。OpenTUI 0.5.11 不提供 per-app blink interval，为避免恢复软件 cursor timer，Prompt 改用原生 steady line cursor + soft color 降噪；等待 Windows Terminal 目视确认 ghost overlay 与 caret 视觉。
+- `REPAIR-PROMPTS #19` **实机未通过，已由 #20 接续修复 slash discovery 视觉与触发条件**：#19 已完成 canonical catalog、`/help` 与 Assistant Markdown 清理，但“输入 `/` 立即展开全部候选”的产品交互不符合最新验收；保留 #19 历史记录，不改写旧结论。
 - `REPAIR-PROMPTS #18` **实机未通过，已由 #19 接续修复**：命令本体真实，但“输入 `/` 立即打开 Ctrl+P modal”不符合产品交互；保留 #18 历史记录，不复用编号。
 - `REPAIR-PROMPTS #17` 已由用户 Windows 实机确认**已完成**：full-width/right-aligned user band 使用 `#2d2d30` 深灰背景与 `#e2e2e2` 文字，亮度符合“只有一点白”的要求。
 - `REPAIR-PROMPTS #16` 当前**验证中**：`xma-ai` 新增 `insufficient_balance` 与 Host-neutral `providerErrorPresentation()`；Active/legacy Terminal 不再把 Provider raw JSON 当 Xiaoyu assistant 正文，余额不足显示友好 system failure message。mock Provider 5/5 PASS；真实 Provider E2E 待用户环境。
