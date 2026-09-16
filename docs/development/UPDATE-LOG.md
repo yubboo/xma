@@ -843,3 +843,12 @@
 - 根因边界：固定 `@opentui/core@0.5.11` 的 `ScrollBoxRenderable` 自身支持 wheel + sticky/manual scroll，且手动离开 bottom 后会暂停 sticky；XMA Host 此前完全依赖 OpenTUI hit-test 把 wheel 命中 ScrollBox，没有 Host 级兜底。星空/流星与透明布局使真实终端中某些单元可能由其它 Renderable 成为 hit target，因此 wheel 不一定经过 Transcript。
 - 修复：OpenTUI 根 Host 新增 Transcript wheel fallback。只有 wheel 没有从 `transcriptScroll` 子树冒泡、且鼠标 Y 坐标确实位于 Transcript viewport 时才直接调用同一 `ScrollBox.scrollBy()`；正常命中 ScrollBox 时不重复滚动。这样仍复用 OpenTUI 原生 sticky/manual state：向上滚暂停自动贴底，滚回 bottom 后恢复 follow。
 - 回归：OpenTUI 静态合同新增 root `onMouseScroll`、Transcript descendant 去重、viewport 坐标限制和真实 `scrollBy` 兜底；`AGENTS.md` 新增 Terminal 历史滚动硬规则。版本保持 `0.1.0`。
+
+##79 · Terminal 长对话 ScrollBox viewport 修复
+
+- 日期：2026-09-16
+- 实机反馈：#78 已补 mouse wheel 事件兜底，但窗口较矮、对话内容超过一屏时，历史顶部仍会被裁掉且滚轮无法回看；全屏后因为 viewport 足够高又看似正常，说明问题不在历史数据或 wheel 输入本身，而在 Transcript 的布局/scroll range。
+- 根因：为实现“短对话贴近输入 Dock”，Transcript `ScrollBox` 的 internal content 被设置为 `justifyContent: flex-end`，同时 flex 链没有显式锁定可收缩 viewport。长内容时会出现负向/被裁剪的上方 overflow，ScrollBox 无法稳定得到与真实历史一致的 `scrollHeight - viewport.height`，因此 wheel/PageUp 即使改变 scroll position 也无法访问被裁掉的顶部。
+- 修复：Workbench 主内容链与 Transcript ScrollBox 显式 `flexShrink=1 + minHeight=0`，输入 Dock 固定 `flexShrink=0`；ScrollBox content 恢复正常 column 流，不再使用 `justifyContent:flex-end`。短内容贴底改为 Transcript wrapper 的 `marginTop=auto`：内容不足一屏时 auto margin 吃掉剩余空间，内容超过一屏时 margin 自动归零并让内容自然增高，从而形成真实 scroll range。
+- 兼容：保留 `stickyScroll + stickyStart=bottom`、#78 mouse wheel fallback、PageUp/PageDown/Ctrl+Home/Ctrl+End；用户离开底部后继续暂停自动跟随，返回底部后重新 follow。
+- 回归：OpenTUI 合同新增 viewport `minHeight=0`、Dock `flexShrink=0`、auto-margin bottom anchor，并明确禁止在 Transcript ScrollBox content 上重新引入 `justifyContent:flex-end`。版本保持 `0.1.0`。

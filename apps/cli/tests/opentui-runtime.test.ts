@@ -287,7 +287,10 @@ test('OpenTUI transcript is bottom anchored, keeps user messages right aligned, 
   assert.match(transcriptSource, /<scrollbox/)
   assert.match(transcriptSource, /stickyScroll=\{true\}/)
   assert.match(transcriptSource, /stickyStart="bottom"/)
-  assert.match(transcriptSource, /contentOptions=\{\{ flexGrow: 1, justifyContent: 'flex-end' \}\}/)
+  assert.match(transcriptSource, /flexGrow=\{1\}\s+flexShrink=\{1\}\s+minHeight=\{0\}/)
+  assert.match(transcriptSource, /contentOptions=\{\{ flexGrow: 1, flexDirection: 'column' \}\}/)
+  assert.match(transcriptSource, /marginTop="auto"/)
+  assert.doesNotMatch(transcriptSource, /justifyContent: 'flex-end'/)
   assert.match(transcriptSource, /if \(item\.role === 'user'\)/)
   assert.match(transcriptSource, /justifyContent="flex-end"/)
   assert.doesNotMatch(transcriptSource, /<box width=\{14\} \/>[\s\S]{0,120}正在思考/)
@@ -304,6 +307,8 @@ test('OpenTUI transcript is bottom anchored, keeps user messages right aligned, 
   assert.match(source, /transcriptScroll\.viewport\.screenY/)
   assert.match(source, /transcriptScroll\.scrollBy\(\(direction === 'up' \? -1 : 1\) \* wheelSteps \* 3\)/)
   assert.match(source, /onMouseScroll=\{fallbackTranscriptWheel\}/)
+  assert.match(source, /zIndex=\{10\} flexGrow=\{1\} flexShrink=\{1\} minHeight=\{0\}/)
+  assert.match(source, /<box width=\{dockWidth\(\)\} flexShrink=\{0\}/)
 })
 
 test('Windows prepare labels pnpm native English prompts without piping or rewriting pnpm output', () => {

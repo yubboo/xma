@@ -1697,7 +1697,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         stars={settings().stars}
         meteors={settings().meteors}
       />
-      <box position="relative" zIndex={10} flexGrow={1} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
+      <box position="relative" zIndex={10} flexGrow={1} flexShrink={1} minHeight={0} flexDirection="column" alignItems="center" justifyContent={centerMode() ? 'center' : 'flex-end'} paddingTop={1}>
         <Show when={showLogo()}>
           <box width={dockWidth()} flexDirection="column" alignItems="center" paddingBottom={2}>
             <Logo
@@ -1713,15 +1713,17 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
             ref={(value: ScrollBoxRenderable) => { transcriptScroll = value }}
             width={dimensions().width}
             flexGrow={1}
+            flexShrink={1}
+            minHeight={0}
             scrollX={false}
             scrollY={true}
             stickyScroll={true}
             stickyStart="bottom"
-            contentOptions={{ flexGrow: 1, justifyContent: 'flex-end' }}
+            contentOptions={{ flexGrow: 1, flexDirection: 'column' }}
             viewportCulling={true}
             scrollbarOptions={{ visible: false }}
           >
-            <box width={dimensions().width} flexDirection="column" alignItems="center">
+            <box width={dimensions().width} flexDirection="column" alignItems="center" marginTop="auto">
               <box width={contentWidth()} flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
                 <For each={transcript()}>{item => {
                   const meta = roleMeta(item.role)
@@ -1774,7 +1776,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
           </scrollbox>
         </Show>
 
-        <box width={dockWidth()} flexDirection="column" paddingBottom={1} onMouseDown={() => prompt?.focus()}>
+        <box width={dockWidth()} flexShrink={0} flexDirection="column" paddingBottom={1} onMouseDown={() => prompt?.focus()}>
           <box
             flexDirection="column"
             backgroundColor={showLogo() ? COLOR.panel : COLOR.background}
