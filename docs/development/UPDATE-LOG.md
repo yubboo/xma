@@ -765,3 +765,14 @@
 - 模型状态：`providerReady` 改为“存在活动 Provider/Profile/Model + Credential Reference 当前可读取”。首次配置完成真实模型选择/Reasoning 后直接显示“模型已就绪”；切换已保存 Profile/Model 同样立即按凭据状态显示就绪。`Brain Ready Probe / 连接测试` 保留为 Ctrl+P/doctor 的可选真实连接诊断与发布验收证据，不再是 UI Ready 前置条件；真实请求若出现 auth/network/model 错误仍必须显式返回。
 - 回归：Distribution/OpenTUI/Windows Gate 锁定 hardware cursor 隐藏、Trust→OpenTUI cursor handoff、模型 Ready 不依赖 Probe、首次配置不自动 Probe、Native 指纹缓存和 UTF-8 dev shim。版本保持 `0.1.0`。
 
+
+
+##71 · OpenTUI 输入焦点 / Dev Shim / 首次启动性能回归修复
+
+- 日期：2026-09-16
+- 实机回归：#70 把 Active OpenTUI cursor 永久隐藏并每 50ms 强制 `setCursorPosition(0,0,false)`，Windows Terminal 下导致 Text Cursor Indicator 随动画漂移且主 Prompt 失去可用输入体验；同时 dev shim 虽改为 PowerShell 读取 UTF-8，却又回跳 `xma-dev.bat`，中文 checkout 仍可在 cmd 层报“系统找不到指定的路径”。
+- Cursor：按项目固定的 OpenTUI `0.5.11` 上游实现重新对齐。`EditBufferRenderable` 的 focused Textarea 原生 `renderCursor()` 负责真实 caret/IME；主 Prompt 恢复 `promptCursorVisible` + focused Textarea，装饰动画只 `prompt.requestRender()`，禁止工作台全局定时改 terminal cursor。Workspace Trust raw 选择结束后始终恢复 cursor，再由 OpenTUI 接管。搜索框/普通输入 Dialog 同样使用原生 Textarea cursor。
+- PATH：`.cmd` 继续只做 ASCII 跳板；`xiaoyu-dev.ps1` 用 .NET UTF-8 读取 `source-root.txt` 后直接调用 `scripts/windows/xma-console.ps1 -Command cli -Workspace <caller-cwd>`，彻底取消回跳 `xma-dev.bat/cmd.exe`。`[1]` 新增 `XMA_DEV_SHIM_VERIFY=1` 自检，实际执行生成的 `xiaoyu.cmd` 链路但不进入 TUI，中文路径问题在准备阶段即 fail loud。
+- 启动性能：Native 指纹/构建缓存逻辑下沉到 `xma-common.ps1` 共享；`[1]` / `[9]` 在 crates offline 复检后预构建 `xma-native-runtime` 并写 `cli-native.sha256`，`[4]` 只在 Rust/Cargo 输入变化或产物缺失时离线重建，因此完成 `[1]` 后首次 `[4]` 也应直接进入 Trust/TUI。
+- 模型状态：产品 Ready 仍严格等于活动 Provider/Profile/Model 已保存且 Credential Reference 当前可读取；Prompt Dock Provider 行与底部提示显式显示“模型已就绪”，连接测试继续只作为可选诊断，不参与 Ready gating。
+- 回归：OpenTUI/Distribution/Windows Gate 改为锁定 Textarea cursor ownership、Trust cursor handoff、direct-PowerShell UTF-8 shim + 实际 shim 自检、`[1]` Native build cache 与模型 Ready 文案。版本保持 `0.1.0`。

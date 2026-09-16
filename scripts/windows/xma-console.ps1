@@ -281,77 +281,21 @@ function Remove-StaleCliNativeRuns {
   }
 }
 
-function Get-CliNativeRuntimeFingerprint {
-  param([Parameter(Mandatory = $true)]$CargoRuntime)
-
-  $files = New-Object System.Collections.Generic.List[string]
-  foreach ($relative in @('Cargo.toml','Cargo.lock','.cargo\config.toml')) {
-    $candidate = Join-Path $Root $relative
-    if (Test-Path -LiteralPath $candidate -PathType Leaf) { [void]$files.Add($candidate) }
-  }
-  $nativeRoot = Join-Path $Root 'native'
-  if (Test-Path -LiteralPath $nativeRoot -PathType Container) {
-    foreach ($file in @(Get-ChildItem -LiteralPath $nativeRoot -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName)) {
-      if ($file.Extension -eq '.rs' -or $file.Name -eq 'Cargo.toml' -or $file.Name -eq 'build.rs') { [void]$files.Add($file.FullName) }
-    }
-  }
-
-  $rustcProbe = Invoke-XmaProbe -FilePath $CargoRuntime.Rustc -ArgumentList @('--version')
-  if ($rustcProbe.ExitCode -ne 0) { throw '无法读取当前项目 Rustc 版本，不能验证 Native Runtime 缓存。' }
-  $lines = New-Object System.Collections.Generic.List[string]
-  [void]$lines.Add("rustc=$((@($rustcProbe.Output) -join ' ').Trim())")
-  foreach ($file in @($files.ToArray() | Sort-Object -Unique)) {
-    $full = [IO.Path]::GetFullPath($file)
-    $relative = $full.Substring($Root.Length).TrimStart([char[]]@('\','/'))
-    $hash = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
-    [void]$lines.Add("$relative=$hash")
-  }
-  $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
-  $sha = [Security.Cryptography.SHA256]::Create()
-  try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
-}
-
-function Get-CliNativeRuntimeStampFile {
-  $stateRoot = Get-XmaStateRoot -ProjectRoot $Root
-  New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
-  return (Join-Path $stateRoot 'cli-native.sha256')
-}
-
 function Build-CliNativeRuntime {
   Assert-CliJsDependencies
-  $cargoRuntime = Resolve-XmaCargoRuntime
-  Assert-XmaCargoOfflineReady -CargoRuntime $cargoRuntime -Purpose 'Xiaoyu Terminal Native Runtime'
-
-  $cliTargetDir = Join-Path $Root '.cache\cargo-target'
-  $builtExe = Join-Path $cliTargetDir 'debug\xma-native-runtime.exe'
-  $stampFile = Get-CliNativeRuntimeStampFile
-  $fingerprint = Get-CliNativeRuntimeFingerprint -CargoRuntime $cargoRuntime
-  $cachedFingerprint = if (Test-Path -LiteralPath $stampFile -PathType Leaf) { (Get-Content -LiteralPath $stampFile -Raw -Encoding UTF8).Trim() } else { '' }
-  if ((Test-Path -LiteralPath $builtExe -PathType Leaf) -and $cachedFingerprint -eq $fingerprint) {
-    Write-Host '[缓存] Xiaoyu Native Runtime 与当前 Rust 源码/依赖一致；跳过 cargo build，直接启动。' -ForegroundColor DarkCyan
-    return
-  }
-
-  # 中文说明：只有 Native Rust 源码/Cargo 配置/Rustc 版本变化或构建产物缺失时才离线增量构建。
-  # 日常 [4] 不再无条件 cargo build；构建动作直接继承当前终端 stdout/stderr，禁止 PowerShell pipeline 转码。
-  $previousCargoTargetDir = $env:CARGO_TARGET_DIR
-  $env:CARGO_TARGET_DIR = $cliTargetDir
-  try {
-    Write-Host '[Native] Native Runtime 指纹已变化或缓存缺失；正在离线增量构建（不下载依赖）...' -ForegroundColor DarkCyan
-    Invoke-XmaExternal -FilePath $cargoRuntime.Cargo -ArgumentList @('build','--package','xma-native-runtime','--offline')
-  } finally {
-    if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue } else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
-  }
-
-  if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
-    throw "XMA Native Runtime 构建结束但未找到：$builtExe"
-  }
-  [IO.File]::WriteAllText($stampFile, "$fingerprint`r`n", ([Text.UTF8Encoding]::new($false)))
+  $runtime = Resolve-XmaRustRuntime -ProjectRoot $Root
+  if (-not $runtime) { throw '未检测到项目本地 Rust/Cargo。请先运行 [1] 或 [9]。' }
+  Assert-XmaCargoOfflineReady -CargoRuntime ([pscustomobject]@{
+    Cargo = $runtime.CargoExe
+    Rustc = $runtime.RustcExe
+    CargoHome = $runtime.CargoHome
+    RustupHome = $runtime.RustupHome
+  }) -Purpose 'Xiaoyu Terminal Native Runtime'
+  Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $runtime
 }
 
 function Stage-CliNativeRuntime {
-  $cliTargetDir = Join-Path $Root '.cache\cargo-target'
-  $builtExe = Join-Path $cliTargetDir 'debug\xma-native-runtime.exe'
+  $builtExe = Get-XmaNativeRuntimeBuiltExecutable -ProjectRoot $Root
   if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) {
     throw "XMA Native Runtime 尚未构建：$builtExe"
   }

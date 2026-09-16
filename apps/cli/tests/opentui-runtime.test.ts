@@ -40,13 +40,14 @@ test('Bun and OpenTUI runtime dependencies live in the root package and avoid a 
   assert.equal(rootPackage.scripts?.['runtime:update'], 'node scripts/runtime/update.mjs')
 })
 
-test('Workspace Trust hides the hardware cursor during raw selection and keeps it hidden when handing off to OpenTUI', () => {
+test('Workspace Trust hides the cursor only during raw selection and restores it before OpenTUI handoff', () => {
   const source = readFileSync('apps/cli/src/tui.ts', 'utf8')
   const start = source.indexOf('export async function confirmWorkspaceTrust(')
   const end = source.indexOf('export function approvalDecision(', start)
   const trustSource = source.slice(start, end)
   assert.match(trustSource, /terminalMouseCaptureSequence\}\$\{hideHardwareCursor/)
-  assert.match(trustSource, /accepted \? hideHardwareCursor : showHardwareCursor/)
+  assert.match(trustSource, /terminalMouseReleaseSequence\}\$\{reset\}\$\{clearScreen\}\$\{showHardwareCursor/)
+  assert.doesNotMatch(trustSource, /accepted \? hideHardwareCursor : showHardwareCursor/)
 })
 
 test('Active OpenTUI source uses native textarea focus and never reintroduces legacy manual cursor control', () => {
@@ -311,12 +312,18 @@ test('official Provider UI never renders DeepSeek plus DeepSeek 2 as stacked pro
 })
 
 
-test('OpenTUI keeps the Windows hardware cursor hidden so animated decoration cannot move the text cursor indicator', () => {
+test('OpenTUI Textarea owns the active cursor and animated decoration re-renders the prompt instead of moving the terminal cursor', () => {
   const source = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
-  assert.match(source, /showCursor=\{false\}/)
-  assert.match(source, /renderer\.setCursorPosition\(0, 0, false\)/)
-  assert.doesNotMatch(source, /promptCursorVisible|setPromptCursorVisible/)
-  assert.doesNotMatch(source, /prompt\?\.requestRender\(\)/)
+  assert.match(source, /const \[promptCursorVisible, setPromptCursorVisible\] = createSignal\(true\)/)
+  assert.match(source, /focused=\{dialog\(\) === undefined && !setupFlow\(\)\.active\}/)
+  assert.match(source, /showCursor=\{promptCursorVisible\(\)\}/)
+  assert.match(source, /setPromptCursorVisible\(value => !value\)/)
+  assert.match(source, /setPhase\(value => value \+ 1\)[\s\S]{0,700}prompt\?\.requestRender\(\)/)
+  assert.match(source, /showCursor=\{true\}/)
+  const mountStart = source.indexOf("onMount(() => {\n    process.title = 'Xiaoyu'")
+  const mountEnd = source.indexOf('  return (', mountStart)
+  const activeMount = source.slice(mountStart, mountEnd)
+  assert.doesNotMatch(activeMount, /renderer\.setCursorPosition\(0, 0, false\)/)
   assert.match(source, /targetFps: 30/)
   assert.match(source, /maxFps: 30/)
   assert.match(source, /enableMouseMovement: false/)

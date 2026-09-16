@@ -75,7 +75,7 @@ for (const marker of ['openTuiContentWidth', 'openTuiSidePadding']) {
   if (!openTuiLayout.includes(marker)) throw new Error(`XMA OpenTUI responsive layout marker missing: ${marker}`)
 }
 for (const marker of [
-  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}', 'showCursor={false}',
+  'createCliRenderer', 'TextareaRenderable', 'useKeyboard', 'useTerminalDimensions', 'cursorColor={COLOR.text}', 'showCursor={promptCursorVisible()}',
   "event.name === 'tab'", "event.name === 'escape'", "event.ctrl && event.name === 'p'", "event.ctrl && event.name === 'k'",
   'commandPaletteOptions()', '模型 / 提供方', '连接测试', '选择真实模型', '终端设置', 'Tool Approval',
   'placeholder="输入消息…（输入 / 唤起命令）"', 'enableMouseMovement: false', 'useMouse: true',
@@ -85,11 +85,19 @@ for (const marker of [
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
 }
-if (!openTui.includes('renderer.setCursorPosition(0, 0, false)') || /showCursor=\{true\}/.test(openTui)) {
-  throw new Error('XMA active OpenTUI must keep the hardware cursor hidden; Windows Text Cursor Indicator must not follow animated decoration.')
+if (!openTui.includes('const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)') ||
+    !openTui.includes('focused={dialog() === undefined && !setupFlow().active}') ||
+    !openTui.includes('prompt?.requestRender()') ||
+    !openTui.includes('showCursor={true}')) {
+  throw new Error('XMA active OpenTUI must let focused Textarea own the terminal cursor and re-render it after animated decoration frames.')
 }
-if (!/accepted \? hideHardwareCursor : showHardwareCursor/.test(tui)) {
-  throw new Error('Workspace Trust must keep the hardware cursor hidden after acceptance before handing control to OpenTUI.')
+const activeMountStart = openTui.indexOf("onMount(() => {\n    process.title = 'Xiaoyu'")
+const activeMountEnd = openTui.indexOf('  return (', activeMountStart)
+if (activeMountStart < 0 || /renderer\.setCursorPosition\(0, 0, false\)/.test(openTui.slice(activeMountStart, activeMountEnd))) {
+  throw new Error('XMA active workbench animation must never globally force the terminal cursor to (0,0); the focused editor owns cursor position.')
+}
+if (!/terminalMouseReleaseSequence\}\$\{reset\}\$\{clearScreen\}\$\{showHardwareCursor/.test(tui) || /accepted \? hideHardwareCursor : showHardwareCursor/.test(tui)) {
+  throw new Error('Workspace Trust must restore the terminal cursor before handing control to OpenTUI so Textarea can own focus/IME.')
 }
 if (!cli.includes('return Boolean(activeProfile) && (activeView()?.credentialReady ?? true)')) {
   throw new Error('Terminal model readiness must be based on configured active profile + credential readiness, not a mandatory connection probe.')

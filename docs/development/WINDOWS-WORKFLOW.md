@@ -64,7 +64,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 - `[1]` 的 Workspace JavaScript 同步固定为项目根**每次无条件执行一次原生 `pnpm install`**，与开发者手工在 PowerShell 中运行同一命令的行为一致。不得附加 `--reporter`、`--prefer-offline`、`--no-frozen-lockfile`、`confirmModulesPurge` 或 XMA 自定义 registry/timeout 参数，也不得用 prepare stamp/fingerprint 或 `node_modules` 是否存在来跳过。删除 `node_modules` 后重新运行 `[1]` 必须由 pnpm 重新创建；项目新增/调整依赖后同样由这一条命令自动同步。`[8]` 才调用 `scripts/runtime/update.mjs` 定向更新 Bun 与 OpenTUI/Solid latest。
 - PowerShell 输出流边界固定：Bootstrap 动作函数（`pnpm install`、`cargo fetch`、`npm/winget` 安装等）不得通过函数返回值向上层传递 native stdout，也不得把包含 native command 的函数直接赋值给业务变量。`pnpm install` 属于终端进度型命令，必须直接继承当前控制台 stdout/stderr，禁止 `Out-Host` 或其他 PowerShell pipeline，确保 `Scope / Packages / Progress`、同行刷新、Unicode/ANSI 与开发者手工执行完全一致；Runtime/路径等业务对象由独立 `Get-*`/探针函数读取。
 - `[8]` 的定向更新保留 manifest/lockfile 事务回滚；`strictDepBuilds: true` 配合显式 allowBuilds 决策，新增 install/postinstall 包不会被静默批准。
-- Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；即使指纹未变化，只要用户移动了 Rust、清理了 Cargo registry 或切换到 D:/E:/自定义目录，就会识别到缓存缺失并仅在 `[1]` 中联网 `cargo fetch --locked`，完成后再次 offline 复检。
+- Rust 依赖按 `Cargo.toml/Cargo.lock + Cargo 版本 + 实际 CARGO_HOME/RUSTUP_HOME` 形成准备指纹，但 **stamp 只用于提示，不能替代真实缓存校验**。每次 `[1]` 都先执行 `cargo fetch --locked --offline` 验证当前 Cargo Home 的 crates/index；缺失时仅 `[1]` 联网 `cargo fetch --locked`，完成后再次 offline 复检。随后 `[1]` 还会按 Native Rust 源码/Cargo 配置/rustc 指纹预构建 `.cache/cargo-target/debug/xma-native-runtime.exe`，让准备完成后的首次 `[4]` 也不再等待编译。
 - XMA 构建目录统一为两层：`.cache/` 保存所有可删除的下载/编译/staging（包括 `.cache/cargo-target/`、`.cache/tauri-target/`、`.cache/desktop/`），`dist/` 保存唯一正式产品/发布产物。旧版根 `build/` / `target/`、`apps/desktop/dist|web|release|native` 与 `apps/desktop/src-tauri/target/` 会在 `XMA-Sync.bat` 同步新源码时清理。
 
 完成 `[1]` 后：
@@ -79,7 +79,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
   - `[2] Tauri 2`：副/备用；Tauri JavaScript package 已由 `[1]` 准备，只在明确选择时预取 Tauri Rust crates。
 - `[5]/[6] Desktop 构建发布`：复用 `[1]` 的通用依赖，只补齐所选 Desktop Runtime 并执行桌面端专用测试/构建；Electron 只构建 Web + Electron Main + Setup/Portable，Tauri 只构建自身 Web/Rust bundle。**禁止顺带执行 `build:cli`、`build:server`、`scripts/release/cli.ts` 或 `cargo build --workspace`**；Xiaoyu Terminal portable 发行继续由 `scripts/release/` 与 Release Workflow 独立负责，因此 CLI 构建错误不能阻塞 Desktop 安装包。
 
-`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，再委托 `xma-dev.bat cli` 启动；不会因为 `xma-console.ps1` 自己切回仓库根而丢失用户 Workspace。一个用户只保留一个激活的 `.git\xma-state\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。切换 checkout 后重新运行 `[1]` 才会更新指向。
+`[1]` 注册的开发命令只服务当前源码 checkout。新开 PowerShell / Windows Terminal 后，在任意目录输入 `xiaoyu` 或 `xma` 时使用**调用命令时的当前目录**作为 Workspace，由 ASCII `.cmd` 跳板进入 `xiaoyu-dev.ps1`，PowerShell/.NET 以 UTF-8 读取 checkout 后直接调用 `xma-console.ps1 -Command cli -Workspace <caller-cwd>`；不再回跳 `xma-dev.bat/cmd.exe`，因此中文 checkout 路径不会被代码页二次解析。`[1]` 会执行一次真实 shim 自检，不打开 TUI但验证该链路。一个用户只保留一个激活的 `.git\xma-state\dev-bin` PATH entry；shim 内容与 User PATH 已匹配时后续 `[1]` 只校验、不重复写入环境变量。切换 checkout 后重新运行 `[1]` 才会更新指向。
 
 `esbuild` 是 Vite/tsx/tsup 的内部依赖。在 pnpm strict linker 下根目录不一定暴露 `esbuild` 命令，因此**禁止使用 `pnpm exec esbuild --version` 作为环境验证**；使用 `tsx` 最小 TypeScript 执行和 Vite/tsup/tsc 真实命令验证。
 
@@ -89,7 +89,7 @@ $env:XMA_TARGET_ROOT = 'E:\Dev\xma-maintainer'
 
 固定要求：
 
-- `xma-dev.bat -> [4]` 每次启动前运行 Cargo `--offline` 增量构建当前 `xma-native-runtime`；
+- `[1]` 在 crates 准备后预构建当前 `xma-native-runtime` 并写 Native 输入指纹；`xma-dev.bat -> [4]` 只在指纹变化或产物缺失时运行 Cargo `--offline` 增量构建；
 - 不下载 crates；缺依赖时明确要求先运行 `[1]`，不得静默联网；
 - CLI 建立 stdio Native Client 后继续校验必需 capability；缺能力时 fail loud，禁止进入“能打开 TUI、但 API Key 永远保存不了”的半工作状态；
 - Provider/Model 配置异常只在 TUI 内提示，不得因为未配置 Brain、模型发现失败或 Probe 失败把整个 Xiaoyu 进程退出。

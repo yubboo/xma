@@ -245,6 +245,8 @@ for (const marker of [
   '[8/8] 开发态 Xiaoyu 命令',
   'Cargo 指纹未变化；仍验证实际 crate 缓存',
   'cargo fetch 完成后 offline 复检通过',
+  'Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $rustRuntime',
+  '开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检',
 ]) {
   if (!prepareSource.includes(marker)) throw new Error(`XMA development-environment contract regression: missing ${marker}`)
 }
@@ -257,6 +259,18 @@ if (prepareSource.includes('Rustlang.Rustup') || prepareSource.includes("Join-Pa
 if (prepareSource.includes("$devBin = Join-Path (Get-XmaLocalPathRoot -ProjectRoot $Root) 'dev-bin'")) throw new Error('dev shim belongs to checkout-local state, not xma-path')
 if (!prepareSource.includes("xiaoyu-dev.ps1") || !prepareSource.includes("[IO.File]::ReadAllText($rootFile, [Text.Encoding]::UTF8)")) {
   throw new Error('Windows dev shim must read source-root.txt through PowerShell/.NET UTF-8, not cmd set /p, so Chinese checkout paths remain valid.')
+}
+for (const marker of [
+  String.raw`$console = Join-Path $root 'scripts\windows\xma-console.ps1'`,
+  "& $console -Command cli -Workspace (Get-Location).Path",
+  "if ($env:XMA_DEV_SHIM_VERIFY -eq '1')",
+  "Invoke-XmaExternal -FilePath (Join-Path $devBin 'xiaoyu.cmd') -ArgumentList @() -QuietCommand",
+  '开发态 xiaoyu / xma shim 已通过当前 checkout UTF-8 路径自检',
+]) {
+  if (!prepareSource.includes(marker)) throw new Error(`Windows dev shim direct-PowerShell/UTF-8 self-check contract missing: ${marker}`)
+}
+if (prepareSource.includes("$entry = Join-Path $root 'xma-dev.bat'") || prepareSource.includes('& $entry cli')) {
+  throw new Error('Windows dev shim must not bounce back through xma-dev.bat/cmd.exe; Chinese checkout paths must stay in the PowerShell UTF-8 chain.')
 }
 if (prepareSource.includes('set /p "XMA_DEV_ROOT="')) throw new Error('Windows dev shim must not parse UTF-8 source-root.txt through cmd.exe set /p.')
 if (!prepareSource.includes(String.raw`(?:\.git|\.cache)[\\/]xma-state[\\/]dev-bin$`)) {
@@ -280,6 +294,10 @@ for (const marker of [
   "Source = 'project-runtime'",
   "Invoke-XmaProbe -FilePath $cargoExe -ArgumentList @('--version')",
   "Invoke-XmaProbe -FilePath $rustcExe -ArgumentList @('--version')",
+  'function Get-XmaNativeRuntimeInputFingerprint',
+  'function Ensure-XmaNativeRuntimeBuildCache',
+  String.raw`Join-Path $ProjectRoot '.cache\cargo-target\debug\xma-native-runtime.exe'`,
+  "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('build','--package','xma-native-runtime','--offline')",
 ]) {
   if (!commonWindowsSource.includes(marker)) throw new Error(`Project-local Rust runtime resolver contract missing: ${marker}`)
 }
@@ -310,6 +328,7 @@ for (const marker of [
   'function Resolve-XmaCargoRuntime',
   '$runtime = Resolve-XmaRustRuntime -ProjectRoot $Root',
   'function Assert-XmaCargoOfflineReady',
+  'Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $runtime',
   '项目本地 Rust/Cargo 已就绪：CARGO_HOME=',
   '[8] 刷新 · JavaScript Runtime',
   '[9] 单独准备 · Rust / Cargo',
@@ -665,15 +684,10 @@ for (const marker of [
   '[2] 开发运行 · Web                    已准备后直接启动',
   '[4] 运行 · Xiaoyu Terminal            已准备后直接启动',
   'Build-CliNativeRuntime',
-  'Get-CliNativeRuntimeFingerprint',
-  'cli-native.sha256',
-  '跳过 cargo build，直接启动',
+  'Ensure-XmaNativeRuntimeBuildCache -ProjectRoot $Root -RustRuntime $runtime',
   'Stage-CliNativeRuntime',
-  "@('build','--package','xma-native-runtime','--offline')",
-  "Join-Path $Root '.cache\\cargo-target'",
   "Join-Path $Root '.cache\\native-runtime\\runs'",
   '$env:XIAOYU_NATIVE_RUNTIME = $nativeExe',
-  'Native Runtime 指纹已变化或缓存缺失；正在离线增量构建（不下载依赖）',
   '[3] 开发运行 · Desktop',
   '[5] 构建发布 · Desktop 当前平台',
   '[6] 构建发布 · Desktop Windows',
@@ -697,8 +711,17 @@ for (const marker of [
 if (!/Build-CliNativeRuntime\r?\n\s*\$nativeExe = Stage-CliNativeRuntime/.test(consoleSource)) {
   throw new Error('Xiaoyu Terminal must validate/cache native runtime as a void native action, then stage/read the executable separately.')
 }
-if (!consoleSource.includes("Get-Content -LiteralPath $stampFile -Raw -Encoding UTF8") || !consoleSource.includes("Get-XmaFingerprint") && !consoleSource.includes('Get-CliNativeRuntimeFingerprint')) {
-  throw new Error('Xiaoyu Terminal must fingerprint Native Rust inputs before deciding whether cargo build is necessary.')
+if (!commonWindowsSource.includes("Get-Content -LiteralPath $stampFile -Raw -Encoding UTF8") || !commonWindowsSource.includes('Get-XmaNativeRuntimeInputFingerprint')) {
+  throw new Error('Shared Windows Native Runtime cache must fingerprint Rust inputs before deciding whether cargo build is necessary.')
+}
+for (const marker of [
+  'cli-native.sha256',
+  "Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('build','--package','xma-native-runtime','--offline')",
+  String.raw`Join-Path $ProjectRoot '.cache\cargo-target'`,
+  '无需重新 cargo build',
+  '完成 [1] 后日常 [4] 将直接复用该产物',
+]) {
+  if (!commonWindowsSource.includes(marker)) throw new Error(`Shared Native Runtime build-cache contract missing: ${marker}`)
 }
 if (consoleSource.includes('$nativeExe = Ensure-CliNativeRuntime')) {
   throw new Error('Xiaoyu Terminal must not capture cargo build output through a value-returning action function.')

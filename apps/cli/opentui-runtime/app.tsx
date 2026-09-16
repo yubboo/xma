@@ -491,7 +491,7 @@ function ListDialog(props: {
               placeholderColor={COLOR.faint}
               textColor={COLOR.text}
               focusedTextColor={COLOR.text}
-              showCursor={false}
+              showCursor={true}
               cursorColor={COLOR.orange}
               onContentChange={() => {
                 setQuery(searchInput?.plainText ?? '')
@@ -634,7 +634,7 @@ function InputDialog(props: {
             placeholderColor={COLOR.faint}
             textColor={COLOR.text}
             focusedTextColor={COLOR.text}
-            showCursor={false}
+            showCursor={true}
             cursorColor={COLOR.orange}
             onSubmit={() => props.onDone(field?.plainText ?? '')}
             onKeyDown={(event: KeyEvent) => {
@@ -705,6 +705,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   const [dialog, setDialog] = createSignal<DialogState | undefined>()
   const [setupFlow, setSetupFlow] = createSignal({ active: false, message: '' })
   const [phase, setPhase] = createSignal(0)
+  // OpenTUI 的 Textarea 必须拥有真实 terminal cursor，Windows IME/Text Cursor Indicator 才能稳定跟随输入位置。
+  // 装饰动画只触发 Textarea 自己重绘 cursor，禁止应用层每帧手工 setCursorPosition。
+  const [promptCursorVisible, setPromptCursorVisible] = createSignal(true)
   const [tipIndex, setTipIndex] = createSignal(0)
   const [clock, setClock] = createSignal(Date.now())
   let prompt: TextareaRenderable | undefined
@@ -725,7 +728,7 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     ? {
         dot: providerReady() ? '●' : '○',
         dotColor: providerReady() ? COLOR.green : COLOR.yellow,
-        label: providerLabel(),
+        label: `${providerLabel()} · ${providerReady() ? '模型已就绪' : '凭据未就绪'}`,
       }
     : {
         dot: '○',
@@ -763,7 +766,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
   }
   const refocusPrompt = () => queueMicrotask(() => {
     if (setupFlow().active || dialog() !== undefined) return
+    setPromptCursorVisible(true)
     prompt?.focus()
+    prompt?.requestRender()
   })
   const setSetupStage = (message: string) => {
     if (!setupFlow().active) return
@@ -1361,18 +1366,23 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
 
   onMount(() => {
     process.title = 'Xiaoyu'
-    renderer.setCursorPosition(0, 0, false)
     const animation = setInterval(() => {
       setPhase(value => value + 1)
-      // 中文说明：Xiaoyu 在 OpenTUI 工作台内永久隐藏 terminal hardware cursor。
-      // Windows Text Cursor Indicator 因此不会被星星/流星 dirty frame 带到背景 cell；输入焦点仍由 TextareaRenderable 负责。
-      renderer.setCursorPosition(0, 0, false)
+      // OpenTUI 0.5.11 的 EditBufferRenderable.renderCursor() 会在 Textarea render pass 最后提交真实 cursor 坐标。
+      // 星星/流星每帧会制造前景之外的 dirty cells，因此活动输入框必须同步 requestRender，让 cursor ownership 回到 Textarea；
+      // 禁止 renderer.setCursorPosition(0,0,false) 抢走 IME/输入焦点。
+      if (!setupFlow().active && dialog() === undefined) prompt?.requestRender()
     }, 50)
+    const promptCursor = setInterval(() => {
+      if (setupFlow().active || dialog() !== undefined) return
+      setPromptCursorVisible(value => !value)
+    }, 800)
     const streamPump = setInterval(pumpRunEvents, 30)
     const tips = setInterval(() => setTipIndex(value => value + 1), 5500)
     const clockTimer = setInterval(() => setClock(Date.now()), 1000)
     onCleanup(() => {
       clearInterval(animation)
+      clearInterval(promptCursor)
       clearInterval(streamPump)
       clearInterval(tips)
       clearInterval(clockTimer)
@@ -1463,7 +1473,16 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
               <text fg={MODE_META[mode()].color}>▌</text>
               <box flexGrow={1} paddingLeft={1}>
                 <textarea
-                  ref={(value: TextareaRenderable) => { prompt = value }}
+                  ref={(value: TextareaRenderable) => {
+                    prompt = value
+                    queueMicrotask(() => {
+                      if (setupFlow().active || dialog() !== undefined) return
+                      setPromptCursorVisible(true)
+                      value.focus()
+                      value.requestRender()
+                    })
+                  }}
+                  focused={dialog() === undefined && !setupFlow().active}
                   minHeight={1}
                   maxHeight={5}
                   wrapMode="word"
@@ -1471,9 +1490,11 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
                   placeholderColor={COLOR.faint}
                   textColor={COLOR.text}
                   focusedTextColor={COLOR.text}
-                  showCursor={false}
+                  showCursor={promptCursorVisible()}
                   cursorColor={COLOR.text}
                   cursorStyle={{ style: 'block', blinking: false }}
+                  onContentChange={() => setPromptCursorVisible(true)}
+                  onCursorChange={() => setPromptCursorVisible(true)}
                   onSubmit={() => { void submit(prompt?.plainText ?? '') }}
                   onKeyDown={(event: KeyEvent) => {
                     if (event.name !== 'tab') return

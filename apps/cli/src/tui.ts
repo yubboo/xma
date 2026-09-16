@@ -49,7 +49,7 @@ export function terminalHomeTip(index: number, providerConfigured: boolean, prov
   if (!providerConfigured) return '模型未配置 · Ctrl+P → 模型 / 提供方，或输入 /provider'
   if (!providerReady) return '模型已配置 · 凭据未就绪 · Ctrl+P → 模型 / 提供方检查凭据'
   const normalized = ((index % HOME_TIPS.length) + HOME_TIPS.length) % HOME_TIPS.length
-  return HOME_TIPS[normalized]!
+  return `模型已就绪 · ${HOME_TIPS[normalized]!}`
 }
 
 const LOGO_XIAO = [
@@ -778,9 +778,9 @@ export async function confirmWorkspaceTrust(workspace: string): Promise<boolean>
   } finally {
     input.setRawMode(previousRaw)
     if (!previousRaw) input.pause()
-    // 接受后马上进入 OpenTUI，继续隐藏 hardware cursor，避免 Windows Text Cursor Indicator 在两套界面切换间闪现。
-    // 取消/退出时恢复 cursor，保证把终端完整交还给父 shell。
-    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${accepted ? hideHardwareCursor : showHardwareCursor}`)
+    // Trust 结束后始终把 terminal cursor 恢复给下一层。接受时由 OpenTUI/Textarea 接管真实 cursor，
+    // 取消时则直接交还父 shell；禁止把隐藏 cursor 状态跨 Runtime 边界泄漏。
+    output.write(`${terminalMouseReleaseSequence}${reset}${clearScreen}${showHardwareCursor}`)
   }
 }
 

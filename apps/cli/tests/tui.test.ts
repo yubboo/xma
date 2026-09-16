@@ -117,6 +117,10 @@ test('configured model readiness depends on credential availability, not a manda
   assert.match(main, /return Boolean\(activeProfile\) && \(activeView\(\)\?\.credentialReady \?\? true\)/)
   assert.doesNotMatch(main, /get providerReady\(\) \{[\s\S]{0,300}brainProbeReadiness/)
   assert.match(main, /模型已就绪 · 连接测试可选/)
+  const tui = readFileSync('apps/cli/src/tui.ts', 'utf8')
+  const runtime = readFileSync('apps/cli/opentui-runtime/app.tsx', 'utf8')
+  assert.match(tui, /return `模型已就绪 · \$\{HOME_TIPS\[normalized\]!\}`/)
+  assert.match(runtime, /providerReady\(\) \? '模型已就绪' : '凭据未就绪'/)
 })
 
 test('TUI home falls back to a compact identity on narrow terminals', () => {

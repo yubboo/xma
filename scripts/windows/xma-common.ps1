@@ -197,6 +197,87 @@ function Test-XmaCargoOfflineDependencies {
   }
 }
 
+function Get-XmaNativeRuntimeBuiltExecutable {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  return (Join-Path $ProjectRoot '.cache\cargo-target\debug\xma-native-runtime.exe')
+}
+
+function Get-XmaNativeRuntimeBuildStampFile {
+  param([Parameter(Mandatory = $true)][string]$ProjectRoot)
+  $stateRoot = Get-XmaStateRoot -ProjectRoot $ProjectRoot
+  New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
+  return (Join-Path $stateRoot 'cli-native.sha256')
+}
+
+function Get-XmaNativeRuntimeInputFingerprint {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [Parameter(Mandatory = $true)]$RustRuntime
+  )
+
+  $files = New-Object System.Collections.Generic.List[string]
+  foreach ($relative in @('Cargo.toml','Cargo.lock','.cargo\config.toml')) {
+    $candidate = Join-Path $ProjectRoot $relative
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) { [void]$files.Add($candidate) }
+  }
+  $nativeRoot = Join-Path $ProjectRoot 'native'
+  if (Test-Path -LiteralPath $nativeRoot -PathType Container) {
+    foreach ($file in @(Get-ChildItem -LiteralPath $nativeRoot -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+      if ($file.Extension -eq '.rs' -or $file.Name -eq 'Cargo.toml' -or $file.Name -eq 'build.rs') { [void]$files.Add($file.FullName) }
+    }
+  }
+
+  $rustcProbe = Invoke-XmaProbe -FilePath $RustRuntime.RustcExe -ArgumentList @('--version')
+  if ($rustcProbe.ExitCode -ne 0) { throw '无法读取当前项目 Rustc 版本，不能验证 Native Runtime 缓存。' }
+  $lines = New-Object System.Collections.Generic.List[string]
+  [void]$lines.Add("rustc=$((@($rustcProbe.Output) -join ' ').Trim())")
+  foreach ($file in @($files.ToArray() | Sort-Object -Unique)) {
+    $full = [IO.Path]::GetFullPath($file)
+    $relative = $full.Substring($ProjectRoot.Length).TrimStart([char[]]@('\','/'))
+    $hash = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+    [void]$lines.Add("$relative=$hash")
+  }
+  $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { return ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() }
+}
+
+function Ensure-XmaNativeRuntimeBuildCache {
+  param(
+    [Parameter(Mandatory = $true)][string]$ProjectRoot,
+    [Parameter(Mandatory = $true)]$RustRuntime
+  )
+
+  if (-not (Test-XmaCargoOfflineDependencies -ProjectRoot $ProjectRoot -CargoExecutable $RustRuntime.CargoExe)) {
+    throw 'XMA Native Runtime 构建需要的 Rust crates 尚未完整准备。请先运行 [1]/[9] 完成 cargo fetch。'
+  }
+
+  $builtExe = Get-XmaNativeRuntimeBuiltExecutable -ProjectRoot $ProjectRoot
+  $stampFile = Get-XmaNativeRuntimeBuildStampFile -ProjectRoot $ProjectRoot
+  $fingerprint = Get-XmaNativeRuntimeInputFingerprint -ProjectRoot $ProjectRoot -RustRuntime $RustRuntime
+  $cachedFingerprint = if (Test-Path -LiteralPath $stampFile -PathType Leaf) { (Get-Content -LiteralPath $stampFile -Raw -Encoding UTF8).Trim() } else { '' }
+  if ((Test-Path -LiteralPath $builtExe -PathType Leaf) -and $cachedFingerprint -eq $fingerprint) {
+    Write-Host '[缓存] Xiaoyu Native Runtime 与当前 Rust 源码/依赖一致；无需重新 cargo build。' -ForegroundColor DarkCyan
+    return
+  }
+
+  $targetDir = Join-Path $ProjectRoot '.cache\cargo-target'
+  New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+  $previousCargoTargetDir = $env:CARGO_TARGET_DIR
+  $env:CARGO_TARGET_DIR = $targetDir
+  try {
+    Write-Host '[Native] 正在离线构建 Xiaoyu Native Runtime；完成 [1] 后日常 [4] 将直接复用该产物。' -ForegroundColor DarkCyan
+    Invoke-XmaExternal -FilePath $RustRuntime.CargoExe -ArgumentList @('build','--package','xma-native-runtime','--offline')
+  } finally {
+    if ($null -eq $previousCargoTargetDir) { Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue }
+    else { $env:CARGO_TARGET_DIR = $previousCargoTargetDir }
+  }
+
+  if (-not (Test-Path -LiteralPath $builtExe -PathType Leaf)) { throw "XMA Native Runtime 构建结束但未找到：$builtExe" }
+  [IO.File]::WriteAllText($stampFile, "$fingerprint`r`n", ([Text.UTF8Encoding]::new($false)))
+  Write-Host '[完成] Xiaoyu Native Runtime 构建缓存已准备；[4] 可直接进入 Workspace Trust / TUI。' -ForegroundColor Green
+}
+
 function Invoke-XmaExternal {
   param(
     [Parameter(Mandatory = $true)][string]$FilePath,
