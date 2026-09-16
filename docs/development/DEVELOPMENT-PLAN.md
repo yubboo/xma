@@ -10,6 +10,11 @@
 
 UI 当前只维持开发壳和 Host 通路验证，不提前投入复杂工作台细节。完整三栏布局目标见 `docs/architecture/DESKTOP-WORKBENCH.md`。
 
+全阶段额外锁定两条产品 invariant：
+
+1. **一个 Runtime，多 Host**：CLI/TUI、Desktop、Web、Server 的核心能力、Session、Provider、Tool、Permission/Approval 只能实现一次，通过 App Protocol / Runtime Event 投影；不得因为 UI 不同形成三套 Xiaoyu。
+2. **模型自主行动，权限归用户**：真实 Provider Model 负责规划/选 Tool/自纠/验证；Skill/Agent 只增强；三档 `ask / smart / full` Permission Profile 控制副作用。批准后同一 Turn 自动续跑，拒绝回 Observation 给模型寻找替代方案。
+
 ## 2. 上游参考方法
 
 XMA 强制执行 Upstream-first / No Blind Reinvention：
@@ -151,7 +156,8 @@ Stage P6  Browser + Computer + Artifact capabilities
 - parallel-safe / exclusive scheduling；
 - structured ToolResult；
 - Policy pipeline；
-- Approval：本次 / 本 Session / 拒绝；
+- Permission Profile：`ask / smart / full`（请求批准 / 帮我批准 / 完全访问），统一归 Runtime/App Protocol；
+- Approval：本次 / 本 Session / 拒绝；批准挂起的 Tool Call 后继续同一 Turn，拒绝作为 Observation 回同一模型；
 - Native Capability request；
 - Rust Native Protocol 扩展。
 

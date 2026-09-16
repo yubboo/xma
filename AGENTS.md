@@ -51,6 +51,19 @@ Rust 负责：PTY/ConPTY、进程生命周期、文件系统限制、Sandbox、C
 - `xiaoyu / xma` 每次交互式启动都必须先解析调用者当前目录并显示 Workspace Trust；授权只对本次启动有效，不得因为普通项目、历史信任或已有 Brain 而静默跳过。Home/文件系统根/Windows 系统目录继续作为高风险 Workspace，默认选择退出。
 - Workspace Trust 通过后，只有当前没有已配置 Brain/Profile 时才自动进入**同一 Xiaoyu TUI 内的居中 Brain Setup**；Profile 已存在的后续启动不得重复强制弹出。`Ctrl+P → 模型 / 提供方` 是长期管理入口，始终保留，并与首次 Setup 复用同一 Provider/Model/Credential/Probe 能力。工作区信任选择“否，退出”是正常用户取消，必须干净退出，不能冒充运行失败。
 
+### 3.2 Model Autonomy / User Permission Contract（锁死）
+
+- **真实顶级模型拥有正常任务的行动决策权。** 当前 Provider Model 自己决定下一步、选哪个 Tool、是否重试、如何根据 Observation 改方案、何时验证、何时完成；Agent Loop/Skill/Plugin/Host 不得用固定业务流程、隐藏 Planner 或 UI 状态替模型做这些决定。
+- **Skill / Specialist / Workflow 的默认职责是增强，不是降智。** Skill 提供领域知识、方法、边界和验收；专业 Agent 提供 loadout/context/tool capability；除用户显式选择只读/受限模式、Provider capability 不支持或安全 Policy 明确禁止外，不得因为“用了某个 Skill/专家”就缩小模型本来可用的 Tool Surface。
+- **Tool Surface 是模型的行动能力。** 模型常用但当前缺失的文件、进程、Shell/PTY、Git、网络、Browser、MCP、Archive 等能力，应优先通过 `xma-tools` / Plugin / Native capability 补齐；不得把“Framework 没给手”包装成“模型不会做”，再把本可自动完成的步骤甩回用户手工执行。
+- **Permission 决定副作用是否允许，不决定模型能不能思考。** 用户对文件/进程/网络/系统等真实副作用拥有最终控制权；Policy/Approval/Rust Kernel 只能 gate/约束执行，不能把已授权能力从模型面前隐藏成假不可用。
+- XMA 产品权限模式统一为三档稳定语义：`ask`（**请求批准**）、`smart`（**帮我批准**）、`full`（**完全访问**）。Host 可以有不同 UI，但必须映射到同一 Runtime Permission Profile，禁止 CLI/Desktop/Web 各写一套权限逻辑。
+  - `ask`：需要副作用的调用按 Policy 请求用户批准；用户批准后必须在**同一 Turn / 同一任务**继续执行，不得要求用户重新发送“继续”。
+  - `smart`：当前 Workspace/任务范围内的常规低风险动作可按统一 Policy 自动批准；跨 Workspace、系统级、敏感凭据或显著扩大影响面的动作仍请求用户确认。该模式是权限策略，不是隐藏 Planner。
+  - `full`：对当前 Host/Workspace 已暴露且用户明确授予的能力自动批准，使模型可以连续完成长任务；仍受操作系统真实权限、Rust hard safety invariant、Secret 隔离和不可伪造的 capability 边界约束。
+- **Approval Pending 不是 Turn 结束。** Runtime 必须挂起对应 Tool Call，Host 收集决定后继续同一执行链；`allow-once / allow-session / deny` 都形成 durable audit。
+- **Permission denial 也是 Observation，不是默认任务失败。** 用户拒绝某个 Tool Call 后，结构化 deny result 必须返回同一个真实模型，让模型判断替代路径、缩小权限或解释确实无法完成；只有真实能力不存在、用户明确拒绝所有可行路径或外部条件不可满足时，才把剩余阻塞交还用户。
+
 ## 4. Agent / Workspace / Plugin / Skill / Host 边界
 
 - **Agent**：专业身份与能力组合；主 `Xiaoyu` 是 Manager Agent，Code/Minecraft/Writer/GameDev 等是可组合的专业 Agent。
@@ -240,7 +253,9 @@ pnpm 11 的依赖安装脚本采用**显式白名单**。允许执行 install/po
 ## 10.1 Distribution / Terminal 产品入口（锁死）
 
 - XMA 对外 Terminal 主命令固定为 `xiaoyu`；`xma` 只作为兼容别名，不再作为品牌主入口。
-- CLI/TUI、Desktop、Server、Web 都是同一 Core/App Protocol 的 Host，禁止各自复制 Agent Loop。
+- CLI/TUI、Desktop、Server、Web 都是同一 XMA Runtime/App Protocol 的 Host，禁止各自复制 Agent Loop、Session、Tool execution、Permission/Approval、Provider 或 Agent 业务逻辑。Host 只负责输入、展示、交互适配和当前部署环境的 capability bridge。
+- **Feature parity 与 capability availability 分离。** 一个 Core Feature 只能实现一次；某 Host/部署环境暂时没有对应 Native capability 时，应由 Runtime 返回统一 unavailable/capability reason，UI 做禁用/说明，而不是删除该 Feature、复制另一套逻辑或让 Host 自己实现替代 Agent。
+- Terminal/Desktop 本地运行时操作当前本机；Web 连接云端 Server Runtime 时，filesystem/process 等能力默认作用于服务器 Host，而不是浏览器用户电脑。未来若需要 Web 控制用户本机，必须通过明确的 Remote Node/Device capability + 用户授权接入，浏览器不得绕过安全边界直接获得本机 OS 权限。
 - 普通用户安装必须使用**预构建发行资产**；禁止要求用户 clone 源码、执行 `pnpm install`、`cargo build`、安装 MSVC 或把 `node_modules/.cache/target` 打进安装包。
 - Windows 默认每用户安装到 `%LOCALAPPDATA%\Programs\Xiaoyu`，只修改 User PATH；Linux/macOS 默认使用 `~/.local/bin` + `~/.local/share/xiaoyu`，不默认要求 root。
 - `scripts/install/xma-install.ps1` 与 `scripts/install/xma-install.sh` 是独立 bootstrap，必须先做 SHA-256 校验和 staging 验证再替换正式安装；公网一行安装命令只有在域名/Release 资产真实部署后才允许宣称可用。

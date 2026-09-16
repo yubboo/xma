@@ -825,3 +825,14 @@
 - 布局：顺序固定为用户消息（右）→ 实时 activity（左）→ Xiaoyu thinking/answer（左）。Activity 默认折叠但运行中即可点击展开；展开/收起状态在结算时保持，不因完成而重建一条静态摘要。
 - 上游参考：Codex TUI 的 completion metadata 使用真实 Turn duration 生成 `Worked for ...`，XMA 对齐“真实持续时间”语义，同时保留自己的运行中实时刷新和公开 Tool 活动日志。
 - 回归：OpenTUI 静态合同新增 `startedAtMs + running outcome`、实时 `nowMs - startedAtMs`、提交即插入 activity、事件到达即同步 entries、完成后冻结耗时；版本保持 `0.1.0`。
+
+##77 · 模型自主行动 / 用户权限 / 多 Host 单 Runtime 合同
+
+- 日期：2026-09-16
+- 目的：在正式进入下一阶段 Agent Engine 开发前，锁定“顶级模型保持完整行动决策权、权限完全归用户、CLI/Desktop/Web/Server 只是一套 Runtime 的不同 UI/部署 Host”三条产品底线，避免后续为了安全或 UI 便利把 XMA 做成固定流程助手或三套平行系统。
+- Model Autonomy：当前真实 Provider Model 负责理解目标、规划下一步、选择 Tool、根据 Observation 自纠、决定验证与完成条件；Skill/专业 Agent/Workflow 默认只增强知识、loadout 与能力，不得用隐藏 Planner、固定 A→B→C 或缩水 Tool Surface 取代旗舰模型智力。缺少行动能力时优先补 Tool/Plugin/Native capability，不把可自动化工作默认甩回用户。
+- Permission Profile：统一三档 `ask / smart / full`，产品文案为“请求批准 / 帮我批准 / 完全访问”。权限只 gate 文件/进程/网络/系统等副作用，不限制模型思考。`full` 仍受 OS 权限、Rust hard invariant、Secret 隔离和当前 Host 真实 capability 约束。
+- Approval lifecycle：需要批准的 Tool Call 在同一 active Turn 中挂起；Host 收集 `allow-once / allow-session / deny` 后先 durable audit，再继续执行或把 deny 作为结构化 Observation 返回同一模型。批准后不得要求用户重新发送“继续”；拒绝也不默认结束任务，模型应先寻找缩小 scope、替代 Tool、portable/local 等可行路径。
+- Multi-Host：Terminal、Desktop、Web、Server 的 Agent/Session/Provider/Tool/Permission/Approval 只允许实现一次，通过 App Protocol/Runtime Event 消费。Host 只负责输入、渲染、交互与部署环境 capability bridge。Web 连接云 Server 时 Native 副作用作用于服务器；未来控制用户本机必须使用显式 Remote Node/Device capability，浏览器不能绕过 OS 安全边界。
+- 文档：同步更新 `AGENTS.md`、`PROJECT-ARCHITECTURE.md`、`AGENT-ENGINE-STRATEGY.md`、`AGENT-RUNTIME.md`、`DEVELOPMENT-RULES.md`、`DEVELOPMENT-PLAN.md`、`PROJECT-STATUS.md`、`CODEMAP.md` 与 `README.md`；大路线不变，下一步仍正式进入 Pi-first 的 Agent Engine 行为级开发，但实现必须从第一天保持 Host-neutral 与用户权限续跑语义。
+

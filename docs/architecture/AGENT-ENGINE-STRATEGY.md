@@ -400,6 +400,17 @@ Skill 错误用途：
 - 可审计成本与原因；
 - 不允许隐藏降级或偷偷换模型。
 
+### 7.5 User Sovereignty：权限放在“手”上，不放在“脑”上
+
+XMA 的目标不是把强模型关进一个低能力 Harness，而是给它足够的真实 Tool Surface，再由用户决定这些 Tool 可以产生多大副作用。
+
+- 模型始终可以理解、分析、规划和判断；Permission 不用于降低模型智力。
+- `ask / smart / full` 是统一 Runtime Permission Profile，不是 Terminal/Desktop/Web 各自的开关。
+- Approval Pending 必须暂停具体副作用而不是结束任务；用户允许后继续同一个 Tool Call/Turn。
+- 用户拒绝后把 deny 作为 Observation 回同一模型，允许模型尝试 portable/local、只读、不同 Tool、缩小 scope 等替代方案。
+- Capability 缺失时优先补 Tool/Plugin/Native 实现；不能长期用“请用户自己执行”代替本应自动化的 Agent 能力。
+- `full` 也必须服从 OS 权限、Rust hard invariant、Secret 隔离和实际 Host 能力，不能把“用户愿意授权”伪装成不存在的物理能力。
+
 ---
 
 ## 8. XMA Agent Runtime 目标数据流

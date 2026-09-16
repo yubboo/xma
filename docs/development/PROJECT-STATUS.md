@@ -10,7 +10,7 @@
 
 项目正式从“在单体 `core/` 内继续自研完整 Agent 基础设施”换轨为 **Upstream-first + `xma-*` package family + Everything is a Plugin**。这次换轨不否定现有 0.1.0 Runtime/Provider/Tool/Workspace 成果，它们是迁移基线；但后续不再盲目扩建简化版 Harness。
 
-新的长期主线：`xma-ai + xma-agent-loop`（Pi 第一参考）→ `xma-plugin` / DSH compatibility → `xma-tools` + Process/Shell → Session/Context/Memory（DSH + MiMo）→ Task/Subagent/Workflow → Browser/Computer/Artifact。Model Intelligence Preservation 同时生效：强模型保留任务判断权，Skill 用于增强知识与方法，不替模型写死思考流程。
+新的长期主线：`xma-ai + xma-agent-loop`（Pi 第一参考）→ `xma-plugin` / DSH compatibility → `xma-tools` + Process/Shell → Session/Context/Memory（DSH + MiMo）→ Task/Subagent/Workflow → Browser/Computer/Artifact。Model Intelligence Preservation 同时生效：强模型保留任务判断权，Skill 用于增强知识与方法，不替模型写死思考流程。CLI/TUI、Desktop、Web、Server 只允许作为同一 Runtime 的不同 Host；权限采用统一 `ask / smart / full` Profile，用户控制副作用，批准后 Agent 必须在同一 Turn 自动继续。
 
 Platform Skeleton v1 已进入源码：`xma-ai / xma-agent-loop / xma-plugin / xma-tools / xma-session / xma-context / xma-native` 成为稳定 workspace package，DeepSeek / Native Tools / DSH compatibility 按插件本体聚合，`core/` 已收缩为 Compatibility Facade。**这只完成 ownership/目录/稳定入口迁移，尚未开始 Pi Agent Loop 的行为级吸收或大规模 Runtime 语义重写。** 正式战略见 `docs/architecture/AGENT-ENGINE-STRATEGY.md`，快速定位见根 `CODEMAP.md`，实时工程变更见 `docs/development/UPDATE-LOG.md`。
 
@@ -137,7 +137,7 @@ XMA 当前固定五条参考线：
 
 Platform Skeleton v1 已进入代码，后续开发不再优先修 TUI 外观；Terminal 只修阻断性输入/白屏/崩溃问题。当前顺序锁定为：
 
-1. **Pi Agent Engine 行为研究与 `xma-agent-loop` 吸收**：按固定 Pi commit 审阅真实 Agent Loop / streaming / tool execution / steering / follow-up / parallel execution 源码与测试；在不改变 Provider Truth Contract、Rust Security Kernel 的前提下，逐项替换当前简化 loop 语义；
+1. **Pi Agent Engine 行为研究与 `xma-agent-loop` 吸收**：按固定 Pi commit 审阅真实 Agent Loop / streaming / tool execution / steering / follow-up / parallel execution 源码与测试；优先形成 Host-neutral Runtime/Event Contract，使 Terminal/Desktop/Web/Server 消费同一生命周期；保持真实模型自主选 Tool/自纠，不用 Harness Planner 替模型思考，并把 Permission/Approval 作为可挂起续跑的统一 Runtime 语义；
 2. **`xma-ai` Provider seam 收敛 + DeepSeek Official 真实 E2E**：保留当前品牌/Profile/OS Credential/真实 catalog 与 Probe，先在用户 Windows 上形成 API Key → Credential Manager → 重启 → 动态 model catalog → text/tool round trip → 实际 Agent Turn 证据；
 3. **`xma-plugin` + DSH compatibility**：补 Service/Event/Effect/lifecycle transaction 与 conformance，不把 DSH 私有实现硬塞进 Core；
 4. **完整 Tool Surface / Process/Shell/Git**：把 Rust `process.spawn` 的安全能力接到真实 coding 工作面，完成 executable registry、Approval、取消/进程树等；

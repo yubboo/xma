@@ -13,6 +13,7 @@
 | Session / durable event / JSONL Store / export | `packages/xma-session/` | Session 稳定 Contract 与当前持久化 |
 | Context / Workspace | `packages/xma-context/` | Context Assembly 与 Workspace identity / grant |
 | TypeScript ↔ Rust Native | `packages/xma-native/` | Native RPC Client 与 OS Credentials Bridge |
+| Host-neutral App Protocol / Runtime Events | `core/` 迁移薄层 → 后续稳定 capability | CLI/Desktop/Web/Server 统一 Commands/Events/Queries；不得在 Host 复制 Agent/Permission 逻辑 |
 
 ## 插件与 Agent
 
@@ -38,10 +39,10 @@
 | Linux/macOS 普通用户安装器 | `scripts/install/xma-install.sh` |
 | Windows 维护者 Source Sync | `XMA-Sync.bat` → `scripts/windows/xma-sync.ps1` |
 | Windows 维护者 GitHub Helper | `XMA-GitHub.bat` → `scripts/windows/xma-github.ps1` |
-| CLI / TUI | `apps/cli/src/`（产品入口/Trust/Provider 状态合同）+ `apps/cli/opentui-runtime/`（Bun/OpenTUI Active Renderer；focused Textarea 原生拥有 cursor/IME，动画只 requestRender；配置+凭据可用显式显示模型已就绪，连接测试可选） |
-| Desktop | `apps/desktop/` |
-| Web | `apps/web/` |
-| Server | `apps/server/` |
+| CLI / TUI | `apps/cli/src/`（Host 入口/Trust/Provider 状态/权限 UI）+ `apps/cli/opentui-runtime/`（Bun/OpenTUI Active Renderer；只投影 Runtime，不拥有 Agent 状态） |
+| Desktop | `apps/desktop/`（GUI Host；消费同一 Runtime/App Protocol，不复制 Agent/Permission） |
+| Web | `apps/web/`（Browser UI Host；云部署时 Native capability 默认作用于 Server Host） |
+| Server | `apps/server/`（Headless Runtime/App Protocol Host） |
 | Rust Native Protocol | `native/protocol/` |
 | Rust Security / Native Runtime | `native/runtime/` |
 | 迁移期旧入口 | `core/`（Compatibility Facade only） |

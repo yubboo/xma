@@ -85,7 +85,16 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 - Skill 是操作指南，不是脚本化思考。
 - 实时可查询事实必须优先走 Tool/API/Knowledge service，不能作为永久事实写死 Prompt。
 
-### 4.2 Model-visible 必须可重建
+### 4.2 模型自主行动与用户权限
+
+- 当前真实 Provider Model 自己决定任务分解、下一步、Tool 选择、重试、验证和完成条件；Runtime/Host 不得用隐藏 Planner、关键词路由或固定领域流程替模型做正常任务判断。
+- Skill/Agent 是增强层，不得默认裁掉旗舰模型原本可用的 Tool Surface；只有用户显式选择受限模式、Provider capability 不支持或统一 Policy/Security 明确限制时才可收窄。
+- 遇到“模型会做但没有手”的问题，优先补 Tool/Plugin/Native capability，而不是在 Prompt 里要求用户手工完成可自动化步骤。
+- 权限三档 canonical id 固定为 `ask / smart / full`，UI 文案分别为“请求批准 / 帮我批准 / 完全访问”；CLI、Desktop、Web 只能渲染不同 UI，必须消费同一 Permission Profile / Approval Contract。
+- Approval 请求必须挂起当前 Tool Call；允许后自动恢复同一 Turn，不得把批准动作变成一次任务终止。拒绝必须作为结构化 Observation 回同一个模型，让模型尝试替代方案；不要直接把问题甩回用户。
+- `full` 只表示对当前 Host 已暴露、用户已明确授权的能力自动批准，不表示绕过 OS 权限、Secret 边界、Rust hard invariant 或平台不存在的 capability。
+
+### 4.3 Model-visible 必须可重建
 
 任何进入模型请求的**动态**内容，都必须能从 Session durable state 或有明确来源的 Context source 重建。
 
@@ -98,7 +107,7 @@ Agent Loop、Provider、Streaming、Tool Calling、Session、Context、Memory、
 
 stream chunk / progress 可以是 live event，但最终结算必须形成 durable fact。
 
-### 4.3 Turn / Step 结构
+### 4.4 Turn / Step 结构
 
 - Session 是持久事实源；
 - Turn 是一次用户驱动工作单元；
@@ -106,13 +115,13 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - 一个 Turn 允许多 Step；
 - cancellation / timeout 后消息结构仍必须合法可恢复。
 
-### 4.4 主循环保持通用
+### 4.5 主循环保持通用
 
 能通过 Provider、Tool、Context contributor、Policy、Session projection、Plugin extension point 完成的功能，不得给 Agent Loop 塞专业业务特例。
 
 `if (agentId === 'minecraft')`、`if (provider === 'claude')` 一类分支进入 Core Loop 前必须经过架构评审。
 
-## 4.5 Agent / Skill Platform 规则
+## 4.6 Agent / Skill Platform 规则
 
 - `AgentDefinition` 只描述专业身份与能力组合，不保存 Session 瞬时状态，不绑定具体 Provider/Host。
 - 主 `xiaoyu` 是 Manager Agent；专业 Agent 复用同一 Runtime。新增专业 Agent 前必须至少有真实 Skill/Tool/验收链，禁止空骨架。
@@ -151,6 +160,10 @@ stream chunk / progress 可以是 live event，但最终结算必须形成 durab
 - thinking+tools 若要求回传隐藏协议状态，Adapter 必须产生 opaque `providerContinuation`；Core 只能持久 round-trip，不能解析为自己的 Planner/Reasoning，redacted export 必须移除。
 
 ## 6. Tool / Permission / Native 规则
+
+- Tool/Permission/Approval 是 Runtime 能力，不属于 Terminal/Desktop/Web 任一 UI。所有 Host 必须通过同一 Contract 请求/决定权限；Host 只负责把请求展示给用户。
+- 三档 Permission Profile 固定为 `ask / smart / full`；具体哪些 effect 自动批准由统一 Policy 根据 Workspace、Tool effect、scope 与安全级别判断，不允许 Host 私自扩大权限。
+- 用户批准后同一 Tool Call/Turn 必须自动继续；用户拒绝后返回结构化 Tool Result/Observation 给当前真实模型，由模型自行决定替代路径。
 
 ### 6.1 Tool Definition
 

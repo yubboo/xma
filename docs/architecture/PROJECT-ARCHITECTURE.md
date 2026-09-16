@@ -48,7 +48,22 @@ Framework 可以限制权限、Schema、生命周期、预算和副作用，但�
 
 ### 一个 Runtime，多种 Shell
 
-CLI、Desktop、Web、Server 只是同一个 XMA Runtime 的不同入口。任何 Shell 都不能复制 Agent Loop、Session Store 或 Tool execution 逻辑。
+CLI、Desktop、Web、Server 只是同一个 XMA Runtime 的不同入口。任何 Shell 都不能复制 Agent Loop、Session Store、Provider、Tool execution、Permission/Approval 或 Agent 业务逻辑。UI 的差异只允许发生在输入方式、信息密度、可视化和当前部署 Host 的 capability bridge。
+
+```text
+Terminal ─┐
+Desktop  ─┼─ App Protocol / Runtime Events ─→ 同一 XMA Runtime ─→ xma-native / Rust Kernel
+Web      ─┤
+Server   ─┘
+```
+
+**Feature parity ≠ physical host parity。** 同一个功能在四种入口只有一份语义和一份 Runtime 实现；如果某个部署环境缺少本地 filesystem/process/PTY 等 capability，Runtime 明确返回 unavailable reason，Host 只负责展示。Web 连接云端 Server Runtime 时，Native 副作用作用于服务器；若未来要操作浏览器用户本机，必须通过显式 Remote Node/Device capability 和用户授权接入。
+
+### 模型自主行动，权限归用户
+
+真实 Provider Model 是任务的决策核心：理解目标、规划下一步、选择 Tool、根据 Observation 自纠、决定验证方式和完成条件。Skill、专业 Agent 与 Workflow 默认用于增强知识和能力，不是顶级模型的“限制器”。
+
+XMA 的安全边界不是“让模型少想/少看 Tool”，而是把真实副作用放在统一 Permission/Approval/Native Capability 之后。用户可以选择 `ask / smart / full` 三档权限；批准后 Runtime 在同一 Turn 自动继续，拒绝则把结构化 Observation 返回模型，由模型寻找替代方案。只有真实 capability 不存在、外部条件不可满足或用户拒绝所有可行权限时，Agent 才应明确说明阻塞。
 
 ## 3. 顶层目录
 
@@ -245,7 +260,7 @@ Web ─────┤
 Server ──┘
 ```
 
-Desktop 后期三栏 Workbench、CLI TUI、Web 管理页都只消费这层。这样 UI 可以大改而不改变 Agent 语义，也可以先完成底层再做复杂 UI。
+Desktop 后期三栏 Workbench、CLI TUI、Web 管理页都只消费这层。这样 UI 可以大改而不改变 Agent 语义，也可以先完成底层再做复杂 UI。App Protocol 必须覆盖 Turn/stream/activity、Tool lifecycle、Permission Profile、Approval request/decision、Session/Workspace、Provider/Model 与 capability availability；不得让某个 Host 因为“UI 更方便”而绕过 Runtime 直接实现一套业务状态。
 
 ## 12.5 Distribution / Launcher
 

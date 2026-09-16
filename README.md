@@ -7,7 +7,9 @@
 
 XMA 是一个 TypeScript-first + Rust Native 的用户自有 Agent 平台。你可以接入 GPT、Claude、Gemini、DeepSeek、MiMo 或未来任何顶级模型，让这些模型服务于属于你的 Xiaoyu Agent。
 
-XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都作为专业 Agent 存在，并拥有自己的 Workspace、Skills、Knowledge、Tools、Memory 和权限范围。
+XMA 不把某一个领域写死在内核里。Minecraft、Coding、Writer 等都作为专业 Agent 存在，并拥有自己的 Workspace、Skills、Knowledge、Tools、Memory 和权限范围。真实顶级模型负责理解目标、规划下一步、选择工具、根据结果自纠和验证；Skill/专业 Agent 用来增强知识与能力，不是把模型锁进固定流程。
+
+Terminal、Desktop、Web、Server 不是四套 Xiaoyu，而是同一 XMA Runtime 的四种入口：核心 Session/Agent/Provider/Tool/Permission 只实现一次。用户通过“请求批准 / 帮我批准 / 完全访问”三档权限控制真实副作用；批准后小鱼继续当前任务，拒绝后模型会先尝试其他可行路径。
 
 ## 当前 0.1.0 骨架
 

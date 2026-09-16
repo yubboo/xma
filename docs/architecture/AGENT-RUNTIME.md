@@ -223,15 +223,49 @@ resolve call
 
 ## 7. Permission / Approval / Capability
 
-XMA 要把三个概念分开：
+XMA 要把四个概念分开：
 
-- **Permission Policy**：本 Session/Workspace 对某类动作原则上允许到什么程度；
-- **Approval**：当前具体调用是否需要用户这一次/本会话确认；
+- **Model Autonomy**：真实模型决定下一步做什么、选哪个 Tool、如何根据 Observation 自纠；
+- **Permission Profile**：用户为当前 Host/Workspace/Session 选择的总体副作用授权模式；
+- **Approval**：某个具体 Tool Call 是否需要用户这一次/本 Session 确认；
 - **Native Capability**：Rust Kernel 最终真正拿到的最小 OS 权限令牌/限制。
 
-模型不能通过改参数绕过任一层。TypeScript Tool 只能请求 Native Capability；Rust Runtime 必须独立验证 path、process、network 等约束。
+模型不能通过改参数绕过安全层，但安全层也不能把“限制副作用”错误实现成“限制模型思考”。TypeScript Tool 只能请求 Native Capability；Rust Runtime 必须独立验证 path、process、network 等约束。
 
-第一阶段 Tool 交互语义可采用 `ReadOnly / Write / Execute / Network`，后续 Native 内部应细化为 filesystem/process/network/pty/archive 等具体 Capability，而不是让一个 `Network=true` 获得所有机器权限。
+### 7.1 三档 Permission Profile
+
+| Runtime id | 产品文案 | 语义 |
+| --- | --- | --- |
+| `ask` | 请求批准 | 需要副作用的 Tool Call 按 Policy 请求用户批准；允许后继续当前调用 |
+| `smart` | 帮我批准 | Workspace/任务范围内的常规低风险动作可统一自动批准；跨域/系统级/敏感动作仍询问 |
+| `full` | 完全访问 | 对当前 Host 已暴露且用户明确授权的能力自动批准，适合长时间无人值守任务 |
+
+Permission Profile 是 Runtime/App Protocol Contract。Terminal 可以在设置/命令面板选择，Desktop/Web 可以在输入 Dock 或权限面板选择，但它们必须修改同一个 Runtime 状态，不能各自维护隐藏权限。
+
+### 7.2 Approval 续跑语义
+
+```text
+Model Tool Call
+  ↓
+Policy / Guard
+  ↓
+Approval required
+  ↓
+Turn 保持 active，Tool Call 挂起
+  ↓
+Host 展示统一 ApprovalRequest
+  ↓
+allow-once / allow-session / deny
+  ↓
+先 durable audit
+  ↓
+allow → 执行原 Tool Call → Observation → 同一模型继续
+deny  → deny ToolResult      → Observation → 同一模型自行找替代方案
+```
+
+因此“需要批准”不能被实现成 Assistant 提前结束并回复“请你自己操作”。只有用户拒绝所有可行路径、真实 capability 不存在或外部条件不可满足时，模型才应把阻塞明确交还用户。
+
+第一阶段 Tool effect 可采用 `ReadOnly / Write / Execute / Network`，后续 Native 内部应细化为 filesystem/process/network/pty/archive 等具体 Capability，而不是让一个 `Network=true` 获得所有机器权限。
 
 当前 Rust Kernel 第一批实现见 `docs/security/NATIVE-CAPABILITIES.md`：Native 进程先锁定一次 Host Policy，`filesystem.read` / `filesystem.write` / `process.spawn` capability 只能申请它的子集并采用一次性 lease；文件路径由 Rust 真实 canonicalize 后再做 root confinement；进程 Host Policy 只接受绝对 executable path，Host/lease/execute 三阶段都 canonicalize 后按真实路径身份核对，并且调用不经过 shell/PATH。process tree ownership、PTY/ConPTY、network capability 与可执行文件内容/句柄级 TOCTOU identity 仍未完成。
 
