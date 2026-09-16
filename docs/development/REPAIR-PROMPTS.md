@@ -136,7 +136,7 @@
 
 # 02 Terminal 会话布局、输入 Dock 消失与 Workspace 路径回归
 
-- 状态：验证中
+- 状态：已完成
 - 日期：2026-09-16
 - 影响范围：`apps/cli/opentui-runtime`、Windows `[4]` 开发启动入口
 - 关联修复：`# 01 Terminal 历史滚动、光标稳定、启动速度与全局命令回归`
@@ -229,7 +229,7 @@
 
 # 03 Terminal Transcript 不可滚动与 PromptDock 再次被挤出 viewport
 
-- 状态：验证中
+- 状态：已完成
 - 日期：2026-09-16
 - 影响范围：`apps/cli/opentui-runtime` 会话父布局、Transcript ScrollBox、PromptDock 可见性与滚轮历史回看
 - 关联修复：`# 01`、`# 02`
@@ -306,10 +306,56 @@
 
 ## 当前验收状态
 
-本条保持 **验证中**。代码层已把共同根因从“事件/Prompt Fragment”收敛到并修正为“bounded Transcript slot”；是否真正消除 Windows Terminal 的 Prompt 消失与 wheel 无位移，需要用户用本轮正式包继续验证。PATH 与 caret 已通过的结果必须保持。
+本条已由用户 Windows Terminal 实机验收为 **已完成**。用户确认：
+
+1. 第一轮回答后 PromptDock（输入框 / Build / Provider / 快捷键 / 提示）持续可见；
+2. 可以继续发送第二、第三条消息；
+3. 多屏历史可以用鼠标滚轮自由向上/向下查看；
+4. 手动离开底部后模型继续输出不会强制抢回，回到底部后恢复 follow。
+
+因此 bounded Transcript slot + ScrollBox `height=100%` 的几何修复已通过最终 Windows E2E。PATH、Workspace 与 Textarea 原生 caret ownership 继续保持。
 
 ## 待优化进度
 
 - 若实机通过：把 #03 标为已完成，同时回填 #01 的 wheel E2E，并结束这一轮 Terminal 阻断性回归。
 - 若实机仍失败：下一编号不得再猜 Flex；必须临时增加只在 debug 模式输出的 `scroll.height / viewport.height / content.height / scrollTop / promptDock.y` 几何诊断，拿到 Windows 实机真实数值后再修。
 
+
+
+# 04 Windows 文本光标指示器与 Xiaoyu 原生 caret 兼容确认
+
+- 状态：已识别 / 环境行为
+- 日期：2026-09-16
+- 影响范围：Windows Terminal + Windows 辅助功能“文本光标指示器”；`apps/cli/opentui-runtime/ui/prompt-dock.tsx` 仅作为原生 caret owner，不修改系统辅助功能。
+- 关联修复：`# 01`、`# 03`
+
+## 用户可见症状
+
+用户完成 #03 实机验证后，Prompt 已可持续多轮聊天、历史滚动与 sticky follow 均正常，但输入框真实 caret 上下出现两个蓝色水滴/锚点状标记；视觉上像 XMA 又画了第二套光标。
+
+## 已确认事实与证据
+
+- 截图中的白色 block 为 OpenTUI focused Textarea 的真实 terminal caret；上下两个蓝色水滴形标记不是 XMA JSX / OpenTUI 自绘部件，而是 Windows 的“文本光标指示器（Text cursor indicator）”辅助功能。
+- Microsoft 官方说明：Windows 11 可在文本光标周围添加彩色指示器，并允许用户在“设置 → 辅助功能 → 文本光标”中开关、调整大小和颜色。
+- 当前 Active OpenTUI 已禁止 `CURSOR_MARKER`、手写 DECTCEM、应用层定时搬移硬件光标；因此本次蓝色标记不是此前的“cursor anchor 漂移”回归，而是 Windows 正常装饰当前真实 caret。
+- #03 用户已确认 caret 本身稳定、Prompt/滚动/follow 正常，因此不得为了隐藏 OS 指示器重新把 Textarea `showCursor` 关掉或恢复软件假光标。
+
+## 本次修复 Prompt
+
+> 以 #03 已通过 Windows 实机验收的版本为基线，区分 Xiaoyu/OpenTUI 原生 caret 与 Windows Text Cursor Indicator。不得把 OS 辅助功能误判为 XMA 第二套 cursor，也不得为了消除系统装饰回退已经验证的原生 Textarea caret ownership。
+>
+> 1. 保持主 Prompt 为 OpenTUI 原生 focused Textarea；不重新引入 `CURSOR_MARKER`、reverse-video 软件光标、父级 `showCursor` interval 或全局 `setCursorPosition` timer。
+> 2. 将“蓝色上下水滴 = Windows Text Cursor Indicator”记录进修复历史和开发规则；以后遇到“蓝色标记稳定跟随真实 caret”先按 OS 辅助功能判断，只有标记漂移到别处时才按 cursor ownership bug 调查。
+> 3. XMA 不得静默修改用户 Windows 辅助功能注册表/系统设置。若用户不希望显示该指示器，应由用户在 Windows“设置 → 辅助功能 → 文本光标 → 文本光标指示器”关闭或调整。
+> 4. 若未来产品需要提供光标样式偏好，只允许改变 OpenTUI caret 的 block/bar/underline 等应用层样式；不得承诺覆盖或关闭 Windows 的系统级文本光标指示器。
+> 5. 回填 #02/#03 Windows E2E 已通过结果，并保留 #01 启动耗时项的独立验收状态。
+
+## 不允许回归的行为
+
+- 不因为系统蓝色 Text Cursor Indicator 而隐藏真实 Textarea caret。
+- 不恢复曾导致 IME/焦点/光标漂移的全局 cursor timer 或软件假光标。
+- 不让 Decoration/Transcript/Activity 抢占 Textarea cursor ownership。
+
+## 验收结论
+
+本项不是 XMA 代码缺陷，而是 Windows 辅助功能对真实文本 caret 的系统级视觉装饰。XMA 当前正确行为是保持原生 caret 稳定；用户若要隐藏蓝色上下标记，在 Windows 系统设置中关闭“文本光标指示器”。若蓝色标记未来出现不跟随 caret、漂移到屏幕其他位置，则重新开新的 Repair 编号按实际 cursor ownership 回归处理。

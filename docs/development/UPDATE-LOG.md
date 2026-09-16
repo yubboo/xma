@@ -883,3 +883,12 @@
 - 修复：Workbench 在 Transcript 外新增 `xiaoyu-transcript-slot`，用 `height=0 + flexBasis=0 + flexGrow=1 + flexShrink=1 + minHeight=0 + overflow=hidden` 先锁定剩余高度；Transcript ScrollBox 改为 `height=100%` 只填满该 slot，不再直接以 intrinsic content height 和 PromptDock 竞争父级主轴。PromptDock 继续固定 `flexShrink=0`。
 - 测试：新增 `apps/cli/tests/opentui-layout.test.ts`，使用 `@opentui/core/testing` 构造与生产同构的 bounded slot + ScrollBox + fixed dock 布局，真实添加 60 行历史并断言 Prompt 在屏内、`scrollHeight > viewport.height`、滚到底后 mock mouse wheel up 能让 `scrollTop` 下降。现有静态合同同步锁定 slot 与 `height=100%`。
 - 状态：代码和文档已进入 #03 验证阶段；PATH/caret/direct-Bun/Workspace 参数保持不变。Windows Terminal 最终 wheel/多轮输入仍以用户实机为权威，不提前标完成。
+
+
+##83 · Terminal #03 实机通过与 Windows Text Cursor Indicator 识别
+
+- 日期：2026-09-16
+- Windows 实机验收：#03 的四项 E2E 全部通过——PromptDock 持续可见、可连续多轮发送、长历史鼠标滚轮可自由查看、手动离底后新输出不抢回且回到底部恢复 follow。#02/#03 因此正式标记已完成。
+- 新视觉现象：输入框真实 caret 上下出现蓝色水滴标记。截图与 Microsoft Windows 辅助功能语义一致，确认这是系统“文本光标指示器（Text cursor indicator）”，不是 XMA/OpenTUI 自绘第二套 cursor。
+- 决策：保持 #71/#80 已验证的 focused Textarea 原生 caret ownership；禁止为了隐藏 OS 指示器重新关闭 `showCursor`、恢复 `CURSOR_MARKER`/软件假光标或全局 cursor timer。XMA 也不得静默修改 Windows 辅助功能设置。
+- 用户控制：若不希望显示蓝色上下标记，由用户在 Windows“设置 → 辅助功能 → 文本光标 → 文本光标指示器”关闭或调整大小/颜色。未来若蓝色标记发生漂移而不是稳定跟随 caret，再开新的 Repair 编号调查 Host cursor ownership。
