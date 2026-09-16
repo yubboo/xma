@@ -1008,3 +1008,12 @@
 - 状态：#12 进入**验证中**。`session-status` 8/8、OpenTUI 静态/快捷键 35/35、Runtime updater 2/2、修改文件 TS/TSX 语法转译与 Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate 均 PASS；Workspace node_modules 不存在且 registry DNS 失败，真实 OpenTUI Renderable layout 测试与完整 `pnpm check` 不能在沙箱冒充通过。Windows Terminal 仍需用户目视验收 user band、Home 上移、多行 metrics 与常见窗口高度。
 - 版本/发行：版本仍为 `0.1.0`；Source Manifest 242 files，候选 ZIP 243 entries，独立解压 missing/extra/hash differences 均为 0，并从解压树再次通过 formatter 8/8、静态/快捷键 35/35、Runtime updater 2/2 与 9 项 Gate。正式源码包继续只使用 `xma-0.1.0.zip` + SHA-256，不引入 repair/final/v2 正式包名。
 
+
+##90 · Terminal 用户消息浅灰白与右对齐微调
+
+- 日期：2026-09-16
+- 流程：继续遵守 `REPAIR-WORKFLOW.md`，先建立 `REPAIR-PROMPTS #13`，再做 UI 微调；#13 引用 #12，不改写旧结论。
+- 用户反馈：#12 的整行 user band 结构基本正确，但底色“太白”，同时消息内容视觉上落在左侧；用户要求“只有有点白、浅白即可”，并恢复用户消息右对齐。
+- 修复：`COLOR.userMessage` 从 `#d7d7d7` 调整为更柔和的浅灰白 `#bdbdbd`；`TranscriptViewport` 的 user row 增加右对齐布局容器，保持 full-width band + padding 不变，只把文本与内部对齐切到右侧。
+- 状态：#13 进入**验证中**，等待用户 Windows Terminal 最终截图确认。PromptDock、Metrics 全量直显、Home 上移与滚动/caret ownership 未在本轮修改。
+

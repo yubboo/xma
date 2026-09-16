@@ -1072,3 +1072,58 @@ tab / shift+tab  切换模式   ctrl+p  命令   ctrl+k  搜索   /  快捷命�
 - Home 约 78 列、常见 100~140 列与全屏宽度均能直接看到完整 canonical detail；窄屏允许 2~3 行，但不能少字段。
 - PromptDock 始终留在 viewport；长历史滚动、sticky follow、caret/IME、Ctrl+C 与实时 streaming 不回归。
 
+
+# 13 Terminal 用户消息色温/右对齐微调
+
+- 状态：验证中
+- 日期：2026-09-16
+- 影响范围：`apps/cli/opentui-runtime/ui/transcript-viewport.tsx`、`theme.ts`
+- 关联历史：#12 Terminal 用户消息整行高亮 / Prompt 垂直节奏与 Metrics 全量直显优化
+
+## 用户可见症状
+
+1. #12 把用户消息改成整行浅色 band 后，当前底色过白，在深色终端里显得发飘、视觉过硬。
+2. 用户消息 band 虽然实现了整行容器，但内容仍按左侧阅读流出现；用户明确要求保持用户会话右对齐，只是不要再退回到小气泡。
+
+## 已确认事实与证据
+
+- `TranscriptViewport` 当前 user row 使用 `width="100%" + backgroundColor={COLOR.userMessage}`，但没有任何右对齐容器；文本自然从左侧开始渲染。
+- 当前 `COLOR.userMessage = '#d7d7d7'` 在深色背景上接近亮白，不符合“只有有点白、浅白即可”的最新反馈。
+- #12 的目标仍有效：用户消息必须保持整行 band 与 padding，不得回退为窄气泡或移除上下内边距。
+
+## 已被证伪/禁止重复的修法
+
+- 不能通过恢复 `maxWidth` 小气泡来“实现右对齐”；这会直接违背 #12 的整行 band 结论。
+- 不能把底色继续提亮到接近纯白；应保持浅灰白、低刺激对比。
+
+## 本次修复 Prompt
+
+> 以当前 `xma-0.1.0` 最新源码为第一事实源，修复 #12 留下的用户消息视觉细节问题，只做微调，不破坏 Prompt Dock、Metrics 全量直显和 Transcript ownership。先记录 Repair #13，再实施。
+>
+> 1. 用户消息继续保持 Transcript content column 内的整行 band，左右/上下 padding 保持不变，不得回退成窄气泡。
+> 2. user band 的背景色从当前过白值下调为浅灰白，在深色背景中保留对比但不过分刺眼。
+> 3. 用户消息内容必须恢复为**右对齐**；实现方式只能在 `TranscriptViewport` 的 user row 内部增加右对齐布局，不得改变 ScrollBox ownership，也不得影响 assistant/activity 的左对齐约定。
+> 4. 更新 `REPAIR-PROMPTS.md`、`PROJECT-STATUS.md`、`UPDATE-LOG.md`，回填本轮根因、修改点与待实机验收项。
+
+## 不允许回归的行为
+
+- User row 继续是一整行 padded band，不回退成右上角小白块。
+- Assistant / Activity 左对齐、用户消息右对齐的整体会话节奏保持清晰。
+- Prompt Dock、Metrics 全量直显、Home 上移、滚动/sticky/caret ownership 均不得被本轮微调破坏。
+
+## 验收条件
+
+- 用户消息底色明显比 #12 更柔和，接近浅灰白而非亮白。
+- 用户消息文本在整行 band 内视觉上明确位于右侧。
+- 不新增新的宽度裁剪、布局挤压或滚动回归。
+
+## 最终根因
+
+#13 属于 #12 的**视觉微调回归**而不是功能缺失：整行 band 与 padding 已正确建立，但主题色值选择过亮，同时 user row 缺少右对齐容器，导致短文本从左侧开始显示，看起来不像用户消息。
+
+## 实际修改与验证证据
+
+- `theme.ts`：`COLOR.userMessage` 从 `#d7d7d7` 下调为更柔和的浅灰白 `#bdbdbd`。
+- `transcript-viewport.tsx`：user row 外层增加 `width="100%" + justifyContent="flex-end"`，band 内部再使用 `alignItems="flex-end"` 与一层 `justifyContent="flex-end"` 的内容容器，让整行 band 保持不变但文本靠右显示。
+- 当前环境未重新跑完整 `pnpm check`；本轮只触碰视觉微调文件，仍待用户 Windows Terminal 截图确认“色温更柔和 + 右对齐”达成。
+

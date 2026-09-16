@@ -128,16 +128,21 @@ export function TranscriptViewport(props: {
             }
             if (item.role === 'user') {
               return (
-                <box
-                  width="100%"
-                  backgroundColor={COLOR.userMessage}
-                  paddingTop={1}
-                  paddingBottom={1}
-                  paddingLeft={1}
-                  paddingRight={1}
-                  flexShrink={0}
-                >
-                  <text fg={COLOR.userMessageText}>{item.text}</text>
+                <box width="100%" flexDirection="row" justifyContent="flex-end" flexShrink={0}>
+                  <box
+                    width="100%"
+                    backgroundColor={COLOR.userMessage}
+                    paddingTop={1}
+                    paddingBottom={1}
+                    paddingLeft={1}
+                    paddingRight={1}
+                    flexShrink={0}
+                    alignItems="flex-end"
+                  >
+                    <box width="100%" flexDirection="row" justifyContent="flex-end" flexShrink={0}>
+                      <text fg={COLOR.userMessageText}>{item.text}</text>
+                    </box>
+                  </box>
                 </box>
               )
             }
