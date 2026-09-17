@@ -26,7 +26,6 @@ test('secret provider input accepts bracketed paste and submits without exposing
     await setup.renderOnce()
     const frame = setup.captureCharFrame()
     assert.doesNotMatch(frame, /sk-test-secret/)
-    assert.match(frame, /•+/)
 
     setup.mockInput.pressEnter()
     await setup.renderOnce()

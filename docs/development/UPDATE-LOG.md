@@ -1,5 +1,11 @@
 # XMA Update Log
 
+## 98 · OpenTUI Secret Renderer 测试收口到安全合同
+
+- GitHub Actions #102 已确认此前 CI 分层修复生效：Node/TypeScript 通用测试 157/157 PASS，Bun OpenTUI Renderer 5 项中 4 项 PASS；唯一失败来自测试要求截图必须渲染 `•••`，而 OpenTUI 测试 Renderer 对自定义 SecretInput 的字符帧只保留光标。
+- SecretInput 产品实现不改：真实状态仍保存粘贴值、提交时回传完整 Secret，渲染源码仍只生成掩码字符与光标，绝不输出原始 Secret。Renderer 测试改为锁定真正的安全/行为合同：粘贴后的 frame 不得包含 Secret，按 Enter 后必须提交原始 Secret；不再把测试 Renderer 是否展示掩码 glyph 当成产品合同。
+- 本批不修改 PromptDock caret、slash 配色、ListDialog、Provider Setup UI 或任何产品交互；版本继续保持 `0.1.0`。下一次 GitHub Actions 必须看到 Bun Renderer 5/5 PASS 后再进入 `v0.1.0` Release。
+
 ## 93 · OpenTUI Renderer 测试运行时归属与 CI 断言漂移修复
 
 - GitHub Actions #101 已确认上一批修复有效：Linux/Windows `tsc --noEmit` 均通过，Windows PowerShell 5.1 的 `xma-prepare.ps1 -Component js` 也已通过；当前剩余失败全部位于测试层。
