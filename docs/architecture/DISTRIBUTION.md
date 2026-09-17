@@ -49,7 +49,7 @@ xiaoyu-<os>-<arch>/
 
 只把 `%LOCALAPPDATA%\Programs\Xiaoyu\bin` 加入 **User PATH**。程序文件和用户数据必须分开；Session/状态默认进入 `%LOCALAPPDATA%\Xiaoyu\state`，配置/凭据后续由专门 Config/Credentials Service 管理。
 
-Bootstrap `scripts/install/xma-install.ps1` 必须执行：Release Manifest → 选择 OS/arch → HTTPS 下载 → SHA-256 校验 → staging 文件验证 → 原子替换 → User PATH。禁止在普通用户安装器里执行 `pnpm install`、`cargo build`、`winget` 开发环境安装。
+Bootstrap `scripts/install/xma-install.ps1` 必须执行：Release Manifest → 选择 OS/arch → HTTPS 下载 → SHA-256 校验 → staging 文件验证 → 原子替换 → User PATH。`-Uninstall` 必须只清理 Xiaoyu 程序目录与对应 User PATH 项，不删除用户配置、凭据或 Session 数据。禁止在普通用户安装器里执行 `pnpm install`、`cargo build`、`winget` 开发环境安装。
 
 最终网站可暴露类似：
 
@@ -83,7 +83,7 @@ curl -fsSL https://github.com/yubboo/xma/releases/latest/download/xma-install.sh
 
 Linux 状态目录优先使用 `$XDG_STATE_HOME/xiaoyu`，否则 `~/.local/state/xiaoyu`。macOS 产品状态使用 `~/Library/Application Support/Xiaoyu/state`。
 
-Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和 `checksums.txt`，必须在解压/替换前完成 SHA-256 校验。若 `~/.local/bin` 不在 PATH，只提示用户加入 shell profile；安装脚本不擅自修改任意 shell 配置文件。
+Bootstrap `scripts/install/xma-install.sh` 下载当前 OS/arch 的 `tar.gz` 和 `checksums.txt`，必须在解压/替换前完成 SHA-256 校验。安装前必须拒绝覆盖不属于当前 Xiaoyu 安装根的同名 `xiaoyu/xma` 命令入口；`--uninstall` 只删除安装器自己管理的两个命令链接与程序目录，并保留用户配置、凭据和 Session 数据。若 `~/.local/bin` 不在 PATH，只提示用户加入 shell profile；安装器从不擅自修改任意 shell 配置文件，因此卸载也不需要改写 shell profile。
 
 ## 5. Terminal Runtime
 

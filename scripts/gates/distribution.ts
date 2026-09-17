@@ -30,6 +30,8 @@ const workspaceSource = text('pnpm-workspace.yaml')
 if (workspaceSource.includes('apps/cli/opentui-runtime')) throw new Error('OpenTUI source folder must not be a nested pnpm workspace package; dependencies belong to the root package.json/node_modules.')
 if (rootPackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs') throw new Error('Managed JS Runtime must use the single transactional updater entry.')
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:runtime')) throw new Error('pnpm check must include Runtime updater transaction tests.')
+if (rootPackage.scripts?.['test:install'] !== 'node --test scripts/install/xma-install.test.mjs') throw new Error('XMA Unix installer behavior test entry is missing.')
+if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:install')) throw new Error('pnpm check must include Unix installer behavior tests.')
 const runtimeUpdater = text('scripts/runtime/update.mjs')
 for (const marker of ['Bun / OpenTUI / Solid latest', '--workspace-root', 'Workspace install belongs to [1]', 'restored package/workspace/lockfile transaction snapshot', 'ERR_PNPM_IGNORED_BUILDS']) {
   if (!runtimeUpdater.includes(marker)) throw new Error(`Managed JS Runtime updater contract missing: ${marker}`)
@@ -86,7 +88,7 @@ for (const marker of [
 ]) {
   if (!openTui.includes(marker)) throw new Error(`XMA active OpenTUI parent marker missing: ${marker}`)
 }
-for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.soft}', 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（/ + 字母 查找命令）"']) {
+for (const marker of ['TextareaRenderable', 'cursorColor={COLOR.text}', "cursorStyle={{ style: 'block', blinking: true }}", 'showCursor={true}', "event.name !== 'tab'", 'placeholder="输入消息…（/ + 字母 查找命令）"']) {
   if (!openTuiPrompt.includes(marker)) throw new Error(`XMA PromptDock marker missing: ${marker}`)
 }
 for (const marker of ['Tool Approval', "event.name === 'escape'"]) {
@@ -105,7 +107,8 @@ for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'termi
   if (openTui.includes(forbidden)) throw new Error(`XMA active OpenTUI renderer must not reintroduce legacy manual terminal cursor/mouse control: ${forbidden}`)
 }
 if (!openTui.includes('focused={dialog() === undefined && !setupFlow().active}') ||
-    !openTuiPrompt.includes("cursorStyle={{ style: 'line', blinking: false }}") ||
+    !openTuiPrompt.includes('cursorColor={COLOR.text}') ||
+    !openTuiPrompt.includes("cursorStyle={{ style: 'block', blinking: true }}") ||
     !openTuiPrompt.includes('showCursor={true}')) {
   throw new Error('XMA active OpenTUI must let the focused PromptDock Textarea own the native terminal cursor.')
 }
@@ -218,6 +221,11 @@ for (const marker of [
   'sha256sum',
   'shasum -a 256',
   'xiaoyu-$os-$arch.tar.gz',
+  'xma-install.sh --uninstall',
+  'uninstall_xiaoyu',
+  'assert_command_slot',
+  'assert_safe_paths',
+  'assert_release_transport',
 ]) {
   if (!unix.includes(marker)) throw new Error(`XMA Unix installer marker missing: ${marker}`)
 }

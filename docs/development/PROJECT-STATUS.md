@@ -144,6 +144,12 @@ XMA 当前固定五条参考线：
 - #05 完整 Gate / Manifest / Windows 状态栏实机验收完成后标记已完成。
 - #10 建立 Terminal 对 #05 canonical metrics 的 headline/detail 分层；#11 在不改变 Contract 的前提下继续收口主状态；#12 根据 Windows 实机视觉反馈把 detail 改为**完整 canonical items + 按终端列宽多行打包**：窄宽度只换行、不再隐藏 cache/token/compaction/turn/cost/permission。Desktop/Web 后续仍直接消费同一 `session/metrics` Contract。
 
+## 6.0 Terminal Distribution 闭环状态（2026-09-17）
+
+- 普通用户主命令仍固定为 `xiaoyu`，`xma` 为兼容别名；用户安装继续只消费预构建 portable 资产，不要求 Node/pnpm/Rust/MSVC。
+- Windows bootstrap 已具备 SHA-256、staging、原子替换、User PATH 与 `-Uninstall`；Linux/macOS bootstrap 本批补齐 `--uninstall`、外部命令占用保护和行为级 install/upgrade/uninstall 回归。
+- GitHub tag-triggered Release workflow 与 Manifest/checksums 已在仓库，但当前公开仓库尚无真实 Release；在 `v0.1.0` tag 原生构建并完成 install → `--version` → doctor → Workspace → upgrade → uninstall E2E 前，README 的 `releases/latest` 命令仍是待部署合同，不得宣称已经上线。
+
 ## 6.1 当前阻断性修复状态（2026-09-17）
 - `REPAIR-PROMPTS #22` 当前**验证中**：#21 的“统一居中 ListDialog”方向保留，但 Windows 实机继续暴露 `/he` 在 `/help` 内不分色、Enter 后 focus 像卡住、`/help` 单色大块难读、Assistant 末尾与下一 user band 偏挤。#22 新增 canonical shortcut matched/remainder 分色；ListDialog settle 前 blur modal Textarea，父级改为 modal 卸载后 deferred refocus；`/help` 使用结构化三列 command-help presentation；Assistant bottom spacing 与 Activity 对齐。纯 prefix 行为 2/2、OpenTUI 静态/Transcript 42/42、activity/session/shortcut/transcript 14/14、Runtime 2/2、9 项 Gate 均 PASS；Source Manifest 245 files / ZIP 246 entries，独立解压 0 missing / 0 extra / 0 byte diff，并从解压树复跑 dependency-free 16/16、Runtime 2/2、OpenTUI 静态 40/40 与 9/9 Gate。真实 OpenTUI Renderer 用例已加入但当前沙箱缺少 Workspace node_modules，等待 Windows Terminal 实机确认颜色、Enter 后即时输入、Help 布局与 Turn 间距。
 - `REPAIR-PROMPTS #21` **实机细节不通过，由 #22 接续**：统一使用 Ctrl+P/Ctrl+K 同一个居中 ListDialog 的 ownership 结论继续有效；失败点仅为 prefix row 缺少 matched 分色、modal settle/refocus 时序、Help presentation 与 Turn spacing。

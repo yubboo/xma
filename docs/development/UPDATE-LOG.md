@@ -1,5 +1,13 @@
 # XMA Update Log
 
+## 91 · Unix 普通用户卸载闭环与 Distribution Gate 对齐
+
+- 补齐 `xma-install.sh --uninstall`：只删除当前安装器管理的 `xiaoyu/xma` 链接与 portable 程序目录，保留用户配置、凭据和 Session；安装前若同名命令由其他程序占用则 fail loud，禁止覆盖。
+- Unix 安装/升级继续保持 SHA-256 + staging + 原子目录替换；命令链接创建失败会回滚程序目录。新增本地最小 Release fixture 行为测试，真实执行 install → replacement upgrade → uninstall，并验证不会覆盖外部命令入口。
+- 修正既有 `Distribution Gate` 的过时 caret 断言：Gate 现在锁定用户已验收的 `COLOR.text + block + native blinking`，不再要求旧 `COLOR.soft` / steady line；本批不修改 PromptDock UI。
+- README / Distribution 文档补齐三平台卸载合同。版本仍为未冻结 `0.1.0`；公网 `releases/latest` 仍必须等真实 GitHub Release 资产存在后才能宣称可用。
+- 验证状态：Unix installer 行为测试 2/2 PASS；Terminal 定向回归 14/14 PASS；Runtime updater 2/2 PASS；Naming / Architecture / Distribution / Comments / Documentation / AI Context / Version / Windows / Repository 9/9 Gate PASS。Source Manifest 已更新为 246 files；真实 Windows PowerShell 5.1、Windows Terminal 与真实 GitHub tag/release E2E 仍需原生环境。
+
 ## 90 · Terminal 模型状态精简、真实 Metrics 回显与 `[10]` Unicode 路径修复
 
 - #11 将 Prompt 正常模型组从 `● Provider · model · 模型已就绪 · reasoning` 收口为 `● canonical-model · reasoning`；绿色 dot 继续表达 Ready truth，未配置/凭据异常仍保留明确异常文案，最右 `flexShrink=0` ownership 不变。

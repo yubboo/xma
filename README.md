@@ -51,6 +51,18 @@ xiaoyu
 
 `xma` 保留为兼容短别名。Windows 发行包内部对应 `xiaoyu.cmd / xma.cmd`，Linux/macOS 对应 `xiaoyu / xma`；它们与源码开发入口完全分开。
 
+卸载仍走同一个 bootstrap，不需要 Node/pnpm/Rust。正式 Release 存在后可使用：
+
+```powershell
+powershell -ep Bypass -c "& ([scriptblock]::Create((irm 'https://github.com/yubboo/xma/releases/latest/download/xma-install.ps1'))) -Uninstall"
+```
+
+```bash
+curl -fsSL https://github.com/yubboo/xma/releases/latest/download/xma-install.sh | sh -s -- --uninstall
+```
+
+Windows 卸载会移除 Xiaoyu 的 User PATH 项与程序目录；Linux/macOS 安装器从不修改 shell profile，卸载只移除它自己管理的 `~/.local/bin/xiaoyu` / `xma` 链接与程序目录，并保留用户配置、凭据和 Session 数据。
+
 > `releases/latest` 只有在真实 GitHub Release 已发布并包含对应资产后才可使用；未发布 Release 时不得把上面的公网命令描述为已可用。
 
 ## 源码开发
