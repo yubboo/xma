@@ -78,6 +78,8 @@ test('OpenTUI build uses an explicit supported Bun compile target map', () => {
     'bun-linux-arm64',
   ]) assert.match(source, new RegExp(target))
   assert.doesNotMatch(source, /`bun-\$\{platformName\}-\$\{process\.arch\}`/)
+  assert.match(source, /process\.platform === 'linux'/)
+  assert.match(source, /'process\.env\.OPENTUI_LIBC': JSON\.stringify\('glibc'\)/)
 })
 
 test('OpenTUI build embeds the parser worker from the prepared root dependency instead of package export resolution', () => {

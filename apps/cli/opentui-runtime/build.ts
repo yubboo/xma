@@ -73,6 +73,9 @@ const result = await Bun.build({
   entrypoints: [path.join(cliRoot, 'src', 'main.ts'), parserWorker],
   define: {
     OTUI_TREE_SITTER_WORKER_PATH: JSON.stringify(`${bunfsRoot}${workerRelativePath}`),
+    // 中文说明：OpenTUI 同一 Linux 架构同时发布 glibc/musl native 包；XMA 当前 bun-linux-* 资产是 glibc。
+    // 构建期固定 libc 后，Bun 可裁掉未使用的 musl dynamic import，fresh CI 只需要当前平台实际安装的 native 包。
+    ...(process.platform === 'linux' ? { 'process.env.OPENTUI_LIBC': JSON.stringify('glibc') } : {}),
   },
 })
 

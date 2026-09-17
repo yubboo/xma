@@ -437,7 +437,7 @@ function assertRustDirectDependencies(manifestPath: string, sourcePaths: string[
 assertRustDirectDependencies('native/runtime/Cargo.toml', ['native/runtime/src/main.rs'])
 assertRustDirectDependencies('native/protocol/Cargo.toml', ['native/protocol/src/lib.rs'])
 
-const cargoLock = readFileSync('Cargo.lock', 'utf8')
+const cargoLock = readFileSync('Cargo.lock', 'utf8').replaceAll('\r\n', '\n').replaceAll('\r', '\n')
 const nativeRuntimeLock = cargoLock.match(/name = "xma-native-runtime"\nversion = "0\.1\.0"\ndependencies = \[([\s\S]*?)\n\]/)?.[1] ?? ''
 if (!nativeRuntimeLock.includes('"serde"')) {
   throw new Error('XMA Cargo.lock must record serde as a direct xma-native-runtime dependency')

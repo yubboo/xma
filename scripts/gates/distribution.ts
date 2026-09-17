@@ -146,7 +146,7 @@ for (const marker of [
 if (bunRunner.includes("['--cwd'")) throw new Error('XMA Bun/OpenTUI runner must use process cwd instead of the broken bun --cwd argument ordering.')
 
 const openTuiBuild = text('apps/cli/opentui-runtime/build.ts')
-for (const marker of ['createSolidTransformPlugin', 'parser.worker.js', 'OTUI_TREE_SITTER_WORKER_PATH', "outfile", "xiaoyu.exe"]) {
+for (const marker of ['createSolidTransformPlugin', 'parser.worker.js', 'OTUI_TREE_SITTER_WORKER_PATH', "'process.env.OPENTUI_LIBC'", "JSON.stringify('glibc')", "outfile", "xiaoyu.exe"]) {
   if (!openTuiBuild.includes(marker)) throw new Error(`XMA OpenTUI Bun build marker missing: ${marker}`)
 }
 const tuiMenu = text('apps/cli/src/tui-menu.ts')

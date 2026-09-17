@@ -1,5 +1,14 @@
 # XMA Update Log
 
+## 99 · Linux Bun/OpenTUI 单文件构建固定 glibc 分支
+
+- GitHub Actions #103 已确认测试链全部通过：TypeScript/Node 通用测试 157/157 PASS、Bun OpenTUI Renderer 5/5 PASS、Runtime/Installer 与 9 项 Gate 全部 PASS；当前唯一新失败进入正式 `pnpm build:cli` 阶段。
+- 根因：OpenTUI 0.5.11 在 Linux 同一架构同时保留 glibc 与 musl native package 分支；未在 Bun compile build-time 固定 libc 时，Bun 会继续解析未安装的 `@opentui/core-linux-*-musl` dynamic import。fresh CI 因此在只安装 glibc host native package 的情况下报 unresolved module。
+- 修复：XMA 当前 `bun-linux-x64` / `bun-linux-arm64` Release 目标明确属于 glibc；`apps/cli/opentui-runtime/build.ts` 在 Linux build 的 `define` 中固定 `process.env.OPENTUI_LIBC='glibc'`，让 Bun 在 compile 阶段裁掉 musl 分支。Windows/macOS 构建与 Runtime/UI 不受影响。
+- 防回归：OpenTUI 静态合同与 Distribution Gate 同时锁定 Linux libc build-time define；不通过“安装所有 8 个 native 包”或关闭构建检查来绕过。版本继续保持 `0.1.0`，下一次 CI 必须看到 Linux `build:cli -> smoke:cli` 和 Windows 对应链路真实通过后才进入 Release。
+
+- 同一轮 CI 还暴露 Windows checkout 下 `Cargo.lock` 为 CRLF 时 Architecture Gate 的 LF-only 正则误判；Gate 现先统一换行符后再检查 `xma-native-runtime` 的 `serde` direct dependency，Rust 依赖与 lock 内容本身不变。
+
 ## 98 · OpenTUI Secret Renderer 测试收口到安全合同
 
 - GitHub Actions #102 已确认此前 CI 分层修复生效：Node/TypeScript 通用测试 157/157 PASS，Bun OpenTUI Renderer 5 项中 4 项 PASS；唯一失败来自测试要求截图必须渲染 `•••`，而 OpenTUI 测试 Renderer 对自定义 SecretInput 的字符帧只保留光标。
