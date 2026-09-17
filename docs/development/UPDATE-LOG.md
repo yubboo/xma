@@ -1,5 +1,12 @@
 # XMA Update Log
 
+## 93 · OpenTUI Renderer 测试运行时归属与 CI 断言漂移修复
+
+- GitHub Actions #101 已确认上一批修复有效：Linux/Windows `tsc --noEmit` 均通过，Windows PowerShell 5.1 的 `xma-prepare.ps1 -Component js` 也已通过；当前剩余失败全部位于测试层。
+- 将真实 OpenTUI Renderer 用例收口到 `apps/cli/opentui-runtime/tests/`，由项目固定 `bun 1.4.2` 的 `test:opentui-renderer` 专属执行；通用 `tsx --test` 不再在 Node 22 下加载 OpenTUI native FFI。`pnpm check` 强制同时执行 Node 通用测试与 Bun Renderer 测试，Distribution Gate 锁定这条运行时 ownership，禁止未来静默跳过。
+- 同步三处过时测试断言：Plan Ready 断言跟随已通过类型检查的 `planReady` 收窄；ListDialog 断言跟随 optional props 条件 spread；命令菜单首项断言跟随 canonical catalog 当前 `/help` 首项。以上只修测试与测试归属，不修改 PromptDock caret、slash 配色、ListDialog 布局、命令顺序或产品交互。
+- 版本继续保持 `0.1.0`；本批的最终验收仍以 GitHub Actions Linux/Windows `pnpm check` 中 Bun-native Renderer 用例真实通过为准，CI 全绿前不打 `v0.1.0` tag。
+
 ## 92 · Main CI 严格类型修复与 Windows Runtime 语义对齐
 
 - 修复 `pnpm check` 暴露的严格 TypeScript 边界：OpenTUI ListDialog optional props 在值存在时才传递，避免 `exactOptionalPropertyTypes` 下显式 `undefined`；Plan Ready proposal 在异步 turn 后显式收窄；DeepSeek telemetry 测试 fetcher 与 Bun 扩展 `fetch` 类型做测试侧适配；Windows Gate 对唯一 pnpm install 行先判空再读取。

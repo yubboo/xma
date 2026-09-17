@@ -228,7 +228,7 @@ test('TUI menu projection keeps command, menu and description columns stable', (
     assert.equal(tuiMenuCellWidth(row.description), projected.descriptionWidth)
     assert.equal(tuiMenuCellWidth(row.shortcut), projected.shortcutWidth)
   }
-  assert.equal(projected.rows[0]?.shortcut.startsWith('/settings'), true)
+  assert.equal(projected.rows[0]?.shortcut.startsWith('/help'), true)
   assert.equal(projected.rows[0]?.shortcut.startsWith(' '), false)
   assert.equal(moveTuiMenuSelection(0, projected.filtered.length, -1), projected.filtered.length - 1)
 })

@@ -1,5 +1,11 @@
+/**
+ * 文件作用：使用 Bun + OpenTUI Core 真实 Renderer 验证 Transcript、用户消息带与多行 Metrics Dock 的布局边界。
+ * 关联模块：apps/cli/opentui-runtime/app.tsx、Transcript viewport、Prompt Dock。
+ * 职责边界：只验证 Renderer 布局行为，不修改生产布局参数，也不访问外部服务。
+ */
+
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import { test } from 'bun:test'
 import { BoxRenderable, ScrollBoxRenderable, TextRenderable } from '@opentui/core'
 import { createTestRenderer } from '@opentui/core/testing'
 

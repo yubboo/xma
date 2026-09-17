@@ -32,6 +32,9 @@ if (rootPackage.scripts?.['runtime:update'] !== 'node scripts/runtime/update.mjs
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:runtime')) throw new Error('pnpm check must include Runtime updater transaction tests.')
 if (rootPackage.scripts?.['test:install'] !== 'node --test scripts/install/xma-install.test.mjs') throw new Error('XMA Unix installer behavior test entry is missing.')
 if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:install')) throw new Error('pnpm check must include Unix installer behavior tests.')
+if (rootPackage.scripts?.['test:opentui-renderer'] !== 'bun test apps/cli/opentui-runtime/tests') throw new Error('OpenTUI native Renderer tests must run through the project-pinned Bun runtime.')
+if (!(rootPackage.scripts?.check ?? '').includes('pnpm test:opentui-renderer')) throw new Error('pnpm check must include Bun-native OpenTUI Renderer tests.')
+if ((rootPackage.scripts?.test ?? '').includes('opentui-renderer')) throw new Error('Node/tsx generic tests must not execute Bun-native OpenTUI Renderer tests.')
 const runtimeUpdater = text('scripts/runtime/update.mjs')
 for (const marker of ['Bun / OpenTUI / Solid latest', '--workspace-root', 'Workspace install belongs to [1]', 'restored package/workspace/lockfile transaction snapshot', 'ERR_PNPM_IGNORED_BUILDS']) {
   if (!runtimeUpdater.includes(marker)) throw new Error(`Managed JS Runtime updater contract missing: ${marker}`)
@@ -100,7 +103,7 @@ for (const marker of ['stickyScroll={true}', 'stickyStart="bottom"', 'height="10
 for (const marker of ['id="xiaoyu-transcript-slot"', 'height={0}', 'flexBasis={0}', 'flexGrow={1}', 'flexShrink={1}', 'overflow="hidden"']) {
   if (!openTui.includes(marker)) throw new Error(`XMA bounded Transcript slot marker missing: ${marker}`)
 }
-if (!text('apps/cli/tests/opentui-layout.test.ts').includes('scrollHeight > scroll.viewport.height')) {
+if (!text('apps/cli/opentui-runtime/tests/opentui-layout.test.ts').includes('scrollHeight > scroll.viewport.height')) {
   throw new Error('XMA must keep a behavior-level OpenTUI layout test that proves long Transcript content creates a real scroll range.')
 }
 for (const forbidden of ['CURSOR_MARKER', 'terminalMouseCaptureSequence', 'terminalMouseReleaseSequence', 'new toolkit.TUI(', '\u001b[?25l']) {

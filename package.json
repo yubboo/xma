@@ -20,7 +20,7 @@
     "gate:architecture": "tsx scripts/gates/architecture.ts",
     "gate:comments": "tsx scripts/gates/comments.ts",
     "gate:docs": "tsx scripts/gates/documentation.ts",
-    "check": "pnpm typecheck && pnpm test && pnpm test:runtime && pnpm test:install && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
+    "check": "pnpm typecheck && pnpm test && pnpm test:opentui-renderer && pnpm test:runtime && pnpm test:install && pnpm gate:naming && pnpm gate:architecture && pnpm gate:distribution && pnpm gate:comments && pnpm gate:docs && pnpm gate:ai-context && pnpm gate:version && pnpm gate:windows && pnpm gate:repo",
     "build:web": "vite build apps/web --outDir ../../dist/web --emptyOutDir",
     "build:cli": "tsx scripts/cli/bun.ts build",
     "smoke:cli": "tsx scripts/cli/smoke.ts",
@@ -43,7 +43,8 @@
     "gate:distribution": "tsx scripts/gates/distribution.ts",
     "release:source-manifest": "tsx scripts/release/source-manifest.ts",
     "runtime:update": "node scripts/runtime/update.mjs",
-    "test:install": "node --test scripts/install/xma-install.test.mjs"
+    "test:install": "node --test scripts/install/xma-install.test.mjs",
+    "test:opentui-renderer": "bun test apps/cli/opentui-runtime/tests"
   },
   "devDependencies": {
     "@opentui/core": "0.5.11",
