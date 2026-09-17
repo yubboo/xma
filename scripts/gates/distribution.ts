@@ -9,7 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 
 function text(file: string): string {
   if (!existsSync(file)) throw new Error(`XMA Distribution Gate missing file: ${file}`)
-  return readFileSync(file, 'utf8')
+  return readFileSync(file, 'utf8').replace(/\r\n?/g, '\n')
 }
 
 const rootPackage = JSON.parse(text('package.json')) as { scripts?: Record<string, string>; devDependencies?: Record<string, string> }

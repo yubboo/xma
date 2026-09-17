@@ -1,5 +1,12 @@
 # XMA Update Log
 
+## 100 · Distribution Gate 统一跨平台换行语义
+
+- GitHub Actions #104 已确认 Linux TypeScript/Core/Gates、`build:web`、`build:cli`、`smoke:cli`、`build:server` 全链路 PASS，说明 OpenTUI Linux glibc build-time 分支修复生效；Rust Linux/Windows 也均 PASS。
+- Windows JavaScript Runtime 本轮已通过 `xma-prepare.ps1`、TypeScript 157/157、Bun OpenTUI Renderer 5/5、Runtime、Architecture Gate；唯一失败位于 Distribution Gate 的 active workbench cursor 静态扫描。
+- 根因：Distribution Gate 使用 `openTui.indexOf("onMount(() => {\n...")` 定位代码段，Windows checkout 的 CRLF 使纯 LF 字符串无法命中，从而把 `activeMountStart=-1` 误判为产品光标回归。
+- 修复：Distribution Gate 的统一 `text()` 入口现在把 CRLF/CR 规范化为 LF 后再执行所有静态合同；产品 OpenTUI/PromptDock/光标/slash/ListDialog 实现均不改。版本继续保持 `0.1.0`。
+
 ## 99 · Linux Bun/OpenTUI 单文件构建固定 glibc 分支
 
 - GitHub Actions #103 已确认测试链全部通过：TypeScript/Node 通用测试 157/157 PASS、Bun OpenTUI Renderer 5/5 PASS、Runtime/Installer 与 9 项 Gate 全部 PASS；当前唯一新失败进入正式 `pnpm build:cli` 阶段。
