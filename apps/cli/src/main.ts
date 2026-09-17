@@ -621,10 +621,11 @@ async function createBackend(workspace: string, currentVersion: string): Promise
         const modeTools = mode === 'build' ? buildTools : mode === 'plan' ? planTools : composeTools
         const policy = permissions.createPolicy()
         const result = await session.runTurn({ provider: model, tools: modeTools, input: message, signal, approvals, policy, workMode: mode })
-        if (mode === 'plan' && result.status === 'completed' && pendingPlanReady) {
-          await session.retainPlan(result.turnId, pendingPlanReady.plan)
+        const planReady = pendingPlanReady as PlanReadyProposal | undefined
+        if (mode === 'plan' && result.status === 'completed' && planReady) {
+          await session.retainPlan(result.turnId, planReady.plan)
         }
-        const retainedPlan = mode === 'plan' && pendingPlanReady ? session.latestPlan() : undefined
+        const retainedPlan = mode === 'plan' && planReady ? session.latestPlan() : undefined
         return { text: result.text, mode, ...(retainedPlan ? { plan: retainedPlan } : {}) }
       } finally {
         pendingPlanReady = undefined

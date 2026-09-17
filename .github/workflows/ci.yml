@@ -35,6 +35,11 @@ jobs:
         shell: powershell
       - name: Prepare managed JavaScript Runtime through XMA Windows flow
         shell: powershell
+        env:
+          # xma-prepare.ps1 models the interactive source-development path. pnpm
+          # enables frozen-lockfile automatically only because GitHub sets CI=true;
+          # disable that CI-only default here so the job exercises the real user flow.
+          CI: 'false'
         run: .\scripts\windows\xma-prepare.ps1 -Component js
       - run: pnpm check
         shell: powershell

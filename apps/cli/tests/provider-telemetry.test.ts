@@ -77,7 +77,7 @@ test('DeepSeek telemetry parses official balance shape through a local HTTP mock
     telemetry.register(createDeepSeekTelemetryProvider({
       // Production code still constructs the official endpoint and enforces an
       // official Profile. The injected fetcher only redirects transport in test.
-      fetcher: (_input, init) => fetch(localUrl, init),
+      fetcher: ((_input, init) => fetch(localUrl, init)) as typeof fetch,
     }))
     const profile = apiProfile({
       id: 'deepseek-main',

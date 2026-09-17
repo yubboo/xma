@@ -356,9 +356,9 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
         items,
         searchable: options.searchable === true,
         allowCancel: options.allowCancel !== false,
-        initialQuery: options.initialQuery,
-        searchMode: options.searchMode,
-        resolve: value => { closeDialog(); resolve(value) },
+        ...(options.initialQuery !== undefined ? { initialQuery: options.initialQuery } : {}),
+        ...(options.searchMode !== undefined ? { searchMode: options.searchMode } : {}),
+        resolve: (value: string | undefined) => { closeDialog(); resolve(value) },
       })
     } catch (error) {
       setDialog(undefined)
@@ -819,8 +819,8 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
     while (true) {
       const value = await askList('命令', commandPaletteOptions(), {
         searchable: true,
-        initialQuery,
-        searchMode: options.searchMode,
+        ...(initialQuery !== undefined ? { initialQuery } : {}),
+        ...(options.searchMode !== undefined ? { searchMode: options.searchMode } : {}),
       })
       if (!value) return
       if (options.clearPromptOnSelect) prompt?.clear()
@@ -1221,7 +1221,15 @@ function XiaoyuApp(props: { backend: TerminalBackend; onExit: () => void }) {
       <Show when={currentDialog()} keyed>{state => (
         <ErrorBoundary fallback={error => recoverBrokenDialog(state, error)}>
           {state.kind === 'list'
-            ? <ListDialog title={state.title} items={state.items} searchable={state.searchable} allowCancel={state.allowCancel} initialQuery={state.initialQuery} searchMode={state.searchMode} onDone={state.resolve} />
+            ? <ListDialog
+                title={state.title}
+                items={state.items}
+                searchable={state.searchable}
+                allowCancel={state.allowCancel}
+                {...(state.initialQuery !== undefined ? { initialQuery: state.initialQuery } : {})}
+                {...(state.searchMode !== undefined ? { searchMode: state.searchMode } : {})}
+                onDone={state.resolve}
+              />
             : state.kind === 'input'
               ? <InputDialog title={state.title} description={state.description} initial={state.initial} secret={state.secret} allowCancel={state.allowCancel} onDone={state.resolve} />
               : <ApprovalDialog request={state.request} onDone={state.resolve} />}

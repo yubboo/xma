@@ -133,8 +133,10 @@ for (const marker of [
 if (prepareSource.includes('baseline install → Bun latest')) throw new Error('Windows [1] must not use the old five-stage Runtime bootstrap.')
 const installLines = prepareSource.split('\n').filter((line) => line.includes("Invoke-XmaExternal -FilePath 'pnpm.cmd'") && line.includes("'install'"))
 if (installLines.length !== 1) throw new Error('Windows [1] must execute exactly one Workspace pnpm install.')
-if (installLines[0].trim() !== "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')") {
-  throw new Error(`Windows [1] must delegate dependency sync to the exact plain pnpm install command; got: ${installLines[0].trim()}`)
+const installLine = installLines[0]
+if (!installLine) throw new Error('Windows [1] pnpm install command disappeared after count validation.')
+if (installLine.trim() !== "Invoke-XmaExternal -FilePath 'pnpm.cmd' -ArgumentList @('install')") {
+  throw new Error(`Windows [1] must delegate dependency sync to the exact plain pnpm install command; got: ${installLine.trim()}`)
 }
 const pnpmInstallFunction = prepareSource.slice(
   prepareSource.indexOf('function Install-XmaWorkspaceJavaScriptDependencies'),

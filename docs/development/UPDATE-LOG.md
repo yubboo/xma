@@ -1,5 +1,12 @@
 # XMA Update Log
 
+## 92 · Main CI 严格类型修复与 Windows Runtime 语义对齐
+
+- 修复 `pnpm check` 暴露的严格 TypeScript 边界：OpenTUI ListDialog optional props 在值存在时才传递，避免 `exactOptionalPropertyTypes` 下显式 `undefined`；Plan Ready proposal 在异步 turn 后显式收窄；DeepSeek telemetry 测试 fetcher 与 Bun 扩展 `fetch` 类型做测试侧适配；Windows Gate 对唯一 pnpm install 行先判空再读取。
+- 本批不改变 PromptDock caret、slash command 展示、ListDialog 布局或其他已验收 Terminal 视觉/交互；修改仅限类型表达与测试/Gate 安全边界。
+- Windows PowerShell 5.1 CI 继续真实执行 `xma-prepare.ps1 -Component js` 的原生 `pnpm install` 合同，但该步骤显式设置 `CI=false`，避免 pnpm 仅因 GitHub Actions 的 `CI=true` 自动启用 frozen-lockfile；正式 Release workflow 仍在构建前显式执行 `pnpm install --no-frozen-lockfile`。
+- 版本继续保持 `0.1.0`。下一步以 GitHub Actions 复跑结果为准：TypeScript Core/Gates 与 Windows PowerShell 5.1 两个此前红灯都必须转绿后，才允许进入 `v0.1.0` tag/release。
+
 ## 91 · Unix 普通用户卸载闭环与 Distribution Gate 对齐
 
 - 补齐 `xma-install.sh --uninstall`：只删除当前安装器管理的 `xiaoyu/xma` 链接与 portable 程序目录，保留用户配置、凭据和 Session；安装前若同名命令由其他程序占用则 fail loud，禁止覆盖。
